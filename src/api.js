@@ -1,8 +1,6 @@
 // Beads daemon HTTP API client
 // Uses Vite proxy in dev (/api → daemon), direct URL in prod
 
-// In dev: use /api proxy (handles CORS + auth via vite.config.js)
-// In prod or with URL param override: use direct URL
 const DEFAULT_BASE = '/api';
 
 export class BeadsAPI {
@@ -34,6 +32,16 @@ export class BeadsAPI {
     return this._rpc('Ping', {});
   }
 
+  // Graph API — single endpoint for visualization data (bd-hpk9f)
+  // Returns { nodes: [...], edges: [...], stats: {...} }
+  async graph(opts = {}) {
+    return this._rpc('Graph', {
+      limit: 500,
+      include_deps: true,
+      ...opts,
+    });
+  }
+
   async list(opts = {}) {
     return this._rpc('List', {
       limit: 500,
@@ -51,7 +59,7 @@ export class BeadsAPI {
   }
 
   async ready() {
-    return this._rpc('Ready', { limit: 100 });
+    return this._rpc('Ready', { limit: 200 });
   }
 
   async blocked() {
@@ -64,6 +72,16 @@ export class BeadsAPI {
 
   async epicOverview() {
     return this._rpc('EpicOverview', {});
+  }
+
+  // Check if Graph endpoint is available (probe with empty body)
+  async hasGraph() {
+    try {
+      await this._rpc('Graph', { limit: 1 });
+      return true;
+    } catch {
+      return false;
+    }
   }
 
   // SSE event stream for live updates

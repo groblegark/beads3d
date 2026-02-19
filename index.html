@@ -51,6 +51,7 @@
       z-index: 200;
       backdrop-filter: blur(8px);
       box-shadow: 0 4px 20px rgba(0,0,0,0.5);
+      pointer-events: none;
     }
     #tooltip .title {
       font-weight: 600;
@@ -59,8 +60,9 @@
     }
     #tooltip .id { color: #4a9eff; font-size: 10px; }
     #tooltip .meta { color: #888; font-size: 10px; margin-top: 4px; }
+    #tooltip .hint { color: #555; font-size: 9px; margin-top: 6px; font-style: italic; }
 
-    /* Controls */
+    /* Controls bar (top-right) */
     #controls {
       position: fixed;
       top: 16px;
@@ -68,22 +70,70 @@
       z-index: 100;
       display: flex;
       flex-direction: column;
-      gap: 6px;
+      gap: 8px;
+      width: 200px;
     }
-    #controls button {
+
+    /* Search input */
+    #search-input {
       background: rgba(20, 20, 35, 0.85);
       border: 1px solid #2a2a3a;
-      color: #aaa;
+      color: #ccc;
       font-family: inherit;
-      font-size: 10px;
-      padding: 6px 12px;
+      font-size: 11px;
+      padding: 7px 10px;
       border-radius: 4px;
+      outline: none;
+      backdrop-filter: blur(4px);
+      width: 100%;
+    }
+    #search-input:focus { border-color: #4a9eff; color: #fff; }
+    #search-input::placeholder { color: #555; }
+
+    /* Filter groups */
+    .filter-group {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 4px;
+    }
+    .filter-group label {
+      font-size: 9px;
+      color: #555;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      width: 100%;
+      margin-bottom: 2px;
+    }
+
+    /* Button style (shared) */
+    .ctrl-btn {
+      background: rgba(20, 20, 35, 0.85);
+      border: 1px solid #2a2a3a;
+      color: #777;
+      font-family: inherit;
+      font-size: 9px;
+      padding: 4px 8px;
+      border-radius: 3px;
       cursor: pointer;
       transition: all 0.15s;
       backdrop-filter: blur(4px);
     }
-    #controls button:hover { border-color: #4a9eff; color: #fff; }
-    #controls button.active { border-color: #4a9eff; color: #4a9eff; }
+    .ctrl-btn:hover { border-color: #4a9eff; color: #ccc; }
+    .ctrl-btn.active { border-color: #4a9eff; color: #4a9eff; }
+
+    /* Layout + action buttons row */
+    .btn-row {
+      display: flex;
+      gap: 4px;
+    }
+    .btn-row .ctrl-btn { flex: 1; text-align: center; }
+
+    /* Filter count */
+    #filter-count {
+      font-size: 10px;
+      color: #555;
+      text-align: right;
+    }
 
     /* Legend */
     #legend {
@@ -94,7 +144,7 @@
       font-size: 10px;
       display: flex;
       gap: 14px;
-      opacity: 0.7;
+      opacity: 0.6;
     }
     #legend .item { display: flex; align-items: center; gap: 5px; }
     #legend .dot {
@@ -115,6 +165,129 @@
     }
     #status.connected { color: #2d8a4e; }
     #status.error { color: #d04040; }
+
+    /* Keyboard hints */
+    #keyhints {
+      position: fixed;
+      bottom: 36px;
+      right: 16px;
+      z-index: 100;
+      font-size: 9px;
+      color: #333;
+    }
+
+    /* Detail panel (slide-out) */
+    #detail {
+      position: fixed;
+      top: 0;
+      right: 0;
+      width: 380px;
+      height: 100vh;
+      background: rgba(12, 12, 22, 0.95);
+      border-left: 1px solid #1a1a2a;
+      z-index: 300;
+      overflow-y: auto;
+      padding: 20px;
+      display: none;
+      transform: translateX(100%);
+      transition: transform 0.2s ease-out;
+      backdrop-filter: blur(12px);
+    }
+    #detail.open { transform: translateX(0); }
+
+    .detail-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 12px;
+    }
+    .detail-id {
+      color: #4a9eff;
+      font-size: 11px;
+    }
+    .detail-close {
+      background: none;
+      border: none;
+      color: #666;
+      font-size: 18px;
+      cursor: pointer;
+      padding: 4px 8px;
+    }
+    .detail-close:hover { color: #fff; }
+
+    .detail-title {
+      font-size: 14px;
+      font-weight: 600;
+      color: #e0e0e0;
+      line-height: 1.4;
+      margin-bottom: 10px;
+    }
+
+    .detail-meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      margin-bottom: 16px;
+    }
+
+    .tag {
+      font-size: 9px;
+      padding: 2px 7px;
+      border-radius: 3px;
+      background: rgba(40, 40, 60, 0.8);
+      color: #999;
+      border: 1px solid #2a2a3a;
+    }
+    .tag-open { color: #2d8a4e; border-color: #2d8a4e33; }
+    .tag-in_progress { color: #d4a017; border-color: #d4a01733; }
+    .tag-blocked { color: #d04040; border-color: #d0404033; }
+    .tag-assignee { color: #ff6b35; border-color: #ff6b3533; }
+
+    .detail-body {
+      font-size: 11px;
+      line-height: 1.6;
+      color: #aaa;
+    }
+    .detail-body.loading { color: #555; font-style: italic; }
+
+    .detail-section {
+      margin-bottom: 14px;
+      padding-bottom: 14px;
+      border-bottom: 1px solid #1a1a2a;
+    }
+    .detail-section h4 {
+      font-size: 10px;
+      color: #4a9eff;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      margin-bottom: 6px;
+      font-weight: 600;
+    }
+    .detail-section pre {
+      white-space: pre-wrap;
+      word-break: break-word;
+      font-family: inherit;
+      font-size: 11px;
+      color: #bbb;
+      max-height: 200px;
+      overflow-y: auto;
+    }
+    .dep-item {
+      font-size: 10px;
+      color: #888;
+      padding: 2px 0;
+    }
+    .detail-timestamps {
+      font-size: 9px;
+      color: #555;
+      border-bottom: none;
+    }
+
+    /* Scrollbar styling */
+    ::-webkit-scrollbar { width: 4px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: #2a2a3a; border-radius: 2px; }
+    ::-webkit-scrollbar-thumb:hover { background: #4a4a5a; }
   </style>
 </head>
 <body>
@@ -126,24 +299,45 @@
   </div>
 
   <div id="controls">
-    <button id="btn-dag-radial" class="active" title="Radial layout">radial</button>
-    <button id="btn-dag-td" title="Top-down DAG">top-down</button>
-    <button id="btn-dag-none" title="Free force layout">free</button>
-    <button id="btn-bloom" title="Toggle bloom">bloom</button>
-    <button id="btn-refresh" title="Refresh data">refresh</button>
+    <input type="text" id="search-input" placeholder="search beads... ( / )" autocomplete="off" spellcheck="false">
+
+    <div class="filter-group">
+      <label>status</label>
+      <button class="ctrl-btn filter-status" data-status="open">open</button>
+      <button class="ctrl-btn filter-status" data-status="in_progress">active</button>
+      <button class="ctrl-btn filter-status" data-status="closed">closed</button>
+    </div>
+
+    <div class="filter-group">
+      <label>type</label>
+      <button class="ctrl-btn filter-type" data-type="epic">epic</button>
+      <button class="ctrl-btn filter-type" data-type="feature">feature</button>
+      <button class="ctrl-btn filter-type" data-type="bug">bug</button>
+      <button class="ctrl-btn filter-type" data-type="task">task</button>
+    </div>
+
+    <div class="btn-row" id="layout-controls">
+      <button class="ctrl-btn" id="btn-dag-td">dag</button>
+      <button class="ctrl-btn active" id="btn-dag-none">free</button>
+      <button class="ctrl-btn" id="btn-refresh">refresh</button>
+    </div>
+
+    <div id="filter-count"></div>
   </div>
 
   <div id="legend">
     <div class="item"><span class="dot" style="background:#2d8a4e"></span> open</div>
-    <div class="item"><span class="dot" style="background:#d4a017"></span> in_progress</div>
-    <div class="item"><span class="dot" style="background:#4a9eff"></span> review</div>
-    <div class="item"><span class="dot" style="background:#555"></span> closed</div>
+    <div class="item"><span class="dot" style="background:#d4a017"></span> active</div>
     <div class="item"><span class="dot" style="background:#8b45a6"></span> epic</div>
     <div class="item"><span class="dot" style="background:#d04040"></span> blocked</div>
+    <div class="item"><span class="dot" style="background:#ff6b35"></span> agent</div>
   </div>
 
   <div id="tooltip"></div>
   <div id="status">connecting...</div>
+  <div id="keyhints">/ search &middot; esc close &middot; r refresh</div>
+
+  <div id="detail"></div>
 
   <script type="module" src="/src/main.js"></script>
 </body>

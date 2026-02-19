@@ -32,11 +32,11 @@ export const PRIORITY_SIZES = {
 };
 
 export const DEP_TYPE_COLORS = {
-  blocks:      '#d04040',
-  'waits-for': '#d4a017',
-  'relates-to':'#4a9eff33',
+  blocks:       '#d04040',
+  'waits-for':  '#d4a017',
+  'relates-to': '#4a9eff33',
   'parent-child':'#8b45a644',
-  default:     '#2a2a3a',
+  default:      '#2a2a3a',
 };
 
 export function nodeColor(issue) {
@@ -61,4 +61,13 @@ export function nodeSize(issue) {
 
 export function linkColor(dep) {
   return DEP_TYPE_COLORS[dep.dep_type] || DEP_TYPE_COLORS.default;
+}
+
+// CSS color string → THREE.js hex number
+export function colorToHex(cssColor) {
+  if (typeof cssColor === 'number') return cssColor;
+  if (cssColor.startsWith('#')) {
+    return parseInt(cssColor.slice(1, 7), 16);
+  }
+  return 0x555555;
 }
