@@ -8,9 +8,18 @@ import { nodeColor, nodeSize, linkColor, colorToHex } from './colors.js';
 const params = new URLSearchParams(window.location.search);
 const API_BASE = params.get('api') || '/api';
 const POLL_INTERVAL = 10000;
-const MAX_NODES = 300; // safety cap for performance
+const MAX_NODES = 500; // raised for scaling
 
 const api = new BeadsAPI(API_BASE);
+
+// --- Shared geometries (reused across all nodes to reduce GC + draw overhead) ---
+const GEO = {
+  sphereHi:   new THREE.SphereGeometry(1, 12, 12),   // unit sphere, scaled per-node
+  sphereLo:   new THREE.SphereGeometry(1, 6, 6),      // low-poly glow shell
+  torus:      new THREE.TorusGeometry(1, 0.15, 6, 20), // unit torus for rings
+  icosa:      new THREE.IcosahedronGeometry(1, 1),     // epic shell
+  octa:       new THREE.OctahedronGeometry(1, 0),      // blocked spikes
+};
 
 // --- State ---
 let graphData = { nodes: [], links: [] };
@@ -31,79 +40,62 @@ function initGraph() {
     .backgroundColor('#0a0a0f')
     .showNavInfo(false)
 
-    // Custom node rendering — organic vacuole look
+    // Custom node rendering — organic vacuole look (shared geometries for perf)
     .nodeThreeObject(n => {
-      if (n._hidden) return new THREE.Group(); // filtered out
+      if (n._hidden) return new THREE.Group();
 
       const size = nodeSize(n);
-      const color = nodeColor(n);
-      const hexColor = colorToHex(color);
+      const hexColor = colorToHex(nodeColor(n));
       const group = new THREE.Group();
 
-      // Inner sphere (solid core)
-      const geo = new THREE.SphereGeometry(size, 16, 16);
-      const mat = new THREE.MeshBasicMaterial({
-        color: hexColor,
-        transparent: true,
-        opacity: 0.85,
-      });
-      group.add(new THREE.Mesh(geo, mat));
+      // Inner sphere (solid core) — shared geometry, scaled
+      const core = new THREE.Mesh(GEO.sphereHi, new THREE.MeshBasicMaterial({
+        color: hexColor, transparent: true, opacity: 0.85,
+      }));
+      core.scale.setScalar(size);
+      group.add(core);
 
-      // Outer glow shell
-      const glowGeo = new THREE.SphereGeometry(size * 1.6, 10, 10);
-      const glowMat = new THREE.MeshBasicMaterial({
-        color: hexColor,
-        transparent: true,
-        opacity: 0.12,
-      });
-      group.add(new THREE.Mesh(glowGeo, glowMat));
+      // Outer glow shell — low-poly shared geometry
+      const glow = new THREE.Mesh(GEO.sphereLo, new THREE.MeshBasicMaterial({
+        color: hexColor, transparent: true, opacity: 0.12,
+      }));
+      glow.scale.setScalar(size * 1.6);
+      group.add(glow);
 
-      // In-progress nodes get a pulsing ring
+      // In-progress: pulsing ring
       if (n.status === 'in_progress') {
-        const ringGeo = new THREE.TorusGeometry(size * 2.0, 0.3, 8, 32);
-        const ringMat = new THREE.MeshBasicMaterial({
-          color: 0xd4a017,
-          transparent: true,
-          opacity: 0.5,
-        });
-        const ring = new THREE.Mesh(ringGeo, ringMat);
+        const ring = new THREE.Mesh(GEO.torus, new THREE.MeshBasicMaterial({
+          color: 0xd4a017, transparent: true, opacity: 0.5,
+        }));
+        ring.scale.setScalar(size * 2.0);
         ring.rotation.x = Math.PI / 2;
         ring.userData.pulse = true;
         group.add(ring);
       }
 
-      // Epics get a wireframe shell (organelle membrane)
+      // Epic: wireframe organelle membrane
       if (n.issue_type === 'epic') {
-        const shellGeo = new THREE.IcosahedronGeometry(size * 2, 1);
-        const shellMat = new THREE.MeshBasicMaterial({
-          color: 0x8b45a6,
-          transparent: true,
-          opacity: 0.15,
-          wireframe: true,
-        });
-        group.add(new THREE.Mesh(shellGeo, shellMat));
+        const shell = new THREE.Mesh(GEO.icosa, new THREE.MeshBasicMaterial({
+          color: 0x8b45a6, transparent: true, opacity: 0.15, wireframe: true,
+        }));
+        shell.scale.setScalar(size * 2);
+        group.add(shell);
       }
 
-      // Blocked nodes get spiky outer shell
+      // Blocked: spiky octahedron
       if (n._blocked) {
-        const spikeGeo = new THREE.OctahedronGeometry(size * 2.4, 0);
-        const spikeMat = new THREE.MeshBasicMaterial({
-          color: 0xd04040,
-          transparent: true,
-          opacity: 0.2,
-          wireframe: true,
-        });
-        group.add(new THREE.Mesh(spikeGeo, spikeMat));
+        const spike = new THREE.Mesh(GEO.octa, new THREE.MeshBasicMaterial({
+          color: 0xd04040, transparent: true, opacity: 0.2, wireframe: true,
+        }));
+        spike.scale.setScalar(size * 2.4);
+        group.add(spike);
       }
 
-      // Selection ring (hidden by default, made visible when node is selected)
-      const selRingGeo = new THREE.TorusGeometry(size * 2.5, 0.4, 8, 48);
-      const selRingMat = new THREE.MeshBasicMaterial({
-        color: 0x4a9eff,
-        transparent: true,
-        opacity: 0,
-      });
-      const selRing = new THREE.Mesh(selRingGeo, selRingMat);
+      // Selection ring (invisible until selected)
+      const selRing = new THREE.Mesh(GEO.torus, new THREE.MeshBasicMaterial({
+        color: 0x4a9eff, transparent: true, opacity: 0,
+      }));
+      selRing.scale.setScalar(size * 2.5);
       selRing.userData.selectionRing = true;
       group.add(selRing);
 
@@ -131,9 +123,9 @@ function initGraph() {
       return src && tgt && !src._hidden && !tgt._hidden;
     })
 
-    // Directional particles — chromatin flow effect
-    .linkDirectionalParticles(l => l.dep_type === 'blocks' ? 3 : 1)
-    .linkDirectionalParticleWidth(1.2)
+    // Directional particles — only on blocking links (perf at scale)
+    .linkDirectionalParticles(l => l.dep_type === 'blocks' ? 2 : 0)
+    .linkDirectionalParticleWidth(1.0)
     .linkDirectionalParticleSpeed(0.003)
     .linkDirectionalParticleColor(l => linkColor(l))
 
@@ -143,9 +135,14 @@ function initGraph() {
     .onNodeRightClick(handleNodeRightClick)
     .onBackgroundClick(() => { clearSelection(); hideTooltip(); hideDetail(); hideContextMenu(); });
 
-  // Force tuning — spread nodes more
-  graph.d3Force('charge').strength(-120);
-  graph.d3Force('link').distance(60);
+  // Force tuning — scale-aware
+  const nodeCount = graphData.nodes.length || 100;
+  const chargeStrength = nodeCount > 200 ? -60 : -120;
+  graph.d3Force('charge').strength(chargeStrength).distanceMax(400);
+  graph.d3Force('link').distance(nodeCount > 200 ? 40 : 60);
+
+  // Warm up faster then cool (reduces CPU after initial layout)
+  graph.cooldownTime(4000).warmupTicks(nodeCount > 200 ? 50 : 0);
 
   // Scene extras
   const scene = graph.scene();
@@ -245,22 +242,26 @@ function clearSelection() {
 }
 
 // --- Animation loop: pulsing effects + selection dimming ---
+let nucleusMesh = null; // cached reference
+
 function startAnimation() {
   function animate() {
     requestAnimationFrame(animate);
     const t = (performance.now() - startTime) / 1000;
     const hasSelection = selectedNode !== null;
 
-    // Rotate nucleus slowly
-    const scene = graph.scene();
-    scene.traverse(obj => {
-      if (obj.userData.isNucleus) {
-        obj.rotation.y = t * 0.1;
-        obj.rotation.x = Math.sin(t * 0.05) * 0.3;
-      }
-    });
+    // Rotate nucleus (cached, no scene.traverse)
+    if (!nucleusMesh) {
+      graph.scene().traverse(obj => {
+        if (obj.userData.isNucleus) nucleusMesh = obj;
+      });
+    }
+    if (nucleusMesh) {
+      nucleusMesh.rotation.y = t * 0.1;
+      nucleusMesh.rotation.x = Math.sin(t * 0.05) * 0.3;
+    }
 
-    // Per-node selection visual feedback
+    // Per-node visual feedback — only iterate when needed
     for (const node of graphData.nodes) {
       const threeObj = node.__threeObj;
       if (!threeObj) continue;
@@ -269,11 +270,13 @@ function startAnimation() {
       const isSelected = hasSelection && node.id === selectedNode.id;
       const dimFactor = isHighlighted ? 1.0 : 0.15;
 
+      // Skip expensive traversal if no selection and not in_progress
+      if (!hasSelection && node.status !== 'in_progress') continue;
+
       threeObj.traverse(child => {
         if (!child.material) return;
 
         if (child.userData.selectionRing) {
-          // Selection ring: visible + spinning only on selected node
           if (isSelected) {
             child.material.opacity = 0.6 + Math.sin(t * 4) * 0.2;
             child.rotation.x = t * 1.2;
@@ -282,11 +285,10 @@ function startAnimation() {
             child.material.opacity = 0;
           }
         } else if (child.userData.pulse) {
-          // In-progress pulsing rings — respect dimming
           child.material.opacity = (0.3 + Math.sin(t * 3) * 0.2) * dimFactor;
           child.rotation.z = t * 0.5;
-        } else {
-          // Regular meshes — dim unrelated nodes when selection active
+        } else if (hasSelection) {
+          // Only dim/undim when selection is active
           const baseOpacity = child.material.wireframe ? 0.15 : (child.material.opacity > 0.5 ? 0.85 : 0.12);
           child.material.opacity = baseOpacity * dimFactor;
         }
