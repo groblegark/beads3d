@@ -135,14 +135,14 @@ function initGraph() {
     .onNodeRightClick(handleNodeRightClick)
     .onBackgroundClick(() => { clearSelection(); hideTooltip(); hideDetail(); hideContextMenu(); });
 
-  // Force tuning — scale-aware
+  // Force tuning — applied by setLayout()
   const nodeCount = graphData.nodes.length || 100;
-  const chargeStrength = nodeCount > 200 ? -60 : -120;
-  graph.d3Force('charge').strength(chargeStrength).distanceMax(400);
-  graph.d3Force('link').distance(nodeCount > 200 ? 40 : 60);
 
   // Warm up faster then cool (reduces CPU after initial layout)
   graph.cooldownTime(4000).warmupTicks(nodeCount > 200 ? 50 : 0);
+
+  // Apply default layout forces
+  setLayout('free');
 
   // Scene extras
   const scene = graph.scene();
@@ -815,23 +815,155 @@ function updateFilterCount() {
   }
 }
 
+// --- Layout modes ---
+let currentLayout = 'free';
+
+function setLayout(mode) {
+  currentLayout = mode;
+
+  // Highlight active button
+  document.querySelectorAll('#layout-controls button').forEach(b => b.classList.remove('active'));
+  const btn = document.getElementById(`btn-layout-${mode}`);
+  if (btn) btn.classList.add('active');
+
+  // Clear all custom forces first
+  graph.dagMode(null);
+  graph.d3Force('timeline', null);
+  graph.d3Force('radialPriority', null);
+  graph.d3Force('clusterAssignee', null);
+  graph.d3Force('flattenY', null);
+  graph.d3Force('flattenZ', null);
+
+  // Restore default forces
+  const nodeCount = graphData.nodes.length || 100;
+
+  switch (mode) {
+    case 'free':
+      graph.d3Force('charge').strength(nodeCount > 200 ? -60 : -120).distanceMax(400);
+      graph.d3Force('link').distance(nodeCount > 200 ? 40 : 60);
+      break;
+
+    case 'dag':
+      graph.dagMode('td');
+      graph.d3Force('charge').strength(-40).distanceMax(300);
+      graph.d3Force('link').distance(30);
+      break;
+
+    case 'timeline': {
+      // Flat plane: X = creation date, Y = 0 (flattened), Z = priority spread
+      graph.d3Force('charge').strength(-30).distanceMax(200);
+      graph.d3Force('link').distance(20);
+
+      // Compute time range for normalization
+      const times = graphData.nodes.map(n => new Date(n.created_at || 0).getTime()).filter(t => t > 0);
+      const minTime = Math.min(...times) || 0;
+      const maxTime = Math.max(...times) || 1;
+      const timeSpan = maxTime - minTime || 1;
+      const spread = Math.max(nodeCount * 2, 400);
+
+      graph.d3Force('timeline', (alpha) => {
+        for (const node of graphData.nodes) {
+          if (node._hidden) continue;
+          const t = new Date(node.created_at || 0).getTime();
+          const xTarget = ((t - minTime) / timeSpan - 0.5) * spread;
+          const zTarget = (node.priority - 2) * 30; // spread by priority on Z
+          node.vx += (xTarget - node.x) * alpha * 0.1;
+          node.vz += (zTarget - (node.z || 0)) * alpha * 0.05;
+        }
+      });
+      // Flatten Y axis
+      graph.d3Force('flattenY', (alpha) => {
+        for (const node of graphData.nodes) {
+          if (node._hidden) continue;
+          node.vy += (0 - (node.y || 0)) * alpha * 0.3;
+        }
+      });
+      break;
+    }
+
+    case 'radial': {
+      // Radial: distance from center = priority (P0 center, P4 outer)
+      graph.d3Force('charge').strength(-20).distanceMax(200);
+      graph.d3Force('link').distance(15);
+
+      const radiusScale = 60; // pixels per priority level
+      graph.d3Force('radialPriority', (alpha) => {
+        for (const node of graphData.nodes) {
+          if (node._hidden) continue;
+          const targetR = (node.priority + 0.5) * radiusScale;
+          const x = node.x || 0;
+          const z = node.z || 0;
+          const currentR = Math.sqrt(x * x + z * z) || 1;
+          const factor = (targetR / currentR - 1) * alpha * 0.08;
+          node.vx += x * factor;
+          node.vz += z * factor;
+        }
+      });
+      // Flatten Y for a disc layout
+      graph.d3Force('flattenY', (alpha) => {
+        for (const node of graphData.nodes) {
+          if (node._hidden) continue;
+          node.vy += (0 - (node.y || 0)) * alpha * 0.2;
+        }
+      });
+      break;
+    }
+
+    case 'cluster': {
+      // Cluster by assignee: each assignee gets an anchor point
+      graph.d3Force('charge').strength(-25).distanceMax(200);
+      graph.d3Force('link').distance(20);
+
+      // Build assignee → anchor position map
+      const assignees = [...new Set(graphData.nodes.map(n => n.assignee || '(unassigned)'))];
+      const anchorMap = {};
+      const clusterRadius = Math.max(assignees.length * 40, 150);
+      assignees.forEach((a, i) => {
+        const angle = (i / assignees.length) * Math.PI * 2;
+        anchorMap[a] = {
+          x: Math.cos(angle) * clusterRadius,
+          z: Math.sin(angle) * clusterRadius,
+        };
+      });
+
+      graph.d3Force('clusterAssignee', (alpha) => {
+        for (const node of graphData.nodes) {
+          if (node._hidden) continue;
+          const anchor = anchorMap[node.assignee || '(unassigned)'];
+          if (!anchor) continue;
+          node.vx += (anchor.x - (node.x || 0)) * alpha * 0.06;
+          node.vz += (anchor.z - (node.z || 0)) * alpha * 0.06;
+        }
+      });
+      // Flatten Y for a disc layout
+      graph.d3Force('flattenY', (alpha) => {
+        for (const node of graphData.nodes) {
+          if (node._hidden) continue;
+          node.vy += (0 - (node.y || 0)) * alpha * 0.15;
+        }
+      });
+      break;
+    }
+  }
+
+  // Reheat simulation to animate the transition
+  graph.d3ReheatSimulation();
+}
+
 // --- Controls ---
 function setupControls() {
-  const dagTd = document.getElementById('btn-dag-td');
-  const dagNone = document.getElementById('btn-dag-none');
   const btnRefresh = document.getElementById('btn-refresh');
   const searchInput = document.getElementById('search-input');
 
-  function setDagMode(mode, activeBtn) {
-    graph.dagMode(mode);
-    document.querySelectorAll('#layout-controls button').forEach(b => b.classList.remove('active'));
-    activeBtn.classList.add('active');
-  }
-
   const btnBloom = document.getElementById('btn-bloom');
 
-  dagTd.onclick = () => setDagMode('td', dagTd);
-  dagNone.onclick = () => setDagMode(null, dagNone);
+  // Layout buttons
+  document.getElementById('btn-layout-free').onclick = () => setLayout('free');
+  document.getElementById('btn-layout-dag').onclick = () => setLayout('dag');
+  document.getElementById('btn-layout-timeline').onclick = () => setLayout('timeline');
+  document.getElementById('btn-layout-radial').onclick = () => setLayout('radial');
+  document.getElementById('btn-layout-cluster').onclick = () => setLayout('cluster');
+
   btnRefresh.onclick = () => refresh();
 
   // Bloom toggle
@@ -840,9 +972,6 @@ function setupControls() {
     if (bloomPass) bloomPass.enabled = bloomEnabled;
     btnBloom.classList.toggle('active', bloomEnabled);
   };
-
-  // Free layout default
-  dagNone.classList.add('active');
 
   // Search
   searchInput.addEventListener('input', (e) => {
@@ -908,6 +1037,11 @@ function setupControls() {
     // 'b' to toggle bloom
     if (e.key === 'b' && document.activeElement !== searchInput) {
       btnBloom.click();
+    }
+    // 1-5 for layout modes
+    const layoutKeys = { '1': 'free', '2': 'dag', '3': 'timeline', '4': 'radial', '5': 'cluster' };
+    if (layoutKeys[e.key] && document.activeElement !== searchInput) {
+      setLayout(layoutKeys[e.key]);
     }
   });
 }
