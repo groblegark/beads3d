@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>beads3d</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      background: #0a0a0f;
+      color: #c0c0c0;
+      font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace;
+      overflow: hidden;
+    }
+    #graph { width: 100vw; height: 100vh; }
+
+    /* HUD overlay */
+    #hud {
+      position: fixed;
+      top: 16px;
+      left: 16px;
+      z-index: 100;
+      pointer-events: none;
+    }
+    #hud h1 {
+      font-size: 14px;
+      font-weight: 600;
+      color: #4a9eff;
+      letter-spacing: 2px;
+      text-transform: uppercase;
+      margin-bottom: 4px;
+    }
+    #hud .stats {
+      font-size: 11px;
+      color: #666;
+      line-height: 1.6;
+    }
+    #hud .stats span { color: #888; }
+
+    /* Node tooltip */
+    #tooltip {
+      position: fixed;
+      display: none;
+      background: rgba(10, 10, 20, 0.92);
+      border: 1px solid #2a2a3a;
+      border-radius: 6px;
+      padding: 10px 14px;
+      font-size: 11px;
+      line-height: 1.5;
+      max-width: 320px;
+      z-index: 200;
+      backdrop-filter: blur(8px);
+      box-shadow: 0 4px 20px rgba(0,0,0,0.5);
+    }
+    #tooltip .title {
+      font-weight: 600;
+      color: #e0e0e0;
+      margin-bottom: 4px;
+    }
+    #tooltip .id { color: #4a9eff; font-size: 10px; }
+    #tooltip .meta { color: #888; font-size: 10px; margin-top: 4px; }
+
+    /* Controls */
+    #controls {
+      position: fixed;
+      top: 16px;
+      right: 16px;
+      z-index: 100;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    #controls button {
+      background: rgba(20, 20, 35, 0.85);
+      border: 1px solid #2a2a3a;
+      color: #aaa;
+      font-family: inherit;
+      font-size: 10px;
+      padding: 6px 12px;
+      border-radius: 4px;
+      cursor: pointer;
+      transition: all 0.15s;
+      backdrop-filter: blur(4px);
+    }
+    #controls button:hover { border-color: #4a9eff; color: #fff; }
+    #controls button.active { border-color: #4a9eff; color: #4a9eff; }
+
+    /* Legend */
+    #legend {
+      position: fixed;
+      bottom: 16px;
+      left: 16px;
+      z-index: 100;
+      font-size: 10px;
+      display: flex;
+      gap: 14px;
+      opacity: 0.7;
+    }
+    #legend .item { display: flex; align-items: center; gap: 5px; }
+    #legend .dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      display: inline-block;
+    }
+
+    /* Connection status */
+    #status {
+      position: fixed;
+      bottom: 16px;
+      right: 16px;
+      z-index: 100;
+      font-size: 10px;
+      color: #444;
+    }
+    #status.connected { color: #2d8a4e; }
+    #status.error { color: #d04040; }
+  </style>
+</head>
+<body>
+  <div id="graph"></div>
+
+  <div id="hud">
+    <h1>beads3d</h1>
+    <div class="stats" id="stats"></div>
+  </div>
+
+  <div id="controls">
+    <button id="btn-dag-radial" class="active" title="Radial layout">radial</button>
+    <button id="btn-dag-td" title="Top-down DAG">top-down</button>
+    <button id="btn-dag-none" title="Free force layout">free</button>
+    <button id="btn-bloom" title="Toggle bloom">bloom</button>
+    <button id="btn-refresh" title="Refresh data">refresh</button>
+  </div>
+
+  <div id="legend">
+    <div class="item"><span class="dot" style="background:#2d8a4e"></span> open</div>
+    <div class="item"><span class="dot" style="background:#d4a017"></span> in_progress</div>
+    <div class="item"><span class="dot" style="background:#4a9eff"></span> review</div>
+    <div class="item"><span class="dot" style="background:#555"></span> closed</div>
+    <div class="item"><span class="dot" style="background:#8b45a6"></span> epic</div>
+    <div class="item"><span class="dot" style="background:#d04040"></span> blocked</div>
+  </div>
+
+  <div id="tooltip"></div>
+  <div id="status">connecting...</div>
+
+  <script type="module" src="/src/main.js"></script>
+</body>
+</html>
