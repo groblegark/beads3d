@@ -24,19 +24,19 @@ export const TYPE_COLORS = {
 };
 
 export const PRIORITY_SIZES = {
-  0: 10,  // P0 critical — largest
-  1: 7,   // P1 high
-  2: 5,   // P2 medium
-  3: 3.5, // P3 low
-  4: 2.5, // P4 backlog — smallest
+  0: 12,  // P0 critical — largest
+  1: 8,   // P1 high
+  2: 6,   // P2 medium
+  3: 4.5, // P3 low
+  4: 3.5, // P4 backlog — smallest
 };
 
 export const DEP_TYPE_COLORS = {
   blocks:       '#d04040',
   'waits-for':  '#d4a017',
-  'relates-to': '#4a9eff33',
-  'parent-child':'#8b45a644',
-  default:      '#2a2a3a',
+  'relates-to': '#4a9eff88',
+  'parent-child':'#8b45a688',
+  default:      '#3a3a5a',
 };
 
 export function nodeColor(issue) {

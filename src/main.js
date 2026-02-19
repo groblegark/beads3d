@@ -113,7 +113,7 @@ const LINK_ICON_MATERIALS = {
 };
 const LINK_ICON_DEFAULT = makeLinkIconTexture(drawDot, '#2a2a3a');
 
-const LINK_ICON_SCALE = 4; // sprite size in world units
+const LINK_ICON_SCALE = 8; // sprite size in world units
 
 // --- State ---
 let graphData = { nodes: [], links: [] };
@@ -304,8 +304,8 @@ function initGraph() {
       group.add(core);
 
       // Outer glow shell — Fresnel rim-lighting shader (bright at edges, clear at center)
-      const glow = new THREE.Mesh(GEO.sphereLo, createFresnelMaterial(hexColor, { opacity: 0.5, power: 2.5 }));
-      glow.scale.setScalar(size * 1.8);
+      const glow = new THREE.Mesh(GEO.sphereLo, createFresnelMaterial(hexColor, { opacity: 0.4, power: 3.0 }));
+      glow.scale.setScalar(size * 1.5);
       group.add(glow);
 
       // In-progress: pulsing ring — animated shader with soft edges
@@ -350,7 +350,7 @@ function initGraph() {
 
     // Link rendering — width responds to selection state
     .linkColor(l => linkColor(l))
-    .linkOpacity(0.35)
+    .linkOpacity(0.55)
     .linkWidth(l => {
       if (selectedNode) {
         const lk = linkKey(l);
@@ -358,7 +358,7 @@ function initGraph() {
       }
       return l.dep_type === 'blocks' ? 1.2 : 0.5;
     })
-    .linkDirectionalArrowLength(3.5)
+    .linkDirectionalArrowLength(5)
     .linkDirectionalArrowRelPos(1)
     .linkDirectionalArrowColor(l => linkColor(l))
     .linkVisibility(l => {
@@ -418,7 +418,7 @@ function initGraph() {
 
   // Scene extras
   const scene = graph.scene();
-  scene.fog = new THREE.FogExp2(0x0a0a0f, 0.00015);
+  scene.fog = new THREE.FogExp2(0x0a0a0f, 0.0001);
 
   // Nucleus — wireframe icosahedron at center (codebase)
   const nucleusGeo = new THREE.IcosahedronGeometry(12, 2);
@@ -456,9 +456,9 @@ function initGraph() {
   // Bloom post-processing
   bloomPass = new UnrealBloomPass(
     new THREE.Vector2(window.innerWidth, window.innerHeight),
-    0.8,   // strength — subtle glow
-    0.4,   // radius
-    0.85   // threshold — only bright parts bloom
+    1.2,   // strength — visible glow
+    0.6,   // radius — wider spread
+    0.2    // threshold — lower so node colors bloom
   );
   bloomPass.enabled = bloomEnabled;
   const composer = graph.postProcessingComposer();
@@ -1799,11 +1799,15 @@ function connectLiveUpdates() {
 async function main() {
   try {
     initGraph();
+    // Seed with empty data so the force layout initializes before first tick
+    graph.graphData({ nodes: [], links: [] });
     setupControls();
     await refresh();
     connectLiveUpdates();
     setInterval(refresh, POLL_INTERVAL);
     graph.cameraPosition({ x: 0, y: 0, z: 400 });
+    // Expose for Playwright tests
+    window.__beads3d = { graph, graphData: () => graphData };
   } catch (err) {
     console.error('Init failed:', err);
     document.getElementById('status').textContent = `init error: ${err.message}`;
