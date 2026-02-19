@@ -18,6 +18,9 @@ let searchFilter = '';
 let statusFilter = new Set(); // empty = show all
 let typeFilter = new Set();
 let startTime = performance.now();
+let selectedNode = null;
+let highlightNodes = new Set();
+let highlightLinks = new Set();
 
 // --- Build graph ---
 function initGraph() {
@@ -90,15 +93,32 @@ function initGraph() {
         group.add(new THREE.Mesh(spikeGeo, spikeMat));
       }
 
+      // Selection ring (hidden by default, made visible when node is selected)
+      const selRingGeo = new THREE.TorusGeometry(size * 2.5, 0.4, 8, 48);
+      const selRingMat = new THREE.MeshBasicMaterial({
+        color: 0x4a9eff,
+        transparent: true,
+        opacity: 0,
+      });
+      const selRing = new THREE.Mesh(selRingGeo, selRingMat);
+      selRing.userData.selectionRing = true;
+      group.add(selRing);
+
       return group;
     })
     .nodeLabel(() => '')
     .nodeVisibility(n => !n._hidden)
 
-    // Link rendering
+    // Link rendering — width responds to selection state
     .linkColor(l => linkColor(l))
     .linkOpacity(0.35)
-    .linkWidth(l => l.dep_type === 'blocks' ? 1.2 : 0.5)
+    .linkWidth(l => {
+      if (selectedNode) {
+        const lk = linkKey(l);
+        return highlightLinks.has(lk) ? (l.dep_type === 'blocks' ? 2.0 : 1.2) : 0.2;
+      }
+      return l.dep_type === 'blocks' ? 1.2 : 0.5;
+    })
     .linkDirectionalArrowLength(3.5)
     .linkDirectionalArrowRelPos(1)
     .linkDirectionalArrowColor(l => linkColor(l))
@@ -117,7 +137,7 @@ function initGraph() {
     // Interaction
     .onNodeHover(handleNodeHover)
     .onNodeClick(handleNodeClick)
-    .onBackgroundClick(() => { hideTooltip(); hideDetail(); });
+    .onBackgroundClick(() => { clearSelection(); hideTooltip(); hideDetail(); });
 
   // Force tuning — spread nodes more
   graph.d3Force('charge').strength(-120);
@@ -162,11 +182,54 @@ function initGraph() {
   return graph;
 }
 
-// --- Animation for pulsing in-progress rings ---
+// --- Selection logic ---
+
+// Unique key for a link (handles both object and string source/target)
+function linkKey(l) {
+  const s = typeof l.source === 'object' ? l.source.id : l.source;
+  const t = typeof l.target === 'object' ? l.target.id : l.target;
+  return `${s}->${t}`;
+}
+
+// Select a node: highlight it and all directly connected nodes/links
+function selectNode(node) {
+  selectedNode = node;
+  highlightNodes.clear();
+  highlightLinks.clear();
+
+  if (!node) return;
+
+  highlightNodes.add(node.id);
+
+  // Walk all links to find connected nodes
+  for (const l of graphData.links) {
+    const srcId = typeof l.source === 'object' ? l.source.id : l.source;
+    const tgtId = typeof l.target === 'object' ? l.target.id : l.target;
+    if (srcId === node.id || tgtId === node.id) {
+      highlightNodes.add(srcId);
+      highlightNodes.add(tgtId);
+      highlightLinks.add(linkKey(l));
+    }
+  }
+
+  // Force link width recalculation
+  graph.linkWidth(graph.linkWidth());
+}
+
+function clearSelection() {
+  selectedNode = null;
+  highlightNodes.clear();
+  highlightLinks.clear();
+  // Force link width recalculation
+  graph.linkWidth(graph.linkWidth());
+}
+
+// --- Animation loop: pulsing effects + selection dimming ---
 function startAnimation() {
   function animate() {
     requestAnimationFrame(animate);
     const t = (performance.now() - startTime) / 1000;
+    const hasSelection = selectedNode !== null;
 
     // Rotate nucleus slowly
     const scene = graph.scene();
@@ -175,11 +238,40 @@ function startAnimation() {
         obj.rotation.y = t * 0.1;
         obj.rotation.x = Math.sin(t * 0.05) * 0.3;
       }
-      if (obj.userData.pulse) {
-        obj.material.opacity = 0.3 + Math.sin(t * 3) * 0.2;
-        obj.rotation.z = t * 0.5;
-      }
     });
+
+    // Per-node selection visual feedback
+    for (const node of graphData.nodes) {
+      const threeObj = node.__threeObj;
+      if (!threeObj) continue;
+
+      const isHighlighted = !hasSelection || highlightNodes.has(node.id);
+      const isSelected = hasSelection && node.id === selectedNode.id;
+      const dimFactor = isHighlighted ? 1.0 : 0.15;
+
+      threeObj.traverse(child => {
+        if (!child.material) return;
+
+        if (child.userData.selectionRing) {
+          // Selection ring: visible + spinning only on selected node
+          if (isSelected) {
+            child.material.opacity = 0.6 + Math.sin(t * 4) * 0.2;
+            child.rotation.x = t * 1.2;
+            child.rotation.y = t * 0.8;
+          } else {
+            child.material.opacity = 0;
+          }
+        } else if (child.userData.pulse) {
+          // In-progress pulsing rings — respect dimming
+          child.material.opacity = (0.3 + Math.sin(t * 3) * 0.2) * dimFactor;
+          child.rotation.z = t * 0.5;
+        } else {
+          // Regular meshes — dim unrelated nodes when selection active
+          const baseOpacity = child.material.wireframe ? 0.15 : (child.material.opacity > 0.5 ? 0.85 : 0.12);
+          child.material.opacity = baseOpacity * dimFactor;
+        }
+      });
+    }
   }
   animate();
 }
@@ -411,6 +503,8 @@ function hideTooltip() {
 function handleNodeClick(node) {
   if (!node || node._hidden) return;
 
+  selectNode(node);
+
   // Fly camera to node
   const distance = 80;
   const distRatio = 1 + distance / Math.hypot(node.x, node.y, node.z);
@@ -627,7 +721,7 @@ function setupControls() {
       e.preventDefault();
       searchInput.focus();
     }
-    // Escape to clear search and close detail
+    // Escape to clear search, close detail, and deselect
     if (e.key === 'Escape') {
       if (document.activeElement === searchInput) {
         searchInput.value = '';
@@ -635,6 +729,7 @@ function setupControls() {
         searchInput.blur();
         applyFilters();
       }
+      clearSelection();
       hideDetail();
       hideTooltip();
     }
