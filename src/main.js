@@ -284,7 +284,7 @@ function toggleMinimap() {
 
 // --- Build graph ---
 function initGraph() {
-  graph = ForceGraph3D()(document.getElementById('graph'))
+  graph = ForceGraph3D({ rendererConfig: { preserveDrawingBuffer: true } })(document.getElementById('graph'))
     .backgroundColor('#0a0a0f')
     .showNavInfo(false)
 
@@ -1574,6 +1574,79 @@ function setLayout(mode) {
   graph.d3ReheatSimulation();
 }
 
+// --- Screenshot & Export ---
+function captureScreenshot() {
+  const renderer = graph.renderer();
+  const canvas = renderer.domElement;
+
+  // Force a render to ensure the buffer is fresh
+  renderer.render(graph.scene(), graph.camera());
+
+  const dataUrl = canvas.toDataURL('image/png');
+  const link = document.createElement('a');
+  link.download = `beads3d-${new Date().toISOString().slice(0, 19).replace(/:/g, '')}.png`;
+  link.href = dataUrl;
+  link.click();
+
+  const statusEl = document.getElementById('status');
+  statusEl.textContent = 'screenshot saved';
+  statusEl.className = 'connected';
+}
+
+function exportGraphJSON() {
+  const visibleNodes = graphData.nodes.filter(n => !n._hidden);
+  const visibleIds = new Set(visibleNodes.map(n => n.id));
+  const visibleLinks = graphData.links.filter(l => {
+    const srcId = typeof l.source === 'object' ? l.source.id : l.source;
+    const tgtId = typeof l.target === 'object' ? l.target.id : l.target;
+    return visibleIds.has(srcId) && visibleIds.has(tgtId);
+  });
+
+  const exportData = {
+    exported_at: new Date().toISOString(),
+    filters: {
+      search: searchFilter || null,
+      status: statusFilter.size > 0 ? [...statusFilter] : null,
+      type: typeFilter.size > 0 ? [...typeFilter] : null,
+    },
+    stats: {
+      total_nodes: graphData.nodes.length,
+      visible_nodes: visibleNodes.length,
+      visible_links: visibleLinks.length,
+    },
+    nodes: visibleNodes.map(n => ({
+      id: n.id,
+      title: n.title,
+      status: n.status,
+      priority: n.priority,
+      issue_type: n.issue_type,
+      assignee: n.assignee || null,
+      blocked: !!n._blocked,
+      x: n.x ? Math.round(n.x * 10) / 10 : null,
+      y: n.y ? Math.round(n.y * 10) / 10 : null,
+      z: n.z ? Math.round(n.z * 10) / 10 : null,
+    })),
+    links: visibleLinks.map(l => ({
+      source: typeof l.source === 'object' ? l.source.id : l.source,
+      target: typeof l.target === 'object' ? l.target.id : l.target,
+      dep_type: l.dep_type,
+    })),
+  };
+
+  const json = JSON.stringify(exportData, null, 2);
+  const blob = new Blob([json], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.download = `beads3d-${new Date().toISOString().slice(0, 19).replace(/:/g, '')}.json`;
+  link.href = url;
+  link.click();
+  URL.revokeObjectURL(url);
+
+  const statusEl = document.getElementById('status');
+  statusEl.textContent = `exported ${visibleNodes.length} nodes, ${visibleLinks.length} links`;
+  statusEl.className = 'connected';
+}
+
 // --- Controls ---
 function setupControls() {
   const btnRefresh = document.getElementById('btn-refresh');
@@ -1589,6 +1662,10 @@ function setupControls() {
   document.getElementById('btn-layout-cluster').onclick = () => setLayout('cluster');
 
   btnRefresh.onclick = () => refresh();
+
+  // Screenshot & export buttons
+  document.getElementById('btn-screenshot').onclick = () => captureScreenshot();
+  document.getElementById('btn-export').onclick = () => exportGraphJSON();
 
   // Bloom toggle
   btnBloom.onclick = () => {
@@ -1680,6 +1757,14 @@ function setupControls() {
     // 'm' to toggle minimap
     if (e.key === 'm' && document.activeElement !== searchInput) {
       toggleMinimap();
+    }
+    // 'p' for screenshot
+    if (e.key === 'p' && document.activeElement !== searchInput) {
+      captureScreenshot();
+    }
+    // 'x' for export
+    if (e.key === 'x' && document.activeElement !== searchInput) {
+      exportGraphJSON();
     }
     // 1-5 for layout modes
     const layoutKeys = { '1': 'free', '2': 'dag', '3': 'timeline', '4': 'radial', '5': 'cluster' };
