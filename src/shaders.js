@@ -136,11 +136,13 @@ export function createStarField(count = 2000, radius = 600) {
 
 // --- Selection Pulse Shader ---
 // A bright, pulsing ring for the selected node (replaces basic material).
+// Set `visible` uniform to 1.0 to show, 0.0 to hide.
 export function createSelectionRingMaterial() {
   return new THREE.ShaderMaterial({
     uniforms: {
       ringColor: { value: new THREE.Color(0x4a9eff) },
       time: { value: 0 },
+      visible: { value: 0.0 },
     },
     vertexShader: `
       varying vec2 vUv;
@@ -152,8 +154,10 @@ export function createSelectionRingMaterial() {
     fragmentShader: `
       uniform vec3 ringColor;
       uniform float time;
+      uniform float visible;
       varying vec2 vUv;
       void main() {
+        if (visible < 0.5) discard;
         float pulse = 0.5 + 0.3 * sin(time * 4.0);
         // Animated sweep around the ring
         float sweep = sin(vUv.x * 6.2832 + time * 2.0) * 0.5 + 0.5;

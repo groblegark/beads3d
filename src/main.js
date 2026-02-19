@@ -3,7 +3,7 @@ import * as THREE from 'three';
 import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
 import { BeadsAPI } from './api.js';
 import { nodeColor, nodeSize, linkColor, colorToHex } from './colors.js';
-import { createFresnelMaterial, createSelectionRingMaterial, createStarField, updateShaderTime } from './shaders.js';
+import { createFresnelMaterial, createPulseRingMaterial, createSelectionRingMaterial, createStarField, updateShaderTime } from './shaders.js';
 
 // --- Config ---
 const params = new URLSearchParams(window.location.search);
@@ -129,6 +129,10 @@ let bloomPass = null;
 let bloomEnabled = false;
 let layoutGuides = []; // THREE objects added as layout visual aids (cleaned up on layout switch)
 
+// Search navigation state
+let searchResults = []; // ordered list of matching node ids
+let searchResultIdx = -1; // current position in results (-1 = none)
+
 // --- Build graph ---
 function initGraph() {
   graph = ForceGraph3D()(document.getElementById('graph'))
@@ -155,11 +159,9 @@ function initGraph() {
       glow.scale.setScalar(size * 1.8);
       group.add(glow);
 
-      // In-progress: pulsing ring
+      // In-progress: pulsing ring — animated shader with soft edges
       if (n.status === 'in_progress') {
-        const ring = new THREE.Mesh(GEO.torus, new THREE.MeshBasicMaterial({
-          color: 0xd4a017, transparent: true, opacity: 0.5,
-        }));
+        const ring = new THREE.Mesh(GEO.torus, createPulseRingMaterial(0xd4a017));
         ring.scale.setScalar(size * 2.0);
         ring.rotation.x = Math.PI / 2;
         ring.userData.pulse = true;
@@ -405,9 +407,9 @@ function startAnimation() {
         if (!child.material) return;
 
         if (child.userData.selectionRing) {
-          // ShaderMaterial: control visibility via uniform, not opacity
-          if (child.material.uniforms) {
-            child.material.uniforms.time.value = isSelected ? t : -1000;
+          // Selection ring: toggle visibility via uniform, rotate when selected
+          if (child.material.uniforms && child.material.uniforms.visible) {
+            child.material.uniforms.visible.value = isSelected ? 1.0 : 0.0;
           } else {
             child.material.opacity = isSelected ? 0.6 + Math.sin(t * 4) * 0.2 : 0;
           }
@@ -416,15 +418,17 @@ function startAnimation() {
             child.rotation.y = t * 0.8;
           }
         } else if (child.userData.pulse) {
-          child.material.opacity = (0.3 + Math.sin(t * 3) * 0.2) * dimFactor;
+          // Pulse ring: shader handles pulse via time uniform (set by updateShaderTime).
+          // Just drive rotation here. For non-shader fallback, animate opacity directly.
           child.rotation.z = t * 0.5;
+          if (!child.material.uniforms) {
+            child.material.opacity = (0.3 + Math.sin(t * 3) * 0.2) * dimFactor;
+          }
         } else if (hasSelection) {
-          // Only dim/undim when selection is active (skip ShaderMaterials)
-          if (child.material.uniforms) {
-            if (child.material.uniforms.opacity) {
-              child.material.uniforms.opacity.value = child.material.uniforms.opacity.value * dimFactor;
-            }
-          } else {
+          // Dim/undim non-highlighted nodes when selection is active
+          if (child.material.uniforms && child.material.uniforms.opacity) {
+            child.material.uniforms.opacity.value = 0.4 * dimFactor;
+          } else if (!child.material.uniforms) {
             const baseOpacity = child.material.wireframe ? 0.15 : (child.material.opacity > 0.5 ? 0.85 : 0.12);
             child.material.opacity = baseOpacity * dimFactor;
           }
@@ -1045,7 +1049,31 @@ function applyFilters() {
     }
 
     n._hidden = hidden;
+    n._searchMatch = !hidden && !!q;
   });
+
+  // Build ordered search results for navigation
+  if (q) {
+    searchResults = graphData.nodes
+      .filter(n => n._searchMatch)
+      .sort((a, b) => {
+        const aId = (a.id || '').toLowerCase().includes(q) ? 0 : 1;
+        const bId = (b.id || '').toLowerCase().includes(q) ? 0 : 1;
+        if (aId !== bId) return aId - bId;
+        const aTitle = (a.title || '').toLowerCase().includes(q) ? 0 : 1;
+        const bTitle = (b.title || '').toLowerCase().includes(q) ? 0 : 1;
+        if (aTitle !== bTitle) return aTitle - bTitle;
+        return (a.priority ?? 9) - (b.priority ?? 9);
+      });
+    if (searchResults.length > 0) {
+      searchResultIdx = Math.min(Math.max(searchResultIdx, 0), searchResults.length - 1);
+    } else {
+      searchResultIdx = -1;
+    }
+  } else {
+    searchResults = [];
+    searchResultIdx = -1;
+  }
 
   // Trigger re-render
   graph.nodeVisibility(n => !n._hidden);
@@ -1058,12 +1086,51 @@ function applyFilters() {
   updateFilterCount();
 }
 
+// Navigate search results: fly camera to the current match
+function flyToSearchResult() {
+  if (searchResults.length === 0 || searchResultIdx < 0) return;
+  const node = searchResults[searchResultIdx];
+  if (!node) return;
+
+  selectNode(node);
+
+  const distance = 80;
+  const dx = node.x || 0, dy = node.y || 0, dz = node.z || 0;
+  const distRatio = 1 + distance / (Math.hypot(dx, dy, dz) || 1);
+  graph.cameraPosition(
+    { x: dx * distRatio, y: dy * distRatio, z: dz * distRatio },
+    node, 800
+  );
+
+  showDetail(node);
+}
+
+function nextSearchResult() {
+  if (searchResults.length === 0) return;
+  searchResultIdx = (searchResultIdx + 1) % searchResults.length;
+  updateFilterCount();
+  flyToSearchResult();
+}
+
+function prevSearchResult() {
+  if (searchResults.length === 0) return;
+  searchResultIdx = (searchResultIdx - 1 + searchResults.length) % searchResults.length;
+  updateFilterCount();
+  flyToSearchResult();
+}
+
 function updateFilterCount() {
   const visible = graphData.nodes.filter(n => !n._hidden).length;
   const total = graphData.nodes.length;
   const el = document.getElementById('filter-count');
   if (el) {
-    el.textContent = visible < total ? `${visible}/${total}` : `${total}`;
+    if (searchResults.length > 0) {
+      el.textContent = `${searchResultIdx + 1}/${searchResults.length} matches · ${visible}/${total}`;
+    } else if (visible < total) {
+      el.textContent = `${visible}/${total}`;
+    } else {
+      el.textContent = `${total}`;
+    }
   }
 }
 
@@ -1377,10 +1444,25 @@ function setupControls() {
     btnBloom.classList.toggle('active', bloomEnabled);
   };
 
-  // Search
+  // Search — input updates filter, Enter/arrows navigate results
   searchInput.addEventListener('input', (e) => {
     searchFilter = e.target.value;
+    searchResultIdx = 0; // reset to first result on new input
     applyFilters();
+  });
+  searchInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      if (searchResults.length > 0) {
+        flyToSearchResult();
+      }
+    } else if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      nextSearchResult();
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      prevSearchResult();
+    }
   });
 
   // Status filter toggles
