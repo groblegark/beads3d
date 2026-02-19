@@ -283,6 +283,56 @@
       border-bottom: none;
     }
 
+    /* Context menu */
+    #context-menu {
+      position: fixed;
+      display: none;
+      background: rgba(12, 12, 22, 0.95);
+      border: 1px solid #2a2a3a;
+      border-radius: 6px;
+      padding: 4px 0;
+      font-size: 11px;
+      z-index: 400;
+      backdrop-filter: blur(12px);
+      box-shadow: 0 4px 24px rgba(0,0,0,0.6);
+      min-width: 180px;
+    }
+    #context-menu .ctx-header {
+      padding: 6px 12px;
+      font-size: 10px;
+      color: #4a9eff;
+      border-bottom: 1px solid #1a1a2a;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      max-width: 240px;
+    }
+    #context-menu .ctx-item {
+      padding: 6px 12px;
+      color: #bbb;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    #context-menu .ctx-item:hover {
+      background: rgba(74, 158, 255, 0.1);
+      color: #fff;
+    }
+    #context-menu .ctx-item .ctx-key {
+      margin-left: auto;
+      font-size: 9px;
+      color: #444;
+    }
+    #context-menu .ctx-sep {
+      height: 1px;
+      background: #1a1a2a;
+      margin: 4px 0;
+    }
+    #context-menu .ctx-toast {
+      color: #2d8a4e;
+    }
+
     /* Scrollbar styling */
     ::-webkit-scrollbar { width: 4px; }
     ::-webkit-scrollbar-track { background: transparent; }
@@ -319,6 +369,7 @@
     <div class="btn-row" id="layout-controls">
       <button class="ctrl-btn" id="btn-dag-td">dag</button>
       <button class="ctrl-btn active" id="btn-dag-none">free</button>
+      <button class="ctrl-btn" id="btn-bloom">bloom</button>
       <button class="ctrl-btn" id="btn-refresh">refresh</button>
     </div>
 
@@ -335,9 +386,10 @@
 
   <div id="tooltip"></div>
   <div id="status">connecting...</div>
-  <div id="keyhints">/ search &middot; esc close &middot; r refresh</div>
+  <div id="keyhints">/ search &middot; esc close &middot; r refresh &middot; b bloom</div>
 
   <div id="detail"></div>
+  <div id="context-menu"></div>
 
   <script type="module" src="/src/main.js"></script>
 </body>

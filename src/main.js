@@ -1,5 +1,6 @@
 import ForceGraph3D from '3d-force-graph';
 import * as THREE from 'three';
+import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
 import { BeadsAPI } from './api.js';
 import { nodeColor, nodeSize, linkColor, colorToHex } from './colors.js';
 
@@ -21,6 +22,8 @@ let startTime = performance.now();
 let selectedNode = null;
 let highlightNodes = new Set();
 let highlightLinks = new Set();
+let bloomPass = null;
+let bloomEnabled = false;
 
 // --- Build graph ---
 function initGraph() {
@@ -137,7 +140,8 @@ function initGraph() {
     // Interaction
     .onNodeHover(handleNodeHover)
     .onNodeClick(handleNodeClick)
-    .onBackgroundClick(() => { clearSelection(); hideTooltip(); hideDetail(); });
+    .onNodeRightClick(handleNodeRightClick)
+    .onBackgroundClick(() => { clearSelection(); hideTooltip(); hideDetail(); hideContextMenu(); });
 
   // Force tuning — spread nodes more
   graph.d3Force('charge').strength(-120);
@@ -175,6 +179,22 @@ function initGraph() {
   const camera = graph.camera();
   camera.far = 50000;
   camera.updateProjectionMatrix();
+
+  // Bloom post-processing
+  bloomPass = new UnrealBloomPass(
+    new THREE.Vector2(window.innerWidth, window.innerHeight),
+    0.8,   // strength — subtle glow
+    0.4,   // radius
+    0.85   // threshold — only bright parts bloom
+  );
+  bloomPass.enabled = bloomEnabled;
+  const composer = graph.postProcessingComposer();
+  composer.addPass(bloomPass);
+
+  // Handle window resize for bloom
+  window.addEventListener('resize', () => {
+    bloomPass.resolution.set(window.innerWidth, window.innerHeight);
+  });
 
   // Start animation loop for pulsing effects
   startAnimation();
@@ -614,6 +634,139 @@ function escapeHtml(str) {
   return div.innerHTML;
 }
 
+// --- Context menu (right-click) ---
+const ctxMenu = document.getElementById('context-menu');
+let ctxNode = null;
+
+function handleNodeRightClick(node, event) {
+  event.preventDefault();
+  if (!node || node._hidden) return;
+  ctxNode = node;
+  hideTooltip();
+
+  ctxMenu.innerHTML = `
+    <div class="ctx-header">${escapeHtml(node.id)}</div>
+    <div class="ctx-item" data-action="show-deps">show dependencies<span class="ctx-key">d</span></div>
+    <div class="ctx-item" data-action="show-blockers">show blockers<span class="ctx-key">b</span></div>
+    <div class="ctx-sep"></div>
+    <div class="ctx-item" data-action="copy-id">copy ID<span class="ctx-key">c</span></div>
+    <div class="ctx-item" data-action="copy-show">copy bd show ${escapeHtml(node.id)}</div>
+  `;
+
+  // Position menu, keeping it on screen
+  ctxMenu.style.display = 'block';
+  const rect = ctxMenu.getBoundingClientRect();
+  let x = event.clientX;
+  let y = event.clientY;
+  if (x + rect.width > window.innerWidth) x = window.innerWidth - rect.width - 8;
+  if (y + rect.height > window.innerHeight) y = window.innerHeight - rect.height - 8;
+  ctxMenu.style.left = x + 'px';
+  ctxMenu.style.top = y + 'px';
+
+  // Handle clicks on menu items
+  ctxMenu.onclick = (e) => {
+    const item = e.target.closest('.ctx-item');
+    if (!item) return;
+    const action = item.dataset.action;
+    handleContextAction(action, node);
+  };
+}
+
+function hideContextMenu() {
+  ctxMenu.style.display = 'none';
+  ctxMenu.onclick = null;
+  ctxNode = null;
+}
+
+function handleContextAction(action, node) {
+  switch (action) {
+    case 'show-deps':
+      highlightSubgraph(node, 'downstream');
+      hideContextMenu();
+      break;
+    case 'show-blockers':
+      highlightSubgraph(node, 'upstream');
+      hideContextMenu();
+      break;
+    case 'copy-id':
+      copyToClipboard(node.id);
+      showCtxToast('copied!');
+      break;
+    case 'copy-show':
+      copyToClipboard(`bd show ${node.id}`);
+      showCtxToast('copied!');
+      break;
+  }
+}
+
+// Walk the dependency graph in one direction to build a subgraph highlight
+function highlightSubgraph(node, direction) {
+  selectedNode = node;
+  highlightNodes.clear();
+  highlightLinks.clear();
+
+  const visited = new Set();
+  const queue = [node.id];
+
+  while (queue.length > 0) {
+    const current = queue.shift();
+    if (visited.has(current)) continue;
+    visited.add(current);
+    highlightNodes.add(current);
+
+    for (const l of graphData.links) {
+      const srcId = typeof l.source === 'object' ? l.source.id : l.source;
+      const tgtId = typeof l.target === 'object' ? l.target.id : l.target;
+
+      if (direction === 'downstream') {
+        // Dependencies: this node depends on (source=node → target=dep)
+        if (srcId === current) {
+          highlightLinks.add(linkKey(l));
+          if (!visited.has(tgtId)) queue.push(tgtId);
+        }
+      } else {
+        // Blockers: what blocks this node (target=node ← source=blocker)
+        if (tgtId === current) {
+          highlightLinks.add(linkKey(l));
+          if (!visited.has(srcId)) queue.push(srcId);
+        }
+      }
+    }
+  }
+
+  graph.linkWidth(graph.linkWidth());
+}
+
+function copyToClipboard(text) {
+  navigator.clipboard.writeText(text).catch(() => {
+    // Fallback for non-HTTPS contexts
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    ta.style.position = 'fixed';
+    ta.style.opacity = '0';
+    document.body.appendChild(ta);
+    ta.select();
+    document.execCommand('copy');
+    document.body.removeChild(ta);
+  });
+}
+
+function showCtxToast(msg) {
+  const items = ctxMenu.querySelectorAll('.ctx-item');
+  // Brief flash on the clicked item, then close
+  setTimeout(() => hideContextMenu(), 400);
+}
+
+// Close context menu on any click elsewhere or Escape
+document.addEventListener('click', (e) => {
+  if (ctxMenu.style.display === 'block' && !ctxMenu.contains(e.target)) {
+    hideContextMenu();
+  }
+});
+
+// Suppress browser context menu on the graph canvas
+document.getElementById('graph').addEventListener('contextmenu', (e) => e.preventDefault());
+
 // --- Filtering ---
 function applyFilters() {
   const q = searchFilter.toLowerCase();
@@ -673,9 +826,18 @@ function setupControls() {
     activeBtn.classList.add('active');
   }
 
+  const btnBloom = document.getElementById('btn-bloom');
+
   dagTd.onclick = () => setDagMode('td', dagTd);
   dagNone.onclick = () => setDagMode(null, dagNone);
   btnRefresh.onclick = () => refresh();
+
+  // Bloom toggle
+  btnBloom.onclick = () => {
+    bloomEnabled = !bloomEnabled;
+    if (bloomPass) bloomPass.enabled = bloomEnabled;
+    btnBloom.classList.toggle('active', bloomEnabled);
+  };
 
   // Free layout default
   dagNone.classList.add('active');
@@ -721,8 +883,12 @@ function setupControls() {
       e.preventDefault();
       searchInput.focus();
     }
-    // Escape to clear search, close detail, and deselect
+    // Escape to clear search, close detail, close context menu, and deselect
     if (e.key === 'Escape') {
+      if (ctxMenu.style.display === 'block') {
+        hideContextMenu();
+        return;
+      }
       if (document.activeElement === searchInput) {
         searchInput.value = '';
         searchFilter = '';
@@ -736,6 +902,10 @@ function setupControls() {
     // 'r' to refresh
     if (e.key === 'r' && document.activeElement !== searchInput) {
       refresh();
+    }
+    // 'b' to toggle bloom
+    if (e.key === 'b' && document.activeElement !== searchInput) {
+      btnBloom.click();
     }
   });
 }
