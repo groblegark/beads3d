@@ -333,6 +333,33 @@
       color: #2d8a4e;
     }
 
+    /* Minimap */
+    #minimap {
+      position: fixed;
+      bottom: 56px;
+      right: 16px;
+      z-index: 100;
+      width: 180px;
+      height: 140px;
+      background: rgba(10, 10, 20, 0.85);
+      border: 1px solid #2a2a3a;
+      border-radius: 6px;
+      cursor: crosshair;
+      backdrop-filter: blur(4px);
+      image-rendering: pixelated;
+    }
+    #minimap:hover { border-color: #4a9eff; }
+    #minimap-label {
+      position: fixed;
+      bottom: 198px;
+      right: 16px;
+      z-index: 100;
+      font-size: 9px;
+      color: #333;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+    }
+
     /* Scrollbar styling */
     ::-webkit-scrollbar { width: 4px; }
     ::-webkit-scrollbar-track { background: transparent; }
@@ -398,8 +425,10 @@
   </div>
 
   <div id="tooltip"></div>
+  <span id="minimap-label">minimap</span>
+  <canvas id="minimap" width="360" height="280"></canvas>
   <div id="status">connecting...</div>
-  <div id="keyhints">/ search &middot; enter fly &middot; &uarr;&darr; cycle &middot; esc close &middot; r refresh &middot; b bloom &middot; 1-5 layout</div>
+  <div id="keyhints">/ search &middot; enter fly &middot; &uarr;&darr; cycle &middot; esc close &middot; r refresh &middot; b bloom &middot; m minimap &middot; 1-5 layout</div>
 
   <div id="detail"></div>
   <div id="context-menu"></div>
