@@ -33,6 +33,7 @@ let highlightNodes = new Set();
 let highlightLinks = new Set();
 let bloomPass = null;
 let bloomEnabled = false;
+let layoutGuides = []; // THREE objects added as layout visual aids (cleaned up on layout switch)
 
 // --- Build graph ---
 function initGraph() {
@@ -818,6 +819,148 @@ function updateFilterCount() {
 // --- Layout modes ---
 let currentLayout = 'free';
 
+function clearLayoutGuides() {
+  const scene = graph.scene();
+  for (const obj of layoutGuides) {
+    scene.remove(obj);
+    if (obj.geometry) obj.geometry.dispose();
+    if (obj.material) obj.material.dispose();
+    // Sprite sheets
+    if (obj.material && obj.material.map) obj.material.map.dispose();
+  }
+  layoutGuides = [];
+}
+
+function makeTextSprite(text, opts = {}) {
+  const fontSize = opts.fontSize || 24;
+  const color = opts.color || '#4a9eff';
+  const canvas = document.createElement('canvas');
+  const ctx = canvas.getContext('2d');
+  ctx.font = `${fontSize}px SF Mono, Fira Code, monospace`;
+  const metrics = ctx.measureText(text);
+  canvas.width = Math.ceil(metrics.width) + 16;
+  canvas.height = fontSize + 12;
+  ctx.font = `${fontSize}px SF Mono, Fira Code, monospace`;
+  ctx.fillStyle = color;
+  ctx.textBaseline = 'top';
+  ctx.fillText(text, 8, 6);
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.minFilter = THREE.LinearFilter;
+  const mat = new THREE.SpriteMaterial({ map: tex, transparent: true, opacity: opts.opacity || 0.6 });
+  const sprite = new THREE.Sprite(mat);
+  sprite.scale.set(canvas.width / 4, canvas.height / 4, 1);
+  return sprite;
+}
+
+function addRadialGuides() {
+  const scene = graph.scene();
+  const radiusScale = 60;
+  const labels = ['P0', 'P1', 'P2', 'P3', 'P4'];
+  for (let p = 0; p <= 4; p++) {
+    const r = (p + 0.5) * radiusScale;
+    // Ring in XZ plane
+    const ringGeo = new THREE.RingGeometry(r - 0.3, r + 0.3, 64);
+    const ringMat = new THREE.MeshBasicMaterial({ color: 0x1a2a3a, transparent: true, opacity: 0.15, side: THREE.DoubleSide });
+    const ring = new THREE.Mesh(ringGeo, ringMat);
+    ring.rotation.x = -Math.PI / 2; // lay flat in XZ
+    scene.add(ring);
+    layoutGuides.push(ring);
+
+    // Priority label
+    const label = makeTextSprite(labels[p], { fontSize: 20, color: '#2a3a4a', opacity: 0.4 });
+    label.position.set(r + 8, 2, 0);
+    scene.add(label);
+    layoutGuides.push(label);
+  }
+}
+
+function addTimelineGuides(nodes) {
+  const scene = graph.scene();
+  const times = nodes.map(n => new Date(n.created_at || 0).getTime()).filter(t => t > 0);
+  if (times.length === 0) return;
+  const minTime = Math.min(...times);
+  const maxTime = Math.max(...times);
+  const timeSpan = maxTime - minTime || 1;
+  const nodeCount = nodes.length || 100;
+  const spread = Math.max(nodeCount * 2, 400);
+
+  // Time axis line (X axis)
+  const axisGeo = new THREE.BufferGeometry().setFromPoints([
+    new THREE.Vector3(-spread / 2 - 20, 0, 0),
+    new THREE.Vector3(spread / 2 + 20, 0, 0),
+  ]);
+  const axisMat = new THREE.LineBasicMaterial({ color: 0x1a2a3a, transparent: true, opacity: 0.3 });
+  const axis = new THREE.Line(axisGeo, axisMat);
+  scene.add(axis);
+  layoutGuides.push(axis);
+
+  // Date tick marks — one per month (approximate)
+  const msPerMonth = 30 * 24 * 3600 * 1000;
+  const startMonth = new Date(minTime);
+  startMonth.setDate(1);
+  startMonth.setHours(0, 0, 0, 0);
+  let tickTime = startMonth.getTime();
+  while (tickTime <= maxTime + msPerMonth) {
+    const x = ((tickTime - minTime) / timeSpan - 0.5) * spread;
+    const d = new Date(tickTime);
+    const label = makeTextSprite(
+      `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`,
+      { fontSize: 16, color: '#2a3a4a', opacity: 0.35 }
+    );
+    label.position.set(x, -8, 0);
+    scene.add(label);
+    layoutGuides.push(label);
+
+    // Vertical tick
+    const tickGeo = new THREE.BufferGeometry().setFromPoints([
+      new THREE.Vector3(x, -3, 0),
+      new THREE.Vector3(x, 3, 0),
+    ]);
+    const tick = new THREE.Line(tickGeo, new THREE.LineBasicMaterial({ color: 0x1a2a3a, transparent: true, opacity: 0.2 }));
+    scene.add(tick);
+    layoutGuides.push(tick);
+
+    tickTime += msPerMonth;
+  }
+
+  // Priority zone labels on Z axis
+  const pLabels = ['P0', 'P1', 'P2', 'P3', 'P4'];
+  for (let p = 0; p <= 4; p++) {
+    const z = (p - 2) * 30;
+    const label = makeTextSprite(pLabels[p], { fontSize: 16, color: '#2a3a4a', opacity: 0.3 });
+    label.position.set(-spread / 2 - 30, 0, z);
+    scene.add(label);
+    layoutGuides.push(label);
+  }
+}
+
+function addClusterGuides(nodes) {
+  const scene = graph.scene();
+  const assignees = [...new Set(nodes.map(n => n.assignee || '(unassigned)'))];
+  const clusterRadius = Math.max(assignees.length * 40, 150);
+
+  assignees.forEach((a, i) => {
+    const angle = (i / assignees.length) * Math.PI * 2;
+    const x = Math.cos(angle) * clusterRadius;
+    const z = Math.sin(angle) * clusterRadius;
+
+    // Assignee label
+    const label = makeTextSprite(a, { fontSize: 22, color: '#ff6b35', opacity: 0.5 });
+    label.position.set(x, 15, z);
+    scene.add(label);
+    layoutGuides.push(label);
+
+    // Small anchor ring at cluster center
+    const ringGeo = new THREE.RingGeometry(8, 10, 24);
+    const ringMat = new THREE.MeshBasicMaterial({ color: 0xff6b35, transparent: true, opacity: 0.08, side: THREE.DoubleSide });
+    const ring = new THREE.Mesh(ringGeo, ringMat);
+    ring.position.set(x, 0, z);
+    ring.rotation.x = -Math.PI / 2;
+    scene.add(ring);
+    layoutGuides.push(ring);
+  });
+}
+
 function setLayout(mode) {
   currentLayout = mode;
 
@@ -826,7 +969,8 @@ function setLayout(mode) {
   const btn = document.getElementById(`btn-layout-${mode}`);
   if (btn) btn.classList.add('active');
 
-  // Clear all custom forces first
+  // Clear all custom forces and visual guides
+  clearLayoutGuides();
   graph.dagMode(null);
   graph.d3Force('timeline', null);
   graph.d3Force('radialPriority', null);
@@ -878,6 +1022,9 @@ function setLayout(mode) {
           node.vy += (0 - (node.y || 0)) * alpha * 0.3;
         }
       });
+      addTimelineGuides(graphData.nodes);
+      // Side camera to see the timeline plane
+      graph.cameraPosition({ x: 0, y: 300, z: 200 }, { x: 0, y: 0, z: 0 }, 1200);
       break;
     }
 
@@ -906,6 +1053,9 @@ function setLayout(mode) {
           node.vy += (0 - (node.y || 0)) * alpha * 0.2;
         }
       });
+      addRadialGuides();
+      // Top-down camera for disc view
+      graph.cameraPosition({ x: 0, y: 500, z: 50 }, { x: 0, y: 0, z: 0 }, 1200);
       break;
     }
 
@@ -942,6 +1092,9 @@ function setLayout(mode) {
           node.vy += (0 - (node.y || 0)) * alpha * 0.15;
         }
       });
+      addClusterGuides(graphData.nodes);
+      // Top-down camera for cluster disc view
+      graph.cameraPosition({ x: 0, y: 500, z: 50 }, { x: 0, y: 0, z: 0 }, 1200);
       break;
     }
   }
