@@ -3,6 +3,7 @@ import * as THREE from 'three';
 import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
 import { BeadsAPI } from './api.js';
 import { nodeColor, nodeSize, linkColor, colorToHex } from './colors.js';
+import { createFresnelMaterial, createSelectionRingMaterial, createStarField, updateShaderTime } from './shaders.js';
 
 // --- Config ---
 const params = new URLSearchParams(window.location.search);
@@ -20,6 +21,99 @@ const GEO = {
   icosa:      new THREE.IcosahedronGeometry(1, 1),     // epic shell
   octa:       new THREE.OctahedronGeometry(1, 0),      // blocked spikes
 };
+
+// --- Link icon textures (shared, one per dep type) ---
+// Draw simple glyphs on canvas → texture → SpriteMaterial
+function makeLinkIconTexture(drawFn, color) {
+  const size = 64;
+  const canvas = document.createElement('canvas');
+  canvas.width = size;
+  canvas.height = size;
+  const ctx = canvas.getContext('2d');
+  ctx.clearRect(0, 0, size, size);
+  drawFn(ctx, size, color);
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.minFilter = THREE.LinearFilter;
+  return new THREE.SpriteMaterial({ map: tex, transparent: true, opacity: 0.85, depthWrite: false });
+}
+
+// Shield glyph — for "blocks" deps
+function drawShield(ctx, s, color) {
+  const cx = s / 2, cy = s / 2;
+  ctx.beginPath();
+  ctx.moveTo(cx, cy - 22);
+  ctx.bezierCurveTo(cx + 20, cy - 18, cx + 22, cy, cx + 18, cy + 14);
+  ctx.lineTo(cx, cy + 24);
+  ctx.lineTo(cx - 18, cy + 14);
+  ctx.bezierCurveTo(cx - 22, cy, cx - 20, cy - 18, cx, cy - 22);
+  ctx.closePath();
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 3;
+  ctx.stroke();
+  // X inside shield
+  ctx.beginPath();
+  ctx.moveTo(cx - 7, cy - 5); ctx.lineTo(cx + 7, cy + 7);
+  ctx.moveTo(cx + 7, cy - 5); ctx.lineTo(cx - 7, cy + 7);
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 2.5;
+  ctx.stroke();
+}
+
+// Clock glyph — for "waits-for" deps
+function drawClock(ctx, s, color) {
+  const cx = s / 2, cy = s / 2, r = 18;
+  ctx.beginPath();
+  ctx.arc(cx, cy, r, 0, Math.PI * 2);
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 2.5;
+  ctx.stroke();
+  // Clock hands
+  ctx.beginPath();
+  ctx.moveTo(cx, cy); ctx.lineTo(cx, cy - 12); // 12 o'clock
+  ctx.moveTo(cx, cy); ctx.lineTo(cx + 8, cy + 3); // ~2 o'clock
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 2.5;
+  ctx.stroke();
+}
+
+// Chain link glyph — for "parent-child" deps
+function drawChain(ctx, s, color) {
+  const cx = s / 2, cy = s / 2;
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 2.5;
+  // Top oval
+  ctx.beginPath();
+  ctx.ellipse(cx, cy - 8, 8, 12, 0, 0, Math.PI * 2);
+  ctx.stroke();
+  // Bottom oval (overlapping)
+  ctx.beginPath();
+  ctx.ellipse(cx, cy + 8, 8, 12, 0, 0, Math.PI * 2);
+  ctx.stroke();
+}
+
+// Dot glyph — for "relates-to" or default
+function drawDot(ctx, s, color) {
+  const cx = s / 2, cy = s / 2;
+  ctx.beginPath();
+  ctx.arc(cx, cy, 8, 0, Math.PI * 2);
+  ctx.fillStyle = color;
+  ctx.globalAlpha = 0.6;
+  ctx.fill();
+  ctx.globalAlpha = 1;
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 2;
+  ctx.stroke();
+}
+
+const LINK_ICON_MATERIALS = {
+  'blocks':       makeLinkIconTexture(drawShield, '#d04040'),
+  'waits-for':    makeLinkIconTexture(drawClock,  '#d4a017'),
+  'parent-child': makeLinkIconTexture(drawChain,  '#8b45a666'),
+  'relates-to':   makeLinkIconTexture(drawDot,    '#4a9eff'),
+};
+const LINK_ICON_DEFAULT = makeLinkIconTexture(drawDot, '#2a2a3a');
+
+const LINK_ICON_SCALE = 4; // sprite size in world units
 
 // --- State ---
 let graphData = { nodes: [], links: [] };
@@ -56,11 +150,9 @@ function initGraph() {
       core.scale.setScalar(size);
       group.add(core);
 
-      // Outer glow shell — low-poly shared geometry
-      const glow = new THREE.Mesh(GEO.sphereLo, new THREE.MeshBasicMaterial({
-        color: hexColor, transparent: true, opacity: 0.12,
-      }));
-      glow.scale.setScalar(size * 1.6);
+      // Outer glow shell — Fresnel rim-lighting shader (bright at edges, clear at center)
+      const glow = new THREE.Mesh(GEO.sphereLo, createFresnelMaterial(hexColor, { opacity: 0.5, power: 2.5 }));
+      glow.scale.setScalar(size * 1.8);
       group.add(glow);
 
       // In-progress: pulsing ring
@@ -93,9 +185,9 @@ function initGraph() {
       }
 
       // Selection ring (invisible until selected)
-      const selRing = new THREE.Mesh(GEO.torus, new THREE.MeshBasicMaterial({
-        color: 0x4a9eff, transparent: true, opacity: 0,
-      }));
+      // Selection ring — animated shader with sweep effect (invisible until selected)
+      const selRingMat = createSelectionRingMaterial();
+      const selRing = new THREE.Mesh(GEO.torus, selRingMat);
       selRing.scale.setScalar(size * 2.5);
       selRing.userData.selectionRing = true;
       group.add(selRing);
@@ -122,6 +214,34 @@ function initGraph() {
       const src = typeof l.source === 'object' ? l.source : graphData.nodes.find(n => n.id === l.source);
       const tgt = typeof l.target === 'object' ? l.target : graphData.nodes.find(n => n.id === l.target);
       return src && tgt && !src._hidden && !tgt._hidden;
+    })
+
+    // Link icons — sprite at midpoint showing dep type (shield=blocks, clock=waits, chain=parent)
+    .linkThreeObjectExtend(true)
+    .linkThreeObject(l => {
+      const baseMat = LINK_ICON_MATERIALS[l.dep_type] || LINK_ICON_DEFAULT;
+      const sprite = new THREE.Sprite(baseMat.clone()); // clone so per-link opacity works
+      sprite.scale.setScalar(LINK_ICON_SCALE);
+      return sprite;
+    })
+    .linkPositionUpdate((obj, { start, end }, l) => {
+      // Position icon at midpoint of the link
+      if (obj && obj.isSprite) {
+        const mid = {
+          x: (start.x + end.x) / 2,
+          y: (start.y + end.y) / 2,
+          z: (start.z + end.z) / 2,
+        };
+        obj.position.set(mid.x, mid.y, mid.z);
+
+        // Dim icon when not part of selection highlight
+        if (selectedNode) {
+          const lk = linkKey(l);
+          obj.material.opacity = highlightLinks.has(lk) ? 0.85 : 0.08;
+        } else {
+          obj.material.opacity = 0.85;
+        }
+      }
     })
 
     // Directional particles — only on blocking links (perf at scale)
@@ -172,6 +292,10 @@ function initGraph() {
   scene.add(new THREE.Mesh(membraneGeo, membraneMat));
 
   scene.add(new THREE.AmbientLight(0x404060, 0.5));
+
+  // Star field — subtle background particles for depth
+  const stars = createStarField(1500, 500);
+  scene.add(stars);
 
   // Extend camera draw distance
   const camera = graph.camera();
@@ -262,6 +386,9 @@ function startAnimation() {
       nucleusMesh.rotation.x = Math.sin(t * 0.05) * 0.3;
     }
 
+    // Update all shader uniforms (star field twinkle, Fresnel, selection ring sweep)
+    updateShaderTime(graph.scene(), t);
+
     // Per-node visual feedback — only iterate when needed
     for (const node of graphData.nodes) {
       const threeObj = node.__threeObj;
@@ -278,20 +405,29 @@ function startAnimation() {
         if (!child.material) return;
 
         if (child.userData.selectionRing) {
+          // ShaderMaterial: control visibility via uniform, not opacity
+          if (child.material.uniforms) {
+            child.material.uniforms.time.value = isSelected ? t : -1000;
+          } else {
+            child.material.opacity = isSelected ? 0.6 + Math.sin(t * 4) * 0.2 : 0;
+          }
           if (isSelected) {
-            child.material.opacity = 0.6 + Math.sin(t * 4) * 0.2;
             child.rotation.x = t * 1.2;
             child.rotation.y = t * 0.8;
-          } else {
-            child.material.opacity = 0;
           }
         } else if (child.userData.pulse) {
           child.material.opacity = (0.3 + Math.sin(t * 3) * 0.2) * dimFactor;
           child.rotation.z = t * 0.5;
         } else if (hasSelection) {
-          // Only dim/undim when selection is active
-          const baseOpacity = child.material.wireframe ? 0.15 : (child.material.opacity > 0.5 ? 0.85 : 0.12);
-          child.material.opacity = baseOpacity * dimFactor;
+          // Only dim/undim when selection is active (skip ShaderMaterials)
+          if (child.material.uniforms) {
+            if (child.material.uniforms.opacity) {
+              child.material.uniforms.opacity.value = child.material.uniforms.opacity.value * dimFactor;
+            }
+          } else {
+            const baseOpacity = child.material.wireframe ? 0.15 : (child.material.opacity > 0.5 ? 0.85 : 0.12);
+            child.material.opacity = baseOpacity * dimFactor;
+          }
         }
       });
     }
@@ -649,6 +785,7 @@ function handleNodeRightClick(node, event) {
 
   ctxMenu.innerHTML = `
     <div class="ctx-header">${escapeHtml(node.id)}</div>
+    <div class="ctx-item" data-action="expand-deps">expand dep tree<span class="ctx-key">e</span></div>
     <div class="ctx-item" data-action="show-deps">show dependencies<span class="ctx-key">d</span></div>
     <div class="ctx-item" data-action="show-blockers">show blockers<span class="ctx-key">b</span></div>
     <div class="ctx-sep"></div>
@@ -683,6 +820,10 @@ function hideContextMenu() {
 
 function handleContextAction(action, node) {
   switch (action) {
+    case 'expand-deps':
+      expandDepTree(node);
+      hideContextMenu();
+      break;
     case 'show-deps':
       highlightSubgraph(node, 'downstream');
       hideContextMenu();
@@ -738,6 +879,116 @@ function highlightSubgraph(node, direction) {
   }
 
   graph.linkWidth(graph.linkWidth());
+}
+
+// --- Dep tree expansion: load full deps for a node via Show API ---
+const expandedNodes = new Set(); // track which nodes have been expanded
+
+async function expandDepTree(node) {
+  if (expandedNodes.has(node.id)) {
+    console.log(`[beads3d] ${node.id} already expanded`);
+    return;
+  }
+  expandedNodes.add(node.id);
+
+  const statusEl = document.getElementById('status');
+  statusEl.textContent = `expanding ${node.id}...`;
+
+  try {
+    const full = await api.show(node.id);
+    const existingIds = new Set(graphData.nodes.map(n => n.id));
+    const existingLinks = new Set(graphData.links.map(l => linkKey(l)));
+    let addedNodes = 0;
+    let addedLinks = 0;
+
+    // Process dependencies from Show response
+    const deps = full.dependencies || [];
+    for (const dep of deps) {
+      const depId = dep.depends_on_id || dep.id;
+      if (!depId) continue;
+
+      const depType = dep.type || dep.dependency_type || 'blocks';
+
+      // Add node if not already in graph
+      if (!existingIds.has(depId)) {
+        graphData.nodes.push({
+          id: depId,
+          title: dep.title || depId,
+          status: dep.status || 'open',
+          priority: dep.priority ?? 3,
+          issue_type: dep.issue_type || 'task',
+          assignee: dep.assignee || '',
+          _blocked: false,
+          _expanded: true,
+        });
+        existingIds.add(depId);
+        addedNodes++;
+      }
+
+      // Add link if not already present
+      const lk = `${node.id}->${depId}`;
+      if (!existingLinks.has(lk)) {
+        graphData.links.push({ source: node.id, target: depId, dep_type: depType });
+        existingLinks.add(lk);
+        addedLinks++;
+      }
+    }
+
+    // Process blocked_by
+    const blockedBy = full.blocked_by || [];
+    for (const blockerId of blockedBy) {
+      if (!blockerId) continue;
+
+      if (!existingIds.has(blockerId)) {
+        graphData.nodes.push({
+          id: blockerId,
+          title: blockerId,
+          status: 'open',
+          priority: 3,
+          issue_type: 'task',
+          _blocked: false,
+          _expanded: true,
+        });
+        existingIds.add(blockerId);
+        addedNodes++;
+      }
+
+      const lk = `${blockerId}->${node.id}`;
+      if (!existingLinks.has(lk)) {
+        graphData.links.push({ source: blockerId, target: node.id, dep_type: 'blocks' });
+        existingLinks.add(lk);
+        addedLinks++;
+      }
+    }
+
+    // Fetch titles for newly added placeholder nodes (max 10, parallel)
+    const untitledNodes = graphData.nodes.filter(n => n._expanded && n.title === n.id);
+    await Promise.all(untitledNodes.slice(0, 10).map(async (n) => {
+      try {
+        const detail = await api.show(n.id);
+        n.title = detail.title || n.id;
+        n.status = detail.status || n.status;
+        n.issue_type = detail.issue_type || n.issue_type;
+        n.priority = detail.priority ?? n.priority;
+        n.assignee = detail.assignee || n.assignee;
+        n._blocked = !!(detail.blocked_by && detail.blocked_by.length > 0);
+      } catch { /* placeholder stays as-is */ }
+    }));
+
+    // Update the graph with new data
+    graph.graphData(graphData);
+
+    // Highlight the expanded subtree
+    selectNode(node);
+
+    statusEl.textContent = `expanded ${node.id}: +${addedNodes} nodes, +${addedLinks} links`;
+    statusEl.className = 'connected';
+    console.log(`[beads3d] Expanded ${node.id}: +${addedNodes} nodes, +${addedLinks} links`);
+  } catch (err) {
+    statusEl.textContent = `expand failed: ${err.message}`;
+    statusEl.className = 'error';
+    console.error(`[beads3d] Expand failed for ${node.id}:`, err);
+  }
 }
 
 function copyToClipboard(text) {
