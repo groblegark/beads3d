@@ -4404,6 +4404,10 @@ function showAgentWindow(node) {
       }
     } catch (err) {
       console.error('[beads3d] mail send failed:', err);
+      mailInput.value = text; // restore the message so user can retry
+      const compose = el.querySelector('.agent-mail-compose');
+      compose.classList.add('send-error');
+      setTimeout(() => compose.classList.remove('send-error'), 2000);
     }
     mailInput.disabled = false;
     mailSend.disabled = false;
