@@ -25,11 +25,9 @@ tasks:
       node --version
       npm --version
 
-  # ── Install dependencies (cached by lockfile) ─────────────────────────
+  # ── Install dependencies ──────────────────────────────────────────────
   - key: deps
     use: [code, node]
-    filter:
-      - package-lock.json
     run: npm ci
 
   # ── Build (vite production build) ─────────────────────────────────────

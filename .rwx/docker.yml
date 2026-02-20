@@ -37,18 +37,11 @@ tasks:
   # ── Install dependencies ──────────────────────────────────────────────
   - key: deps
     use: [code, node]
-    filter:
-      - package-lock.json
     run: npm ci
 
   # ── Build (vite production build) ─────────────────────────────────────
   - key: build
     use: deps
-    filter:
-      - src/**
-      - index.html
-      - vite.config.js
-      - package.json
     run: |
       npm run build
       ls -la dist/
