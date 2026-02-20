@@ -1095,12 +1095,10 @@ test.describe('filter buttons', () => {
 
     // Click to activate
     await btn.click();
-    await page.waitForTimeout(300);
     await expect(btn).toHaveClass(/active/);
 
     // Click again to deactivate
     await btn.click();
-    await page.waitForTimeout(300);
     await expect(btn).not.toHaveClass(/active/);
   });
 
@@ -1117,24 +1115,24 @@ test.describe('filter buttons', () => {
 
     // Click "in_progress" filter — should show only in_progress nodes
     await page.locator('.filter-status[data-status="in_progress"]').click();
-    await page.waitForTimeout(500);
+
+    // Wait for filter to apply: all visible nodes should be in_progress (bd-jib6v)
+    await page.waitForFunction((total) => {
+      const b = window.__beads3d;
+      if (!b) return false;
+      const visible = b.graphData().nodes.filter(n => !n._hidden);
+      return visible.length > 0 && visible.length < total
+        && visible.every(n => n.status === 'in_progress' || n.issue_type === 'agent');
+    }, totalNodes, { timeout: 5000 });
 
     const visibleNodes = await page.evaluate(() => {
       const b = window.__beads3d;
       return b ? b.graphData().nodes.filter(n => !n._hidden).length : 0;
     });
 
-    // Should be fewer than total (only in_progress nodes visible)
+    // Should be fewer than total (only in_progress nodes + agents visible)
     expect(visibleNodes).toBeLessThan(totalNodes);
     expect(visibleNodes).toBeGreaterThan(0);
-
-    // Verify all visible nodes are in_progress
-    const allInProgress = await page.evaluate(() => {
-      const b = window.__beads3d;
-      if (!b) return false;
-      return b.graphData().nodes.filter(n => !n._hidden).every(n => n.status === 'in_progress');
-    });
-    expect(allInProgress).toBe(true);
   });
 
   test('type filter button toggles and filters nodes', async ({ page }) => {
@@ -1146,17 +1144,16 @@ test.describe('filter buttons', () => {
     // Click "bug" type filter
     const btn = page.locator('.filter-type[data-type="bug"]');
     await btn.click();
-    await page.waitForTimeout(500);
-    await expect(btn).toHaveClass(/active/);
 
-    // Only bug nodes should be visible
-    const allBugs = await page.evaluate(() => {
+    // Wait for filter to apply: visible nodes should be bugs or agents (bd-jib6v, bd-keeha)
+    await page.waitForFunction(() => {
       const b = window.__beads3d;
       if (!b) return false;
       const visible = b.graphData().nodes.filter(n => !n._hidden);
-      return visible.length > 0 && visible.every(n => n.issue_type === 'bug');
-    });
-    expect(allBugs).toBe(true);
+      return visible.length > 0
+        && visible.every(n => n.issue_type === 'bug' || n.issue_type === 'agent');
+    }, null, { timeout: 5000 });
+    await expect(btn).toHaveClass(/active/);
   });
 
   test('combined status and type filters intersect', async ({ page }) => {
@@ -1167,17 +1164,26 @@ test.describe('filter buttons', () => {
 
     // Filter: status=open AND type=task
     await page.locator('.filter-status[data-status="open"]').click();
-    await page.waitForTimeout(200);
     await page.locator('.filter-type[data-type="task"]').click();
-    await page.waitForTimeout(500);
+
+    // Wait for combined filter: visible should be open tasks (+ agents exempt) (bd-jib6v)
+    await page.waitForFunction(() => {
+      const b = window.__beads3d;
+      if (!b) return false;
+      const visible = b.graphData().nodes.filter(n => !n._hidden);
+      const nonAgents = visible.filter(n => n.issue_type !== 'agent');
+      return nonAgents.length > 0
+        && nonAgents.every(n => n.status === 'open' && n.issue_type === 'task');
+    }, null, { timeout: 5000 });
 
     const visible = await page.evaluate(() => {
       const b = window.__beads3d;
       if (!b) return [];
-      return b.graphData().nodes.filter(n => !n._hidden).map(n => ({ id: n.id, status: n.status, type: n.issue_type }));
+      return b.graphData().nodes.filter(n => !n._hidden && n.issue_type !== 'agent')
+        .map(n => ({ id: n.id, status: n.status, type: n.issue_type }));
     });
 
-    // All visible should be open tasks
+    // All visible non-agent nodes should be open tasks
     for (const n of visible) {
       expect(n.status).toBe('open');
       expect(n.type).toBe('task');
