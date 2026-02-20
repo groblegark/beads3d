@@ -4,6 +4,9 @@
 export const STATUS_COLORS = {
   open:        '#2d8a4e',  // green — alive, ready
   in_progress: '#d4a017',  // amber — active metabolism
+  blocked:     '#d04040',  // red — blocked by dependency (bd-7haep)
+  hooked:      '#c06020',  // burnt orange — waiting on hook (bd-7haep)
+  deferred:    '#3a5a7a',  // muted blue — deferred/dormant (bd-7haep)
   review:      '#4a9eff',  // blue — signaling
   on_ice:      '#3a5a7a',  // muted blue — dormant
   closed:      '#333340',  // dark — inert

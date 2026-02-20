@@ -1531,7 +1531,7 @@ async function fetchViaGraph(statusEl) {
   // limits the query to recently-updated closed beads only (bd-uc0mw).
   const graphArgs = {
     limit: MAX_NODES,
-    status: ['open', 'in_progress', 'closed'],
+    status: ['open', 'in_progress', 'blocked', 'hooked', 'deferred', 'closed'], // bd-7haep: include all active statuses
     max_age_days: activeAgeDays || 0,
     include_deps: true,
     include_body: true,
@@ -1633,8 +1633,8 @@ async function fetchViaGraph(statusEl) {
 async function fetchViaList(statusEl) {
   const SKIP_TYPES = new Set(['message', 'config', 'gate', 'wisp', 'convoy', 'decision', 'molecule', 'formula', 'advice', 'role']);
 
-  // Parallel fetch: open/in_progress beads + blocked + stats
-  const [openIssues, inProgress, blocked, stats] = await Promise.all([
+  // Parallel fetch: open/active beads + blocked + stats (bd-7haep: include all active statuses)
+  const [openIssues, inProgress, hookedIssues, deferredIssues, blocked, stats] = await Promise.all([
     api.list({
       limit: MAX_NODES * 2, // over-fetch to compensate for client-side filtering
       status: 'open',
@@ -1644,6 +1644,8 @@ async function fetchViaList(statusEl) {
       limit: 100,
       status: 'in_progress',
     }),
+    api.list({ limit: 100, status: 'hooked' }).catch(() => []),
+    api.list({ limit: 100, status: 'deferred' }).catch(() => []),
     api.blocked().catch(() => []),
     api.stats().catch(() => null),
   ]);
@@ -1662,6 +1664,8 @@ async function fetchViaList(statusEl) {
 
   addIssues(openIssues);
   addIssues(inProgress);
+  addIssues(hookedIssues);
+  addIssues(deferredIssues);
   addIssues(blocked);
 
   const issues = [...issueMap.values()].slice(0, MAX_NODES);
@@ -4055,14 +4059,19 @@ function setupControls() {
   });
 
   // Status filter toggles
+  // "active" button covers in_progress + blocked + hooked + deferred (bd-7haep)
+  const STATUS_GROUPS = {
+    in_progress: ['in_progress', 'blocked', 'hooked', 'deferred'],
+  };
   document.querySelectorAll('.filter-status').forEach(btn => {
     btn.addEventListener('click', () => {
       const status = btn.dataset.status;
+      const group = STATUS_GROUPS[status] || [status];
       btn.classList.toggle('active');
       if (statusFilter.has(status)) {
-        statusFilter.delete(status);
+        group.forEach(s => statusFilter.delete(s));
       } else {
-        statusFilter.add(status);
+        group.forEach(s => statusFilter.add(s));
       }
       applyFilters();
     });
