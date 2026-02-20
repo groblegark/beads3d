@@ -3364,16 +3364,16 @@ function setupControls() {
     if (e.key === 'r' && document.activeElement !== searchInput) {
       refresh();
     }
-    // 'b' to toggle bloom
-    if (e.key === 'b' && document.activeElement !== searchInput) {
+    // 'b' to toggle bloom (ignore key repeat to prevent rapid on/off — beads-p97b)
+    if (e.key === 'b' && !e.repeat && document.activeElement !== searchInput) {
       btnBloom.click();
     }
     // 'm' to toggle minimap
-    if (e.key === 'm' && document.activeElement !== searchInput) {
+    if (e.key === 'm' && !e.repeat && document.activeElement !== searchInput) {
       toggleMinimap();
     }
-    // 'l' for labels toggle (bd-1o2f7)
-    if (e.key === 'l' && document.activeElement !== searchInput) {
+    // 'l' for labels toggle (bd-1o2f7, beads-p97b: ignore key repeat)
+    if (e.key === 'l' && !e.repeat && document.activeElement !== searchInput) {
       toggleLabels();
     }
     // 'p' for screenshot

@@ -287,6 +287,93 @@ test.describe('keyboard shortcuts', () => {
 
     expect(tracker.getCallsTo('Graph').length).toBeGreaterThan(initialGraphCalls);
   });
+
+  test('l toggles labels on and off persistently (beads-p97b)', async ({ page }) => {
+    const tracker = createAPITracker();
+    await mockAPI(page, tracker);
+    await page.goto('/');
+    await waitForGraph(page);
+
+    // Labels should be off initially
+    const btnLabels = page.locator('#btn-labels');
+    await expect(btnLabels).not.toHaveClass(/active/);
+
+    // Press 'l' to toggle labels on
+    await page.keyboard.press('l');
+    await page.waitForTimeout(300);
+
+    // Button should now be active
+    await expect(btnLabels).toHaveClass(/active/);
+
+    // Label sprites should be visible in the Three.js scene
+    const labelsOn = await page.evaluate(() => {
+      const b = window.__beads3d;
+      if (!b || !b.graph) return null;
+      let visible = 0;
+      let total = 0;
+      b.graph.scene().traverse(child => {
+        if (child.userData && child.userData.nodeLabel) {
+          total++;
+          if (child.visible) visible++;
+        }
+      });
+      return { visible, total };
+    });
+    expect(labelsOn.total).toBeGreaterThan(0);
+    expect(labelsOn.visible).toBe(labelsOn.total);
+
+    // Wait a moment to verify labels persist (not just a flash)
+    await page.waitForTimeout(500);
+
+    const stillOn = await page.evaluate(() => {
+      const b = window.__beads3d;
+      let visible = 0;
+      let total = 0;
+      b.graph.scene().traverse(child => {
+        if (child.userData && child.userData.nodeLabel) {
+          total++;
+          if (child.visible) visible++;
+        }
+      });
+      return { visible, total };
+    });
+    expect(stillOn.visible).toBe(stillOn.total);
+
+    // Press 'l' again to toggle labels off
+    await page.keyboard.press('l');
+    await page.waitForTimeout(300);
+
+    await expect(btnLabels).not.toHaveClass(/active/);
+
+    const labelsOff = await page.evaluate(() => {
+      const b = window.__beads3d;
+      let visible = 0;
+      b.graph.scene().traverse(child => {
+        if (child.userData && child.userData.nodeLabel && child.visible) visible++;
+      });
+      return visible;
+    });
+    expect(labelsOff).toBe(0);
+  });
+
+  test('labels button click toggles labels on and off', async ({ page }) => {
+    const tracker = createAPITracker();
+    await mockAPI(page, tracker);
+    await page.goto('/');
+    await waitForGraph(page);
+
+    const btnLabels = page.locator('#btn-labels');
+
+    // Click button to turn on
+    await btnLabels.click();
+    await page.waitForTimeout(300);
+    await expect(btnLabels).toHaveClass(/active/);
+
+    // Click button to turn off
+    await btnLabels.click();
+    await page.waitForTimeout(300);
+    await expect(btnLabels).not.toHaveClass(/active/);
+  });
 });
 
 // --- Bulk mutation tests (bd-d8189) ---
