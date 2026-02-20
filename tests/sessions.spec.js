@@ -379,10 +379,6 @@ test.describe('Doot injection: multi-agent simultaneous bursts', () => {
     await page.goto('/');
     await waitForGraph(page);
 
-    if (typeof await page.evaluate(() => window.__beads3d_spawnDoot) !== 'function') {
-      test.skip(); return;
-    }
-
     const dootCount = await page.evaluate(() => {
       const b = window.__beads3d;
       const nodes = b.graph.graphData().nodes;
