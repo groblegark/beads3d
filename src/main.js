@@ -172,6 +172,18 @@ let cameraFrozen = false; // true when multi-select has locked orbit controls (b
 let labelsVisible = false; // true when persistent info labels are shown on all nodes (bd-1o2f7)
 let activeAgeDays = 7; // age filter: show beads updated within N days (0 = all) (bd-uc0mw)
 
+// Resource cleanup refs (bd-7n4g8)
+let _bloomResizeHandler = null;
+let _pollIntervalId = null;
+let _searchDebounceTimer = null;
+
+// Timeline scrubber state (bd-huwyz): logarithmic time-range selection
+let timelineMinMs = 0;   // oldest bead timestamp (ms)
+let timelineMaxMs = 0;   // newest bead timestamp (ms)
+let timelineSelStart = 0; // selected range start (0..1 in log space)
+let timelineSelEnd = 1;   // selected range end (0..1 in log space)
+let timelineActive = false; // true when user has narrowed the range
+
 // Live event doots — floating text particles above agent nodes (bd-c7723)
 const doots = []; // { sprite, node, birth, lifetime, vx, vy, vz }
 
@@ -654,10 +666,10 @@ function initGraph() {
   const composer = graph.postProcessingComposer();
   composer.addPass(bloomPass);
 
-  // Handle window resize for bloom
-  window.addEventListener('resize', () => {
-    bloomPass.resolution.set(window.innerWidth, window.innerHeight);
-  });
+  // Handle window resize for bloom (bd-7n4g8: store ref for cleanup)
+  if (_bloomResizeHandler) window.removeEventListener('resize', _bloomResizeHandler);
+  _bloomResizeHandler = () => bloomPass.resolution.set(window.innerWidth, window.innerHeight);
+  window.addEventListener('resize', _bloomResizeHandler);
 
   // Start animation loop for pulsing effects
   startAnimation();
@@ -1679,6 +1691,19 @@ function applyFilters() {
       }
     }
 
+    // Timeline scrubber filter (bd-huwyz): hide nodes outside the selected time range.
+    // Uses created_at mapped through the logarithmic scale. Agent nodes are exempt.
+    if (!hidden && timelineActive && n.issue_type !== 'agent') {
+      const t = new Date(n.created_at || n.updated_at || 0).getTime();
+      if (t > 0 && timelineMinMs > 0) {
+        const pos = timeToLogPos(t, timelineMinMs, timelineMaxMs);
+        if (pos < timelineSelStart || pos > timelineSelEnd) {
+          hidden = true;
+          n._ageFiltered = true;
+        }
+      }
+    }
+
     n._hidden = hidden;
     n._searchMatch = !hidden && !!q;
   });
@@ -1735,6 +1760,235 @@ function applyFilters() {
   });
 
   updateFilterCount();
+  updateTimeline();
+}
+
+// --- Timeline Scrubber (bd-huwyz) ---
+// Logarithmic time-range selector. Recent time is expanded (easy to distinguish
+// today vs yesterday), while older time is compressed (months ago squish together).
+// Log transform: pos = log(1 + t/scale) / log(1 + range/scale)
+
+const TIMELINE_LOG_SCALE = 86400000; // 1 day in ms — controls curvature
+
+function timeToLogPos(timeMs, minMs, maxMs) {
+  const range = maxMs - minMs || 1;
+  const t = timeMs - minMs;
+  return Math.log1p(t / TIMELINE_LOG_SCALE) / Math.log1p(range / TIMELINE_LOG_SCALE);
+}
+
+function logPosToTime(pos, minMs, maxMs) {
+  const range = maxMs - minMs || 1;
+  const logMax = Math.log1p(range / TIMELINE_LOG_SCALE);
+  return minMs + (Math.expm1(pos * logMax) * TIMELINE_LOG_SCALE);
+}
+
+function formatTimelineDate(ms) {
+  const d = new Date(ms);
+  const now = new Date();
+  const diffDays = (now - d) / 86400000;
+  if (diffDays < 1) return 'today';
+  if (diffDays < 2) return 'yesterday';
+  if (diffDays < 7) return `${Math.floor(diffDays)}d ago`;
+  if (diffDays < 30) return `${Math.floor(diffDays / 7)}w ago`;
+  if (diffDays < 365) {
+    const months = ['jan','feb','mar','apr','may','jun','jul','aug','sep','oct','nov','dec'];
+    return `${months[d.getMonth()]} ${d.getDate()}`;
+  }
+  return `${d.getFullYear()}`;
+}
+
+function updateTimeline() {
+  const canvas = document.getElementById('timeline-canvas');
+  if (!canvas) return;
+  const ctx = canvas.getContext('2d');
+  const rangeEl = document.getElementById('timeline-range');
+  const handleL = document.getElementById('handle-left');
+  const handleR = document.getElementById('handle-right');
+  const lblOldest = document.getElementById('tl-oldest');
+  const lblNewest = document.getElementById('tl-newest');
+  const lblRange = document.getElementById('tl-range');
+
+  const times = graphData.nodes
+    .filter(n => n.issue_type !== 'agent')
+    .map(n => new Date(n.created_at || n.updated_at || 0).getTime())
+    .filter(t => t > 0);
+
+  if (times.length === 0) {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    lblOldest.textContent = '';
+    lblNewest.textContent = '';
+    lblRange.textContent = 'no data';
+    rangeEl.style.display = 'none';
+    handleL.style.display = 'none';
+    handleR.style.display = 'none';
+    return;
+  }
+
+  timelineMinMs = Math.min(...times);
+  timelineMaxMs = Math.max(...times);
+
+  const rect = canvas.getBoundingClientRect();
+  const dpr = window.devicePixelRatio || 1;
+  canvas.width = rect.width * dpr;
+  canvas.height = rect.height * dpr;
+  ctx.scale(dpr, dpr);
+  const W = rect.width;
+  const H = rect.height;
+
+  // Build histogram in log space
+  const BUCKETS = 40;
+  const buckets = new Array(BUCKETS).fill(0);
+  const statusBuckets = new Array(BUCKETS).fill(null).map(() => ({ open: 0, active: 0, closed: 0 }));
+  for (const node of graphData.nodes) {
+    if (node.issue_type === 'agent') continue;
+    const t = new Date(node.created_at || node.updated_at || 0).getTime();
+    if (t <= 0) continue;
+    const pos = timeToLogPos(t, timelineMinMs, timelineMaxMs);
+    const idx = Math.min(Math.floor(pos * BUCKETS), BUCKETS - 1);
+    buckets[idx]++;
+    if (node.status === 'in_progress') statusBuckets[idx].active++;
+    else if (node.status === 'closed') statusBuckets[idx].closed++;
+    else statusBuckets[idx].open++;
+  }
+  const maxBucket = Math.max(...buckets, 1);
+
+  ctx.clearRect(0, 0, W, H);
+  const barW = W / BUCKETS;
+  for (let i = 0; i < BUCKETS; i++) {
+    if (buckets[i] === 0) continue;
+    const barH = (buckets[i] / maxBucket) * (H - 4);
+    const x = i * barW;
+    const y = H - 2 - barH;
+    const inRange = (i / BUCKETS) >= timelineSelStart && ((i + 1) / BUCKETS) <= timelineSelEnd;
+    const total = statusBuckets[i].open + statusBuckets[i].active + statusBuckets[i].closed;
+    if (total > 0) {
+      let cy = y;
+      if (statusBuckets[i].active > 0) {
+        const h = (statusBuckets[i].active / total) * barH;
+        ctx.fillStyle = inRange ? 'rgba(212, 160, 23, 0.8)' : 'rgba(212, 160, 23, 0.3)';
+        ctx.fillRect(x + 1, cy, barW - 2, h);
+        cy += h;
+      }
+      if (statusBuckets[i].open > 0) {
+        const h = (statusBuckets[i].open / total) * barH;
+        ctx.fillStyle = inRange ? 'rgba(45, 138, 78, 0.8)' : 'rgba(45, 138, 78, 0.3)';
+        ctx.fillRect(x + 1, cy, barW - 2, h);
+        cy += h;
+      }
+      if (statusBuckets[i].closed > 0) {
+        const h = (statusBuckets[i].closed / total) * barH;
+        ctx.fillStyle = inRange ? 'rgba(100, 100, 120, 0.6)' : 'rgba(100, 100, 120, 0.2)';
+        ctx.fillRect(x + 1, cy, barW - 2, h);
+      }
+    }
+  }
+
+  // Position range highlight and handles
+  const selLeftPx = timelineSelStart * W;
+  const selRightPx = timelineSelEnd * W;
+  rangeEl.style.display = 'block';
+  rangeEl.style.left = selLeftPx + 'px';
+  rangeEl.style.width = (selRightPx - selLeftPx) + 'px';
+  handleL.style.display = 'block';
+  handleL.style.left = (selLeftPx - 4) + 'px';
+  handleR.style.display = 'block';
+  handleR.style.left = (selRightPx - 4) + 'px';
+
+  lblOldest.textContent = formatTimelineDate(timelineMinMs);
+  lblNewest.textContent = formatTimelineDate(timelineMaxMs);
+  if (timelineSelStart > 0.001 || timelineSelEnd < 0.999) {
+    const startDate = logPosToTime(timelineSelStart, timelineMinMs, timelineMaxMs);
+    const endDate = logPosToTime(timelineSelEnd, timelineMinMs, timelineMaxMs);
+    lblRange.textContent = `${formatTimelineDate(startDate)} \u2013 ${formatTimelineDate(endDate)}`;
+    timelineActive = true;
+  } else {
+    lblRange.textContent = 'all time';
+    timelineActive = false;
+  }
+}
+
+function initTimelineScrubber() {
+  const canvas = document.getElementById('timeline-canvas');
+  if (!canvas) return;
+  let dragging = null; // 'left', 'right', or 'range'
+  let dragStartX = 0;
+  let dragStartSelStart = 0;
+  let dragStartSelEnd = 0;
+
+  function posFromEvent(e) {
+    const rect = canvas.getBoundingClientRect();
+    return Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+  }
+
+  document.getElementById('handle-left').addEventListener('mousedown', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    dragging = 'left';
+    dragStartX = posFromEvent(e);
+  });
+
+  document.getElementById('handle-right').addEventListener('mousedown', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    dragging = 'right';
+    dragStartX = posFromEvent(e);
+  });
+
+  canvas.addEventListener('mousedown', (e) => {
+    const pos = posFromEvent(e);
+    if (pos >= timelineSelStart + 0.02 && pos <= timelineSelEnd - 0.02) {
+      dragging = 'range';
+      dragStartX = pos;
+      dragStartSelStart = timelineSelStart;
+      dragStartSelEnd = timelineSelEnd;
+    } else {
+      const distToLeft = Math.abs(pos - timelineSelStart);
+      const distToRight = Math.abs(pos - timelineSelEnd);
+      if (distToLeft < distToRight) {
+        timelineSelStart = pos;
+        dragging = 'left';
+      } else {
+        timelineSelEnd = pos;
+        dragging = 'right';
+      }
+      updateTimeline();
+      applyFilters();
+    }
+  });
+
+  document.addEventListener('mousemove', (e) => {
+    if (!dragging) return;
+    const pos = posFromEvent(e);
+    if (dragging === 'left') {
+      timelineSelStart = Math.min(pos, timelineSelEnd - 0.02);
+    } else if (dragging === 'right') {
+      timelineSelEnd = Math.max(pos, timelineSelStart + 0.02);
+    } else if (dragging === 'range') {
+      const delta = pos - dragStartX;
+      const width = dragStartSelEnd - dragStartSelStart;
+      let newStart = dragStartSelStart + delta;
+      let newEnd = dragStartSelEnd + delta;
+      if (newStart < 0) { newStart = 0; newEnd = width; }
+      if (newEnd > 1) { newEnd = 1; newStart = 1 - width; }
+      timelineSelStart = newStart;
+      timelineSelEnd = newEnd;
+    }
+    updateTimeline();
+  });
+
+  document.addEventListener('mouseup', () => {
+    if (dragging) {
+      dragging = null;
+      applyFilters();
+    }
+  });
+
+  canvas.addEventListener('dblclick', () => {
+    timelineSelStart = 0;
+    timelineSelEnd = 1;
+    updateTimeline();
+    applyFilters();
+  });
 }
 
 // Navigate search results: fly camera to the current match
@@ -2421,11 +2675,12 @@ function setupControls() {
   // Labels toggle (bd-1o2f7)
   document.getElementById('btn-labels').onclick = () => toggleLabels();
 
-  // Search — input updates filter, Enter/arrows navigate results
+  // Search — debounced input updates filter, Enter/arrows navigate results (bd-7n4g8)
   searchInput.addEventListener('input', (e) => {
     searchFilter = e.target.value;
     searchResultIdx = 0; // reset to first result on new input
-    applyFilters();
+    clearTimeout(_searchDebounceTimer);
+    _searchDebounceTimer = setTimeout(() => applyFilters(), 150);
   });
   searchInput.addEventListener('keydown', (e) => {
     if (e.key === 'Enter') {
@@ -2480,9 +2735,15 @@ function setupControls() {
       document.querySelectorAll('.filter-age').forEach(b => b.classList.remove('active'));
       btn.classList.add('active');
       activeAgeDays = newDays;
+      // Reset timeline scrubber to full range when age filter changes (bd-huwyz)
+      timelineSelStart = 0;
+      timelineSelEnd = 1;
       refresh(); // re-fetch with new age cutoff (bd-uc0mw)
     });
   });
+
+  // Timeline scrubber (bd-huwyz)
+  initTimelineScrubber();
 
   // Keyboard shortcuts
   document.addEventListener('keydown', (e) => {
@@ -2733,9 +2994,13 @@ function dootLabel(evt) {
   if (type === 'OjJobCompleted') return 'job done';
   if (type === 'OjJobFailed') return 'job failed!';
 
-  // Mutations
+  // Mutations (bd-5knqx: filter noisy heartbeat-style updates)
   if (type === 'MutationCreate') return 'created bead';
-  if (type === 'MutationUpdate') return 'updated';
+  if (type === 'MutationUpdate') {
+    if (p.type === 'rpc_audit') return null; // daemon-token bookkeeping noise
+    if (p.agent_state && !p.new_status) return null; // periodic agent heartbeat
+    return 'updated';
+  }
   if (type === 'MutationStatus') return p.new_status || 'status';
   if (type === 'MutationClose') return 'closed';
 
@@ -2760,20 +3025,33 @@ function dootColor(evt) {
   return '#ff6b35'; // agent orange default
 }
 
-// Find the agent node for a bus event (by actor/agent_id in payload)
+// Find the agent node for a bus event (bd-5knqx).
+// Mutation events: actor="daemon" (useless), issue_id="bd-beads-refinery" matches node.id.
+// Hook events: actor="swift-newt" (short name) matches node.assignee.
+// Agent lifecycle events: agent_id="bd-beads-refinery" matches node.id directly.
 function findAgentNode(evt) {
   const p = evt.payload || {};
-  const actor = p.actor || p.agent_id || p.agentID || '';
-  if (!actor) return null;
+  // Collect all candidate identifiers — order matters (most specific first)
+  const candidates = [
+    p.issue_id,   // mutation events: the bead being mutated (often an agent bead)
+    p.agent_id,   // agent lifecycle events
+    p.agentID,    // alternate casing
+    p.assignee,   // mutation events: the agent assigned to the bead
+    p.actor,      // hook events (short agent name) or mutations ("daemon")
+  ].filter(c => c && c !== 'daemon'); // "daemon" is never an agent node
 
-  // Look for agent node matching the actor name
-  for (const node of graphData.nodes) {
-    if (node.issue_type !== 'agent') continue;
-    // Agent node IDs or titles often contain the actor name
-    if (node.id === actor || node.title === actor ||
-        (node.title && node.title.includes(actor)) ||
-        (node.id && node.id.includes(actor))) {
-      return node;
+  if (candidates.length === 0) return null;
+
+  const agents = graphData.nodes.filter(n => n.issue_type === 'agent');
+
+  for (const candidate of candidates) {
+    // Exact match on id, title, or assignee
+    for (const node of agents) {
+      if (node.id === candidate || node.title === candidate || node.assignee === candidate) return node;
+    }
+    // Match "agent:<name>" prefix format
+    for (const node of agents) {
+      if (node.id === `agent:${candidate}`) return node;
     }
   }
   return null;
@@ -2866,7 +3144,8 @@ async function main() {
     await refresh();
     connectLiveUpdates();
     connectBusStream(); // bd-c7723: live NATS event doots on agent nodes
-    setInterval(refresh, POLL_INTERVAL);
+    if (_pollIntervalId) clearInterval(_pollIntervalId);
+    _pollIntervalId = setInterval(refresh, POLL_INTERVAL);
     graph.cameraPosition({ x: 0, y: 0, z: 400 });
     // Expose for Playwright tests
     window.__beads3d = { graph, graphData: () => graphData, multiSelected: () => multiSelected, showBulkMenu, showDetail, hideDetail, selectNode, highlightSubgraph, clearSelection };
@@ -2878,6 +3157,13 @@ async function main() {
     window.__beads3d_findAgentNode = findAgentNode;
     // Expose mutation handler for testing (bd-03b5v)
     window.__beads3d_applyMutation = applyMutationOptimistic;
+
+    // Cleanup on page unload (bd-7n4g8): close SSE, clear intervals
+    window.addEventListener('beforeunload', () => {
+      api.destroy();
+      if (_pollIntervalId) clearInterval(_pollIntervalId);
+      if (_bloomResizeHandler) window.removeEventListener('resize', _bloomResizeHandler);
+    });
   } catch (err) {
     console.error('Init failed:', err);
     document.getElementById('status').textContent = `init error: ${err.message}`;

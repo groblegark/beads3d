@@ -129,6 +129,54 @@
     }
     .btn-row .ctrl-btn { flex: 1; text-align: center; }
 
+    /* Timeline scrubber (bd-huwyz) */
+    #timeline-scrubber {
+      position: relative;
+      width: 100%;
+      height: 52px;
+      cursor: crosshair;
+    }
+    #timeline-canvas {
+      width: 100%;
+      height: 36px;
+      border-radius: 3px;
+      background: rgba(20, 20, 35, 0.85);
+      border: 1px solid #2a2a3a;
+    }
+    #timeline-range {
+      position: absolute;
+      top: 0;
+      height: 36px;
+      background: rgba(74, 158, 255, 0.12);
+      border-left: 2px solid #4a9eff;
+      border-right: 2px solid #4a9eff;
+      pointer-events: none;
+    }
+    .timeline-handle {
+      position: absolute;
+      top: 0;
+      width: 8px;
+      height: 36px;
+      background: #4a9eff;
+      border-radius: 2px;
+      cursor: ew-resize;
+      opacity: 0.8;
+      z-index: 1;
+    }
+    .timeline-handle:hover { opacity: 1; }
+    #timeline-labels {
+      display: flex;
+      justify-content: space-between;
+      font-size: 8px;
+      color: #555;
+      margin-top: 2px;
+      user-select: none;
+    }
+    #timeline-labels .range-label {
+      color: #4a9eff;
+      font-size: 9px;
+    }
+
     /* Filter count */
     #filter-count {
       font-size: 10px;
@@ -522,6 +570,21 @@
       <button class="ctrl-btn filter-age" data-days="30">30d</button>
       <button class="ctrl-btn filter-age" data-days="90">90d</button>
       <button class="ctrl-btn filter-age" data-days="0">all</button>
+    </div>
+
+    <div class="filter-group">
+      <label>timeline</label>
+      <div id="timeline-scrubber">
+        <canvas id="timeline-canvas"></canvas>
+        <div id="timeline-range"></div>
+        <div class="timeline-handle" id="handle-left"></div>
+        <div class="timeline-handle" id="handle-right"></div>
+        <div id="timeline-labels">
+          <span id="tl-oldest"></span>
+          <span id="tl-range" class="range-label"></span>
+          <span id="tl-newest"></span>
+        </div>
+      </div>
     </div>
 
     <div class="filter-group">
