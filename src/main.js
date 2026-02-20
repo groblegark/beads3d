@@ -3502,6 +3502,141 @@ function updateAssigneeButtons() {
   }
 }
 
+// ── Filter profile persistence (bd-8o2gd phase 3) ───────────────────────────
+
+const PROFILE_KEY_PREFIX = 'beads3d.view.';
+let _profilesLoaded = false;
+
+function _currentFilterState() {
+  return {
+    status: [...statusFilter],
+    types: [...typeFilter],
+    priority: [...priorityFilter],
+    age_days: activeAgeDays,
+    assignee: assigneeFilter,
+    agents: {
+      show: agentFilterShow,
+      orphaned: agentFilterOrphaned,
+      rig_exclude: [...agentFilterRigExclude],
+    },
+  };
+}
+
+function _applyFilterState(state) {
+  statusFilter.clear();
+  (state.status || []).forEach(s => statusFilter.add(s));
+  typeFilter.clear();
+  (state.types || []).forEach(t => typeFilter.add(t));
+  priorityFilter.clear();
+  (state.priority || []).forEach(p => priorityFilter.add(String(p)));
+  activeAgeDays = state.age_days ?? 7;
+  assigneeFilter = state.assignee || '';
+  if (state.agents) {
+    agentFilterShow = state.agents.show !== false;
+    agentFilterOrphaned = !!state.agents.orphaned;
+    agentFilterRigExclude.clear();
+    (state.agents.rig_exclude || []).forEach(r => agentFilterRigExclude.add(r));
+  }
+  syncFilterDashboard();
+  syncToolbarControls();
+  _syncAllRigPills();
+  // Age changes need re-fetch; for simplicity always refresh
+  timelineSelStart = 0;
+  timelineSelEnd = 1;
+  refresh();
+}
+
+async function loadFilterProfiles() {
+  const select = document.getElementById('fd-profile-select');
+  if (!select) return;
+
+  try {
+    const resp = await api.configList();
+    const config = resp.config || {};
+    // Clear existing options except default
+    select.innerHTML = '<option value="">— default —</option>';
+    const profiles = Object.keys(config)
+      .filter(k => k.startsWith(PROFILE_KEY_PREFIX))
+      .map(k => k.slice(PROFILE_KEY_PREFIX.length))
+      .sort();
+    for (const name of profiles) {
+      const opt = document.createElement('option');
+      opt.value = name;
+      opt.textContent = name;
+      select.appendChild(opt);
+    }
+    // Restore last selected profile from localStorage
+    const lastProfile = localStorage.getItem('beads3d-filter-profile');
+    if (lastProfile && profiles.includes(lastProfile)) {
+      select.value = lastProfile;
+    }
+    _profilesLoaded = true;
+  } catch (e) {
+    console.warn('[beads3d] failed to load filter profiles:', e);
+  }
+}
+
+async function saveFilterProfile(name) {
+  if (!name) return;
+  const state = _currentFilterState();
+  try {
+    await api.configSet(PROFILE_KEY_PREFIX + name, JSON.stringify(state));
+    localStorage.setItem('beads3d-filter-profile', name);
+    await loadFilterProfiles();
+    const select = document.getElementById('fd-profile-select');
+    if (select) select.value = name;
+    console.log(`[beads3d] saved filter profile: ${name}`);
+  } catch (e) {
+    console.warn('[beads3d] failed to save filter profile:', e);
+  }
+}
+
+async function loadFilterProfile(name) {
+  if (!name) {
+    // Default profile — clear all filters
+    statusFilter.clear();
+    typeFilter.clear();
+    priorityFilter.clear();
+    assigneeFilter = '';
+    agentFilterShow = true;
+    agentFilterOrphaned = false;
+    agentFilterRigExclude.clear();
+    activeAgeDays = 7;
+    syncFilterDashboard();
+    syncToolbarControls();
+    _syncAllRigPills();
+    timelineSelStart = 0;
+    timelineSelEnd = 1;
+    localStorage.removeItem('beads3d-filter-profile');
+    refresh();
+    return;
+  }
+
+  try {
+    const resp = await api.configGet(PROFILE_KEY_PREFIX + name);
+    const state = JSON.parse(resp.value);
+    _applyFilterState(state);
+    localStorage.setItem('beads3d-filter-profile', name);
+    console.log(`[beads3d] loaded filter profile: ${name}`);
+  } catch (e) {
+    console.warn(`[beads3d] failed to load profile ${name}:`, e);
+  }
+}
+
+async function deleteFilterProfile(name) {
+  if (!name) return;
+  try {
+    await api.configUnset(PROFILE_KEY_PREFIX + name);
+    localStorage.removeItem('beads3d-filter-profile');
+    await loadFilterProfiles();
+    const select = document.getElementById('fd-profile-select');
+    if (select) select.value = '';
+    console.log(`[beads3d] deleted filter profile: ${name}`);
+  } catch (e) {
+    console.warn(`[beads3d] failed to delete profile ${name}:`, e);
+  }
+}
+
 function initFilterDashboard() {
   const panel = document.getElementById('filter-dashboard');
   if (!panel) return;
@@ -3611,6 +3746,48 @@ function initFilterDashboard() {
     syncToolbarControls();
     _syncAllRigPills();
     refresh();
+  });
+
+  // ── Profile persistence (bd-8o2gd phase 3) ──────────────────────────────
+
+  const profileSelect = document.getElementById('fd-profile-select');
+  const btnSave = document.getElementById('fd-profile-save');
+  const btnSaveAs = document.getElementById('fd-profile-save-as');
+  const btnDelete = document.getElementById('fd-profile-delete');
+
+  // Load profile list on first dashboard open
+  loadFilterProfiles();
+
+  // Profile dropdown change — load selected profile
+  profileSelect?.addEventListener('change', () => {
+    loadFilterProfile(profileSelect.value);
+  });
+
+  // Save — overwrite currently selected profile
+  btnSave?.addEventListener('click', () => {
+    const name = profileSelect?.value;
+    if (!name) {
+      // No profile selected — prompt for name
+      const newName = prompt('Profile name:');
+      if (newName) saveFilterProfile(newName.trim());
+    } else {
+      saveFilterProfile(name);
+    }
+  });
+
+  // Save As — always prompt for new name
+  btnSaveAs?.addEventListener('click', () => {
+    const newName = prompt('New profile name:');
+    if (newName) saveFilterProfile(newName.trim());
+  });
+
+  // Delete — remove currently selected profile
+  btnDelete?.addEventListener('click', () => {
+    const name = profileSelect?.value;
+    if (!name) return;
+    if (confirm(`Delete profile "${name}"?`)) {
+      deleteFilterProfile(name);
+    }
   });
 }
 

@@ -477,6 +477,24 @@
       gap: 4px;
     }
     .fd-priority-range .fd-btn { flex: 1; text-align: center; }
+    .fd-profile-bar {
+      display: flex;
+      gap: 4px;
+      margin-bottom: 10px;
+      align-items: center;
+    }
+    .fd-profile-bar select {
+      flex: 1;
+      background: rgba(20, 20, 35, 0.85);
+      border: 1px solid #2a2a3a;
+      color: #ccc;
+      font-family: inherit;
+      font-size: 9px;
+      padding: 4px 6px;
+      border-radius: 3px;
+      outline: none;
+    }
+    .fd-profile-bar select:focus { border-color: #4a9eff; }
 
     /* Context menu */
     #context-menu {
@@ -1271,6 +1289,13 @@
     <div class="fd-header">
       <span class="fd-title">Filters</span>
       <button class="fd-close" id="fd-close">&times;</button>
+    </div>
+
+    <div class="fd-profile-bar">
+      <select id="fd-profile-select"><option value="">— default —</option></select>
+      <button class="fd-btn" id="fd-profile-save" title="Save current filters to selected profile">save</button>
+      <button class="fd-btn" id="fd-profile-save-as" title="Save as new profile">save as</button>
+      <button class="fd-btn" id="fd-profile-delete" title="Delete selected profile">del</button>
     </div>
 
     <div class="fd-section" id="fd-status">

@@ -203,6 +203,24 @@ export class BeadsAPI {
     });
   }
 
+  // --- Config operations (bd-8o2gd phase 3) ---
+
+  async configList() {
+    return this._rpc('ConfigList', {});
+  }
+
+  async configGet(key) {
+    return this._rpc('GetConfig', { key });
+  }
+
+  async configSet(key, value) {
+    return this._rpc('ConfigSet', { key, value });
+  }
+
+  async configUnset(key) {
+    return this._rpc('ConfigUnset', { key });
+  }
+
   // Close all SSE connections (bd-7n4g8)
   destroy() {
     for (const es of this._eventSources) {
