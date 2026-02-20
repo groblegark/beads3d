@@ -3244,21 +3244,47 @@ function clearLayoutGuides() {
 function makeTextSprite(text, opts = {}) {
   const fontSize = opts.fontSize || 24;
   const color = opts.color || '#4a9eff';
+  const bg = opts.background || null; // e.g. 'rgba(10, 10, 18, 0.85)'
+  const padding = bg ? 10 : 8;
   const canvas = document.createElement('canvas');
   const ctx = canvas.getContext('2d');
   ctx.font = `${fontSize}px SF Mono, Fira Code, monospace`;
   const metrics = ctx.measureText(text);
-  canvas.width = Math.ceil(metrics.width) + 16;
-  canvas.height = fontSize + 12;
+  canvas.width = Math.ceil(metrics.width) + padding * 2;
+  canvas.height = fontSize + padding * 2;
+  // Background (bd-jy0yt)
+  if (bg) {
+    ctx.fillStyle = bg;
+    const r = 4, cw = canvas.width, ch = canvas.height;
+    ctx.beginPath();
+    ctx.moveTo(r, 0);
+    ctx.lineTo(cw - r, 0); ctx.arcTo(cw, 0, cw, r, r);
+    ctx.lineTo(cw, ch - r); ctx.arcTo(cw, ch, cw - r, ch, r);
+    ctx.lineTo(r, ch); ctx.arcTo(0, ch, 0, ch - r, r);
+    ctx.lineTo(0, r); ctx.arcTo(0, 0, r, 0, r);
+    ctx.closePath();
+    ctx.fill();
+  }
   ctx.font = `${fontSize}px SF Mono, Fira Code, monospace`;
   ctx.fillStyle = color;
   ctx.textBaseline = 'top';
-  ctx.fillText(text, 8, 6);
+  ctx.fillText(text, padding, padding);
   const tex = new THREE.CanvasTexture(canvas);
   tex.minFilter = THREE.LinearFilter;
-  const mat = new THREE.SpriteMaterial({ map: tex, transparent: true, opacity: opts.opacity || 0.6 });
+  const screenSpace = opts.sizeAttenuation === false;
+  const mat = new THREE.SpriteMaterial({
+    map: tex, transparent: true, opacity: opts.opacity || 0.6,
+    depthWrite: false, depthTest: false,
+    sizeAttenuation: !screenSpace,
+  });
   const sprite = new THREE.Sprite(mat);
-  sprite.scale.set(canvas.width / 4, canvas.height / 4, 1);
+  if (screenSpace) {
+    const aspect = canvas.width / canvas.height;
+    const spriteH = opts.screenHeight || 0.03; // fraction of viewport height
+    sprite.scale.set(spriteH * aspect, spriteH, 1);
+  } else {
+    sprite.scale.set(canvas.width / 4, canvas.height / 4, 1);
+  }
   return sprite;
 }
 
@@ -4588,7 +4614,16 @@ function spawnDoot(node, text, color) {
   // Trigger doot popup for non-agent nodes (beads-edy1)
   showDootPopup(node);
 
-  const sprite = makeTextSprite(text, { fontSize: 16, color, opacity: 0.9 });
+  // Screen-space doots with background for readability (bd-jy0yt)
+  const sprite = makeTextSprite(text, {
+    fontSize: 20,
+    color,
+    opacity: 0.9,
+    background: 'rgba(10, 10, 18, 0.8)',
+    sizeAttenuation: false,
+    screenHeight: 0.025,  // ~25px on 1000px viewport
+  });
+  sprite.userData.isDoot = true;
   // Random horizontal jitter so overlapping doots spread out
   const jx = (Math.random() - 0.5) * 6;
   const jz = (Math.random() - 0.5) * 6;
@@ -4617,8 +4652,15 @@ function spawnDoot(node, text, color) {
   }
 }
 
-// Update doot positions and opacity in animate loop
+// Update doot positions, opacity, and anti-overlap in animate loop (bd-jy0yt)
 function updateDoots(t) {
+  const camera = graph ? graph.camera() : null;
+  const renderer = graph ? graph.renderer() : null;
+  const width = renderer ? renderer.domElement.clientWidth : 0;
+  const height = renderer ? renderer.domElement.clientHeight : 0;
+
+  // Phase 1: Update positions, fade, and collect screen rects for live doots
+  const live = [];
   for (let i = doots.length - 1; i >= 0; i--) {
     const d = doots[i];
     const age = t - d.birth;
@@ -4644,6 +4686,49 @@ function updateDoots(t) {
     const fadeStart = d.lifetime * 0.6;
     const opacity = age < fadeStart ? 0.9 : 0.9 * (1 - (age - fadeStart) / (d.lifetime - fadeStart));
     d.sprite.material.opacity = Math.max(0, opacity);
+
+    // Collect screen position for anti-overlap (only if camera available)
+    if (camera && width > 0 && height > 0) {
+      const worldPos = new THREE.Vector3();
+      d.sprite.getWorldPosition(worldPos);
+      const ndc = worldPos.clone().project(camera);
+      if (ndc.z <= 1) {
+        const sx = (ndc.x * 0.5 + 0.5) * width;
+        const sy = (-ndc.y * 0.5 + 0.5) * height;
+        const lw = d.sprite.scale.x * height;
+        const lh = d.sprite.scale.y * height;
+        live.push({ d, sx, sy, lw, lh, offsetY: 0, age });
+      }
+    }
+  }
+
+  // Phase 2: Anti-overlap — nudge doots so they don't stack on screen
+  if (live.length < 2) return;
+  // Sort by screen X for sweep-and-prune
+  live.sort((a, b) => a.sx - b.sx);
+  const PAD = 2;
+  for (let i = 0; i < live.length; i++) {
+    const a = live[i];
+    const aRight = a.sx + a.lw / 2;
+    const aTop = a.sy - a.lh / 2 + a.offsetY;
+    const aBot = a.sy + a.lh / 2 + a.offsetY;
+    for (let j = i + 1; j < live.length; j++) {
+      const b = live[j];
+      if (b.sx - b.lw / 2 > aRight + PAD) break;
+      const bTop = b.sy - b.lh / 2 + b.offsetY;
+      const bBot = b.sy + b.lh / 2 + b.offsetY;
+      if (aTop > bBot + PAD || bTop > aBot + PAD) continue;
+      // Push the newer (younger) doot upward
+      const pushTarget = a.age <= b.age ? a : b;
+      const overlapY = Math.min(aBot, bBot) - Math.max(aTop, bTop) + PAD;
+      pushTarget.offsetY -= Math.abs(overlapY);
+    }
+  }
+  // Apply Y offsets back to world positions
+  for (const l of live) {
+    if (l.offsetY === 0) continue;
+    const pixToLocal = l.d.sprite.scale.y / l.lh;
+    l.d.sprite.position.y += l.offsetY * pixToLocal;
   }
 }
 
