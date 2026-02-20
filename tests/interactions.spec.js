@@ -888,12 +888,15 @@ test.describe('search navigation', () => {
     await page.keyboard.press('Escape');
     await page.waitForTimeout(500);
 
-    // All nodes should be visible again
+    // All nodes should be visible again (except those still hidden by age filter)
     const visibleAfter = await page.evaluate(() => {
       const b = window.__beads3d;
       return b ? b.graphData().nodes.filter(n => !n._hidden).length : 0;
     });
-    expect(visibleAfter).toBe(totalBefore);
+    // With default 7d age filter, bd-old1 (disconnected, closed, updated 2025-12-15) stays hidden.
+    // bd-old2 is rescued because it's connected to active bd-task3.
+    // So visibleAfter should be totalBefore minus age-filtered nodes (1).
+    expect(visibleAfter).toBe(totalBefore - 1);
   });
 
   test('keyboard shortcuts do not fire while search input is focused', async ({ page }) => {
