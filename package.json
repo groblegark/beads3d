@@ -5,7 +5,11 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "test": "npx playwright test",
+    "test:report": "npx playwright test && npx playwright show-report test-results/html-report",
+    "test:update": "npx playwright test --update-snapshots",
+    "test:ui": "npx playwright test --ui"
   },
   "description": "Interactive 3D visualization of beads issues",
   "dependencies": {
