@@ -204,6 +204,14 @@ const CAM_FRICTION = 0.88;  // velocity multiplier per frame when no key held (l
 const openPanels = new Map(); // beadId → panel element (bd-fbmq3: tiling detail panels)
 let activeAgeDays = 7; // age filter: show beads updated within N days (0 = all) (bd-uc0mw)
 
+// Check if a text input element is focused — suppress keyboard shortcuts (beads-lznc)
+function isTextInputFocused() {
+  const el = document.activeElement;
+  if (!el) return false;
+  const tag = el.tagName;
+  return tag === 'INPUT' || tag === 'TEXTAREA' || el.contentEditable === 'true';
+}
+
 // Resource cleanup refs (bd-7n4g8)
 let _bloomResizeHandler = null;
 let _pollIntervalId = null;
@@ -4195,7 +4203,7 @@ function setupControls() {
   // Keyboard shortcuts
   document.addEventListener('keydown', (e) => {
     // '/' to focus search
-    if (e.key === '/' && document.activeElement !== searchInput) {
+    if (e.key === '/' && !isTextInputFocused()) {
       e.preventDefault();
       searchInput.focus();
     }
@@ -4242,55 +4250,55 @@ function setupControls() {
       for (const [id] of agentWindows) closeAgentWindow(id);
     }
     // 'r' to refresh
-    if (e.key === 'r' && document.activeElement !== searchInput) {
+    if (e.key === 'r' && !isTextInputFocused()) {
       refresh();
     }
     // 'b' to toggle bloom (ignore key repeat to prevent rapid on/off — beads-p97b)
-    if (e.key === 'b' && !e.repeat && document.activeElement !== searchInput) {
+    if (e.key === 'b' && !e.repeat && !isTextInputFocused()) {
       btnBloom.click();
     }
     // 'm' to toggle minimap
-    if (e.key === 'm' && !e.repeat && document.activeElement !== searchInput) {
+    if (e.key === 'm' && !e.repeat && !isTextInputFocused()) {
       toggleMinimap();
     }
     // 'l' for labels toggle (bd-1o2f7, beads-p97b: ignore key repeat)
-    if (e.key === 'l' && !e.repeat && document.activeElement !== searchInput) {
+    if (e.key === 'l' && !e.repeat && !isTextInputFocused()) {
       toggleLabels();
     }
     // 'p' for screenshot
-    if (e.key === 'p' && document.activeElement !== searchInput) {
+    if (e.key === 'p' && !isTextInputFocused()) {
       captureScreenshot();
     }
     // 'x' for export
-    if (e.key === 'x' && document.activeElement !== searchInput) {
+    if (e.key === 'x' && !isTextInputFocused()) {
       exportGraphJSON();
     }
     // Shift+D / Shift+S for epic cycling (bd-pnngb)
-    if (e.shiftKey && e.key === 'D' && document.activeElement !== searchInput) {
+    if (e.shiftKey && e.key === 'D' && !isTextInputFocused()) {
       e.preventDefault();
       cycleEpic(1);
       return;
     }
-    if (e.shiftKey && e.key === 'S' && document.activeElement !== searchInput) {
+    if (e.shiftKey && e.key === 'S' && !isTextInputFocused()) {
       e.preventDefault();
       cycleEpic(-1);
       return;
     }
     // Shift+A for Agents View overlay (bd-jgvas)
-    if (e.shiftKey && e.key === 'A' && document.activeElement !== searchInput) {
+    if (e.shiftKey && e.key === 'A' && !isTextInputFocused()) {
       e.preventDefault();
       toggleAgentsView();
       return;
     }
     // 1-5 for layout modes
     const layoutKeys = { '1': 'free', '2': 'dag', '3': 'timeline', '4': 'radial', '5': 'cluster' };
-    if (layoutKeys[e.key] && document.activeElement !== searchInput) {
+    if (layoutKeys[e.key] && !isTextInputFocused()) {
       setLayout(layoutKeys[e.key]);
     }
 
     // Arrow + WASD keys: track held keys for Quake-style smooth camera (bd-zab4q, bd-pwaen)
     if (['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'w', 'a', 's', 'd'].includes(e.key) &&
-        !e.shiftKey && document.activeElement !== searchInput) {
+        !e.shiftKey && !isTextInputFocused()) {
       e.preventDefault();
       _keysDown.add(e.key);
     }
