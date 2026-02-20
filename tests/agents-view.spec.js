@@ -285,6 +285,67 @@ test.describe('Agents View overlay', () => {
     const collapsedCount = await page.locator('#agent-windows .agent-window.collapsed').count();
     expect(collapsedCount).toBe(trayCount);
   });
+
+  test('stats counts match agent status distribution', async ({ page }) => {
+    const graph = generateGraph({ seed: 99, nodeCount: 10, agentCount: 8, epicCount: 1 });
+    await mockAPI(page, graph);
+    await page.goto('/');
+    await waitForGraph(page, 3);
+
+    await page.keyboard.press('Shift+A');
+    await page.waitForTimeout(500);
+
+    // Read stats from the overlay header
+    const statsText = await page.locator('.agents-view-stats').textContent();
+
+    // Count agents in the mock graph
+    const agents = graph.nodes.filter(n => n.issue_type === 'agent');
+
+    // Stats should show total count
+    expect(statsText).toContain(`${agents.length} total`);
+
+    // At least one status category should be present
+    expect(statsText).toMatch(/\d+ (active|idle|crashed)/);
+  });
+
+  test('mail compose sends message to correct agent', async ({ page }) => {
+    await mockAPI(page);
+    await page.goto('/');
+    await waitForGraph(page, 9);
+
+    // Intercept the Create RPC to capture sent mail
+    const mailRequests = [];
+    await page.route('**/api/bd.v1.BeadsService/Create', async route => {
+      const body = JSON.parse(route.request().postData());
+      mailRequests.push(body);
+      await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ok: true }) });
+    });
+
+    // Open overlay and find an agent window
+    await page.keyboard.press('Shift+A');
+    await page.waitForTimeout(500);
+
+    // Find the mail input inside the first agent window
+    const firstWindow = page.locator('.agents-view-grid .agent-window').first();
+    const mailInput = firstWindow.locator('.agent-mail-input');
+
+    // Skip if no mail input exists (window may not have compose UI)
+    if (await mailInput.count() === 0) {
+      test.skip();
+      return;
+    }
+
+    // Type a message and press Enter
+    await mailInput.fill('Hello from test');
+    await mailInput.press('Enter');
+    await page.waitForTimeout(500);
+
+    // Verify the Create RPC was called with correct params
+    expect(mailRequests.length).toBe(1);
+    expect(mailRequests[0].title).toBe('Hello from test');
+    expect(mailRequests[0].issue_type).toBe('message');
+    expect(mailRequests[0].sender).toBe('beads3d');
+  });
 });
 
 // ---- Auto-open on first event (bd-jgvas Phase 2) ----
@@ -361,6 +422,51 @@ test.describe('auto-open agent windows', () => {
       })
     );
     expect(daemonId).toBeNull();
+  });
+
+  test('appendAgentEvent adds feed entries to existing window', async ({ page }) => {
+    await mockAPI(page);
+    await page.goto('/');
+    await waitForGraph(page, 9);
+
+    // Open overlay to create windows
+    await page.keyboard.press('Shift+A');
+    await page.waitForTimeout(500);
+
+    // Add multiple events and verify they accumulate
+    const result = await page.evaluate(() => {
+      const agentId = 'agent:swift-newt';
+      const win = window.__beads3d_agentWindows().get(agentId);
+      if (!win) return { found: false };
+
+      window.__beads3d_appendAgentEvent(agentId, {
+        type: 'PreToolUse',
+        ts: new Date().toISOString(),
+        payload: { actor: 'swift-newt', tool_name: 'Read', tool_input: { file_path: '/test.go' } },
+      });
+      window.__beads3d_appendAgentEvent(agentId, {
+        type: 'PostToolUse',
+        ts: new Date().toISOString(),
+        payload: { actor: 'swift-newt', tool_name: 'Read', tool_input: { file_path: '/test.go' } },
+      });
+      window.__beads3d_appendAgentEvent(agentId, {
+        type: 'PreToolUse',
+        ts: new Date().toISOString(),
+        payload: { actor: 'swift-newt', tool_name: 'Edit', tool_input: { file_path: '/main.go' } },
+      });
+
+      return {
+        found: true,
+        entryCount: win.entries.length,
+        hasEmptyPlaceholder: !!win.feedEl.querySelector('.agent-window-empty'),
+        feedChildren: win.feedEl.children.length,
+      };
+    });
+
+    expect(result.found).toBe(true);
+    expect(result.entryCount).toBe(3);
+    expect(result.hasEmptyPlaceholder).toBe(false); // Placeholder removed after first event
+    expect(result.feedChildren).toBeGreaterThanOrEqual(1); // Feed has rendered entries
   });
 });
 
