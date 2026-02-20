@@ -599,6 +599,7 @@ function createNodeLabelSprite(node) {
   sprite.position.y = size * 2.5 + spriteH / 2 + 2;
 
   sprite.userData.nodeLabel = true;
+  sprite.userData.baseLabelY = sprite.position.y; // base Y for anti-overlap reset (beads-rgmh)
   sprite.visible = labelsVisible;
   return sprite;
 }
@@ -615,6 +616,113 @@ function toggleLabels() {
   }
   const btn = document.getElementById('btn-labels');
   if (btn) btn.classList.toggle('active', labelsVisible);
+}
+
+// --- Label anti-overlap (beads-rgmh) ---
+// Screen-space repulsion pass: projects visible labels to 2D, detects overlap,
+// and nudges them apart. Runs every N frames in the animation loop.
+function resolveOverlappingLabels() {
+  if (!graph) return;
+  const camera = graph.camera();
+  const renderer = graph.renderer();
+  if (!camera || !renderer) return;
+
+  const width = renderer.domElement.clientWidth;
+  const height = renderer.domElement.clientHeight;
+  if (width === 0 || height === 0) return;
+
+  // Collect visible label sprites with their screen positions
+  const labels = [];
+  for (const node of graphData.nodes) {
+    const threeObj = node.__threeObj;
+    if (!threeObj) continue;
+    threeObj.traverse(child => {
+      if (!child.userData.nodeLabel || !child.visible) return;
+      // Reset to base position before computing new offsets
+      if (child.userData.baseLabelY !== undefined) {
+        child.position.y = child.userData.baseLabelY;
+      }
+      // Get world position of the label sprite
+      const worldPos = new THREE.Vector3();
+      child.getWorldPosition(worldPos);
+      // Project to normalized device coords (-1..1)
+      const ndc = worldPos.clone().project(camera);
+      // Skip labels behind camera
+      if (ndc.z > 1) return;
+      // Convert to pixel coords
+      const sx = (ndc.x * 0.5 + 0.5) * width;
+      const sy = (-ndc.y * 0.5 + 0.5) * height;
+      // Label screen size (sizeAttenuation=false: scale is fraction of viewport)
+      const lw = child.scale.x * height;
+      const lh = child.scale.y * height;
+      labels.push({
+        sprite: child,
+        node,
+        sx, sy, lw, lh,
+        // Track cumulative offset applied this frame
+        offsetY: 0,
+      });
+    });
+  }
+
+  if (labels.length < 2) return;
+
+  // Sort by screen X for sweep-and-prune efficiency
+  labels.sort((a, b) => a.sx - b.sx);
+
+  // Pairwise overlap check with nudge (sweep-and-prune on X)
+  const PADDING = 4; // pixels between labels
+  for (let i = 0; i < labels.length; i++) {
+    const a = labels[i];
+    const aRight = a.sx + a.lw / 2;
+    const aTop = a.sy - a.lh / 2 + a.offsetY;
+    const aBot = a.sy + a.lh / 2 + a.offsetY;
+
+    for (let j = i + 1; j < labels.length; j++) {
+      const b = labels[j];
+      const bLeft = b.sx - b.lw / 2;
+      // Sweep prune: if b's left edge is past a's right edge, no more overlaps for a
+      if (bLeft > aRight + PADDING) break;
+      const bTop = b.sy - b.lh / 2 + b.offsetY;
+      const bBot = b.sy + b.lh / 2 + b.offsetY;
+
+      // Check Y overlap
+      if (aTop > bBot + PADDING || bTop > aBot + PADDING) continue;
+
+      // Overlap detected — push the lower-priority label down
+      // Priority: selected > agent > lower priority number > alphabetical
+      const aPri = _labelPriority(a);
+      const bPri = _labelPriority(b);
+      const pushTarget = aPri >= bPri ? b : a;
+      const overlapY = Math.min(aBot, bBot) - Math.max(aTop, bTop) + PADDING;
+      pushTarget.offsetY += overlapY;
+    }
+  }
+
+  // Apply offsets back to sprite positions (in local Y, accounting for screen→world scale)
+  for (const l of labels) {
+    if (l.offsetY === 0) continue;
+    // sizeAttenuation=false means sprite Y scale = fraction of viewport height
+    // So 1px screen = 1/height in sprite-local units, but position.y is in world space.
+    // For sizeAttenuation=false sprites parented to the node group, position.y is local.
+    // Convert pixel offset to the same units as sprite.position.y.
+    // The sprite's scale.y = spriteH (e.g. 0.06), which maps to lh pixels on screen.
+    // So 1 local unit = lh / scale.y pixels → 1 pixel = scale.y / lh local units.
+    const pixToLocal = l.sprite.scale.y / l.lh;
+    l.sprite.position.y += l.offsetY * pixToLocal;
+  }
+}
+
+function _labelPriority(label) {
+  const n = label.node;
+  // Higher = wins position contest (stays in place)
+  let pri = 0;
+  if (selectedNode && n.id === selectedNode.id) pri += 1000;
+  if (multiSelected.has(n.id)) pri += 500;
+  if (n.issue_type === 'agent') pri += 100;
+  // Lower priority number = more important
+  pri += (4 - (n.priority || 2)) * 10;
+  return pri;
 }
 
 // --- Build graph ---
@@ -870,19 +978,26 @@ function initGraph() {
         node._dragSubtree = getDragSubtree(node.id);
       }
       // Apply velocity impulses to subtree proportional to drag delta
+      // Agents get stronger, snappier coupling to their assigned beads (beads-mxhq)
+      const isAgent = node.issue_type === 'agent';
       const subtree = node._dragSubtree;
       for (const { node: child, depth } of subtree) {
         if (child === node || child.fx !== undefined) continue;
-        const strength = 0.3 * Math.pow(0.5, depth - 1);
+        // Agents: stronger base pull (0.6 vs 0.3), slower decay (0.65 vs 0.5)
+        const baseStrength = isAgent ? 0.6 : 0.3;
+        const decay = isAgent ? 0.65 : 0.5;
+        const strength = baseStrength * Math.pow(decay, depth - 1);
         const dx = node.x - child.x;
         const dy = node.y - child.y;
         const dz = (node.z || 0) - (child.z || 0);
         const dist = Math.sqrt(dx * dx + dy * dy + dz * dz) || 1;
-        const restDist = 30 * depth;
+        const restDist = (isAgent ? 20 : 30) * depth;
         if (dist > restDist) {
-          child.vx = (child.vx || 0) + dx * strength * 0.05;
-          child.vy = (child.vy || 0) + dy * strength * 0.05;
-          child.vz = (child.vz || 0) + dz * strength * 0.05;
+          // Agents: higher impulse multiplier for snappy response
+          const impulse = isAgent ? 0.12 : 0.05;
+          child.vx = (child.vx || 0) + dx * strength * impulse;
+          child.vy = (child.vy || 0) + dy * strength * impulse;
+          child.vz = (child.vz || 0) + dz * strength * impulse;
         }
       }
     })
@@ -1322,6 +1437,10 @@ function startAnimation() {
 
     // Update event sprites — status pulses + edge sparks (bd-9qeto)
     updateEventSprites(t);
+
+    // Label anti-overlap: run every 4th frame for perf (beads-rgmh)
+    if (!animate._labelFrame) animate._labelFrame = 0;
+    if (++animate._labelFrame % 4 === 0) resolveOverlappingLabels();
 
     // Minimap: render every 3rd frame for perf
     if (!animate._frame) animate._frame = 0;
@@ -3934,6 +4053,10 @@ function dootLabel(evt) {
   if (type === 'OjJobCompleted') return 'job done';
   if (type === 'OjJobFailed') return 'job failed!';
 
+  // Mail events (bd-t76aw)
+  if (type === 'MailSent') return `✉ ${(p.subject || 'mail').slice(0, 40)}`;
+  if (type === 'MailRead') return '✉ read';
+
   // Mutations (bd-wn5he: rate-limit noisy heartbeat updates, show meaningful ones)
   if (type === 'MutationCreate') return `new: ${(p.title || p.issue_id || 'bead').slice(0, 40)}`;
   if (type === 'MutationUpdate') {
@@ -3981,6 +4104,19 @@ function dootColor(evt) {
 // deployments where agents are transient sessions, not agent beads.
 function findAgentNode(evt) {
   const p = evt.payload || {};
+
+  // Mail events: find recipient agent node (bd-t76aw)
+  if (evt.type === 'MailSent' || evt.type === 'MailRead') {
+    const to = (p.to || '').replace(/^@/, '');
+    if (to && graphData) {
+      const agents = graphData.nodes.filter(n => n.issue_type === 'agent');
+      for (const node of agents) {
+        if (node.title === to || node.id === `agent:${to}`) return node;
+      }
+    }
+    return null;
+  }
+
   const candidates = [
     p.issue_id,   // mutation events: the bead being mutated
     p.agent_id,   // agent lifecycle events
@@ -4209,6 +4345,10 @@ function showAgentWindow(node) {
     </div>
     ${beadsList ? `<div class="agent-window-beads">${beadsList}</div>` : ''}
     <div class="agent-feed"><div class="agent-window-empty">waiting for events...</div></div>
+    <div class="agent-mail-compose">
+      <input class="agent-mail-input" type="text" placeholder="Send message to ${escapeHtml(agentName)}..." />
+      <button class="agent-mail-send">&#x2709;</button>
+    </div>
   `;
 
   const header = el.querySelector('.agent-window-header');
@@ -4222,6 +4362,36 @@ function showAgentWindow(node) {
   };
 
   el.querySelector('.agent-window-close').onclick = () => closeAgentWindow(node.id);
+
+  // Mail compose (bd-t76aw): send message on Enter or click
+  const mailInput = el.querySelector('.agent-mail-input');
+  const mailSend = el.querySelector('.agent-mail-send');
+  const doSend = async () => {
+    const text = mailInput.value.trim();
+    if (!text) return;
+    mailInput.value = '';
+    mailInput.disabled = true;
+    mailSend.disabled = true;
+    try {
+      await api.sendMail(agentName, text);
+      // Optimistic: show sent confirmation in feed immediately
+      const win = agentWindows.get(node.id);
+      if (win) {
+        const empty = win.feedEl.querySelector('.agent-window-empty');
+        if (empty) empty.remove();
+        const ts = new Date().toTimeString().slice(0, 8);
+        win.feedEl.appendChild(createEntry(ts, '▶', `sent: ${text}`, 'mail mail-sent'));
+        autoScroll(win);
+      }
+    } catch (err) {
+      console.error('[beads3d] mail send failed:', err);
+    }
+    mailInput.disabled = false;
+    mailSend.disabled = false;
+    mailInput.focus();
+  };
+  mailSend.onclick = doSend;
+  mailInput.onkeydown = (e) => { if (e.key === 'Enter') doSend(); };
 
   container.appendChild(el);
 
@@ -4319,6 +4489,14 @@ function appendAgentEvent(agentId, evt) {
   } else if (type === 'OjJobFailed') {
     win.feedEl.appendChild(createEntry(timeStr, '✕', 'job failed!', 'lifecycle lifecycle-crashed'));
   }
+  // Mail events (bd-t76aw)
+  else if (type === 'MailSent') {
+    const from = p.from || 'unknown';
+    const subject = p.subject || 'no subject';
+    win.feedEl.appendChild(createEntry(timeStr, '✉', `from ${from}: ${subject}`, 'mail mail-received'));
+  } else if (type === 'MailRead') {
+    win.feedEl.appendChild(createEntry(timeStr, '✉', 'mail read', 'mail'));
+  }
   // Skip other event types silently
   else {
     return;
@@ -4373,9 +4551,22 @@ function autoScroll(win) {
   }
 }
 
-// Map a bus event to the agent window ID it belongs to (bd-kau4k)
+// Map a bus event to the agent window ID it belongs to (bd-kau4k, bd-t76aw)
 function resolveAgentId(evt) {
   const p = evt.payload || {};
+
+  // Mail events: route to recipient agent window (bd-t76aw)
+  if (evt.type === 'MailSent' || evt.type === 'MailRead') {
+    const to = p.to || '';
+    // Mail address format: "@agent-name" or "agent-name" — strip @ prefix
+    const agentName = to.replace(/^@/, '');
+    if (agentName) {
+      const agentNodeId = `agent:${agentName}`;
+      if (agentWindows.has(agentNodeId)) return agentNodeId;
+    }
+    return null;
+  }
+
   const actor = p.actor;
   if (!actor) return null;
   // Check for an agent node with this actor name
@@ -4387,7 +4578,7 @@ function resolveAgentId(evt) {
 function connectBusStream() {
   try {
     let _dootDrops = 0;
-    api.connectBusEvents('agents,hooks,oj,mutations', (evt) => {
+    api.connectBusEvents('agents,hooks,oj,mutations,mail', (evt) => {
       const label = dootLabel(evt);
       if (!label) return;
 

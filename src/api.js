@@ -141,6 +141,9 @@ export class BeadsAPI {
     es.addEventListener('decisions', (e) => {
       try { onEvent(JSON.parse(e.data)); } catch { /* skip */ }
     });
+    es.addEventListener('mail', (e) => {
+      try { onEvent(JSON.parse(e.data)); } catch { /* skip */ }
+    });
 
     es.onopen = () => console.log('[beads3d] bus SSE connected:', streams);
     es.onerror = () => {
@@ -149,6 +152,18 @@ export class BeadsAPI {
 
     this._eventSources.push(es);
     return es;
+  }
+
+  // Send mail to an agent (bd-t76aw): creates a message issue targeting the agent
+  async sendMail(toAgent, subject, body = '') {
+    return this._rpc('Create', {
+      title: subject,
+      description: body,
+      issue_type: 'message',
+      assignee: toAgent,
+      sender: 'beads3d',
+      priority: 2,
+    });
   }
 
   // Close all SSE connections (bd-7n4g8)
