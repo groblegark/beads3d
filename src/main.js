@@ -10,7 +10,7 @@ import { createFresnelMaterial, createPulseRingMaterial, createSelectionRingMate
 const params = new URLSearchParams(window.location.search);
 const API_BASE = params.get('api') || '/api';
 const DEEP_LINK_BEAD = params.get('bead') || ''; // bd-he95o: URL deep-linking
-const POLL_INTERVAL = 10000;
+const POLL_INTERVAL = 30000; // bd-c1x6p: reduced from 10s to 30s — SSE handles live updates
 const MAX_NODES = 1000; // bd-04wet: raised from 500 to show more relevant beads
 
 const api = new BeadsAPI(API_BASE);
@@ -4354,9 +4354,11 @@ async function refresh() {
   }
 
   // Build link key for comparison (includes dep_type)
+  // Exclude rig_conflict edges — they're re-synthesized every refresh and would
+  // always trigger structureChanged even when nothing meaningful changed (bd-c1x6p).
   const refreshLinkKey = l => `${typeof l.source === 'object' ? l.source.id : l.source}→${typeof l.target === 'object' ? l.target.id : l.target}:${l.dep_type}`;
-  const existingLinkKeys = new Set(currentLinks.map(refreshLinkKey));
-  const newLinkKeys = new Set(data.links.map(refreshLinkKey));
+  const existingLinkKeys = new Set(currentLinks.filter(l => l.dep_type !== 'rig_conflict').map(refreshLinkKey));
+  const newLinkKeys = new Set(data.links.filter(l => l.dep_type !== 'rig_conflict').map(refreshLinkKey));
 
   let linksChanged = false;
   // Detect genuinely new links for edge spark animations (bd-9qeto)
@@ -4452,6 +4454,14 @@ async function refresh() {
 
     graph.graphData(graphData);
 
+    // Counter the force reheat: graphData() sets alpha=1 which causes violent
+    // node scattering. Temporarily set high alphaDecay so the simulation cools
+    // down much faster (settles in ~50 ticks instead of ~300). Restore normal
+    // decay after settling period (bd-c1x6p).
+    const normalDecay = 0.0228; // d3 default
+    graph.d3AlphaDecay(0.1); // 4x faster cooldown
+    setTimeout(() => graph.d3AlphaDecay(normalDecay), 2000);
+
     // Restore camera position immediately (prevents library auto-reposition)
     cam.position.copy(savedCamPos);
     if (controls && savedTarget) {
@@ -4459,15 +4469,16 @@ async function refresh() {
       controls.update();
     }
 
-    // After 1.5s — enough for new nodes to settle near their neighbors —
-    // release the pins so the layout can breathe gently.
+    // Release pins after simulation has mostly cooled down. With the faster
+    // alphaDecay, alpha drops below 0.1 within ~1s. Unpin after 2s to be
+    // safe — remaining alpha is negligible so nodes barely drift (bd-c1x6p).
     setTimeout(() => {
       for (const n of pinnedNodes) {
         delete n.fx;
         delete n.fy;
         delete n.fz;
       }
-    }, 1500);
+    }, 2000);
   }
   // If only properties changed (status, title, etc.), the existing three.js
   // objects pick up the changes via the animation tick — no layout reset needed.
@@ -4482,9 +4493,10 @@ function connectLiveUpdates() {
     api.connectEvents((evt) => {
       const applied = applyMutationOptimistic(evt);
       // Always schedule a background refresh for consistency, but with longer
-      // delay if we already applied the change visually.
+      // delay if we already applied the change visually (bd-c1x6p: increased
+      // debounce from 5s/1.5s to 10s/3s to reduce layout disruption frequency).
       clearTimeout(_refreshTimer);
-      _refreshTimer = setTimeout(refresh, applied ? 5000 : 1500);
+      _refreshTimer = setTimeout(refresh, applied ? 10000 : 3000);
     });
   } catch { /* polling fallback */ }
 }
