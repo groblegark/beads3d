@@ -837,6 +837,78 @@
     .agent-entry.decision-expired .agent-entry-text { color: #d04040; }
     .agent-entry.decision-escalated .agent-entry-text { color: #ff6b35; }
 
+    /* Agents View overlay — Shift+A (bd-jgvas) */
+    #agents-view {
+      display: none;
+      position: fixed;
+      top: 0; left: 0; right: 0; bottom: 0;
+      z-index: 500;
+      background: rgba(4, 4, 10, 0.92);
+      backdrop-filter: blur(12px);
+      overflow: hidden;
+    }
+    #agents-view.open { display: flex; flex-direction: column; }
+
+    .agents-view-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 10px 16px;
+      background: rgba(10, 10, 20, 0.95);
+      border-bottom: 1px solid #2a2a3a;
+      flex-shrink: 0;
+    }
+    .agents-view-title {
+      font-size: 14px;
+      font-weight: 700;
+      color: #ff6b35;
+      font-family: 'JetBrains Mono', monospace;
+      letter-spacing: 0.5px;
+    }
+    .agents-view-stats {
+      font-size: 11px;
+      color: #666;
+      font-family: 'JetBrains Mono', monospace;
+      display: flex;
+      gap: 12px;
+    }
+    .agents-view-stats .active { color: #2d8a4e; }
+    .agents-view-stats .idle { color: #d4a017; }
+    .agents-view-stats .crashed { color: #d04040; }
+    .agents-view-close {
+      background: none;
+      border: 1px solid #333;
+      color: #888;
+      font-size: 11px;
+      padding: 3px 10px;
+      border-radius: 3px;
+      cursor: pointer;
+      font-family: 'JetBrains Mono', monospace;
+    }
+    .agents-view-close:hover { color: #fff; border-color: #666; }
+
+    .agents-view-grid {
+      flex: 1;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 4px;
+      padding: 8px;
+      overflow-y: auto;
+      align-content: flex-start;
+    }
+    .agents-view-grid::-webkit-scrollbar { width: 4px; }
+    .agents-view-grid::-webkit-scrollbar-thumb { background: #2a2a3a; border-radius: 2px; }
+
+    .agents-view-grid .agent-window {
+      width: 320px;
+      min-width: 280px;
+      flex: 1 1 320px;
+      max-width: 420px;
+      border-radius: 4px;
+    }
+    .agents-view-grid .agent-window:not(.collapsed) { height: 300px; }
+    .agents-view-grid .agent-window.collapsed { height: 28px; }
+
     /* Decision detail panel (bd-1xskh, bd-9gxt1) */
     .decision-prompt { white-space: pre-wrap; color: #d4a017; }
     .decision-options { display: flex; flex-direction: column; gap: 4px; }
@@ -994,12 +1066,13 @@
   <span id="minimap-label">minimap</span>
   <canvas id="minimap" width="360" height="280"></canvas>
   <div id="status">connecting...</div>
-  <div id="keyhints">/ search &middot; enter fly &middot; &uarr;&darr; cycle &middot; esc close &middot; r refresh &middot; b bloom &middot; l labels &middot; m minimap &middot; 1-5 layout &middot; shift+drag select</div>
+  <div id="keyhints">/ search &middot; enter fly &middot; &uarr;&darr; cycle &middot; esc close &middot; r refresh &middot; b bloom &middot; l labels &middot; m minimap &middot; 1-5 layout &middot; shift+drag select &middot; A agents</div>
 
   <div id="detail"></div>
   <div id="context-menu"></div>
   <canvas id="select-overlay"></canvas>
   <div id="bulk-menu"></div>
+  <div id="agents-view"></div>
   <div id="agent-windows"></div>
 
   <script type="module" src="/src/main.js"></script>

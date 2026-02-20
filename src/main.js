@@ -203,6 +203,9 @@ const dootPopups = new Map(); // nodeId → { el, timer, node, lastDoot }
 // Agent activity feed windows — rich session transcript popups (bd-kau4k)
 const agentWindows = new Map(); // agentId → { el, feedEl, node, entries, pendingTool, collapsed }
 
+// Agents View overlay state (bd-jgvas)
+let agentsViewOpen = false;
+
 // Epic cycling state — Shift+S/D navigation (bd-pnngb)
 let _epicNodes = [];       // sorted array of epic nodes, rebuilt on refresh
 let _epicCycleIndex = -1;  // current position in _epicNodes (-1 = none)
@@ -4085,6 +4088,12 @@ function setupControls() {
       // Always unfreeze camera on Escape (bd-casin)
       unfreezeCamera();
 
+      // Close Agents View if open (bd-jgvas)
+      if (agentsViewOpen) {
+        closeAgentsView();
+        return;
+      }
+
       if (bulkMenu.style.display === 'block') {
         hideBulkMenu();
         multiSelected.clear();
@@ -4142,6 +4151,12 @@ function setupControls() {
     if (e.shiftKey && e.key === 'S' && document.activeElement !== searchInput) {
       e.preventDefault();
       cycleEpic(-1);
+      return;
+    }
+    // Shift+A for Agents View overlay (bd-jgvas)
+    if (e.shiftKey && e.key === 'A' && document.activeElement !== searchInput) {
+      e.preventDefault();
+      toggleAgentsView();
       return;
     }
     // 1-5 for layout modes
@@ -4823,6 +4838,192 @@ function closeAgentWindow(agentId) {
   agentWindows.delete(agentId);
 }
 
+// --- Agents View overlay — Shift+A (bd-jgvas) ---
+
+function toggleAgentsView() {
+  if (agentsViewOpen) {
+    closeAgentsView();
+  } else {
+    openAgentsView();
+  }
+}
+
+function openAgentsView() {
+  const overlay = document.getElementById('agents-view');
+  if (!overlay || !graphData) return;
+
+  // Collect all agent nodes from graph
+  const agentNodes = graphData.nodes.filter(n => n.issue_type === 'agent' && !n._hidden);
+  if (agentNodes.length === 0) return;
+
+  // Sort: active first, idle second, rest last; alphabetical within group
+  const statusOrder = { active: 0, idle: 1 };
+  agentNodes.sort((a, b) => {
+    const sa = statusOrder[a.status] ?? 2;
+    const sb = statusOrder[b.status] ?? 2;
+    if (sa !== sb) return sa - sb;
+    return (a.title || a.id).localeCompare(b.title || b.id);
+  });
+
+  // Count by status
+  const counts = { active: 0, idle: 0, crashed: 0 };
+  for (const n of agentNodes) {
+    if (n.status === 'active') counts.active++;
+    else if (n.status === 'idle') counts.idle++;
+    else if (n.status === 'crashed') counts.crashed++;
+  }
+
+  overlay.innerHTML = `
+    <div class="agents-view-header">
+      <span class="agents-view-title">AGENTS</span>
+      <div class="agents-view-stats">
+        <span class="active">${counts.active} active</span>
+        <span class="idle">${counts.idle} idle</span>
+        ${counts.crashed ? `<span class="crashed">${counts.crashed} crashed</span>` : ''}
+        <span>${agentNodes.length} total</span>
+      </div>
+      <button class="agents-view-close">ESC close</button>
+    </div>
+    <div class="agents-view-grid"></div>
+  `;
+
+  overlay.querySelector('.agents-view-close').onclick = () => closeAgentsView();
+
+  const grid = overlay.querySelector('.agents-view-grid');
+
+  // Open agent windows inside the overlay grid
+  for (const node of agentNodes) {
+    // If window already exists (from bottom tray), move it into the grid
+    const existing = agentWindows.get(node.id);
+    if (existing) {
+      existing.collapsed = false;
+      existing.el.classList.remove('collapsed');
+      grid.appendChild(existing.el);
+      continue;
+    }
+
+    // Create new window in the grid (reuse showAgentWindow logic inline)
+    const el = document.createElement('div');
+    el.className = 'agent-window';
+    el.dataset.agentId = node.id;
+
+    const agentName = node.title || node.id.replace('agent:', '');
+    const agentStatus = (node.status || '').toLowerCase();
+    const statusColor = agentStatus === 'active' ? '#2d8a4e' :
+                         agentStatus === 'idle' ? '#d4a017' :
+                         agentStatus === 'crashed' ? '#d04040' : '#666';
+
+    // Find assigned beads
+    const assigned = graphData.links
+      .filter(l => l.dep_type === 'assigned_to' &&
+        (typeof l.source === 'object' ? l.source.id : l.source) === node.id)
+      .map(l => {
+        const tgtId = typeof l.target === 'object' ? l.target.id : l.target;
+        const tgtNode = graphData.nodes.find(n => n.id === tgtId);
+        return tgtNode ? { id: tgtId, title: tgtNode.title || tgtId } : null;
+      })
+      .filter(Boolean);
+
+    const beadsList = assigned
+      .map(b => `<div class="agent-window-bead" title="${escapeHtml(b.id)}: ${escapeHtml(b.title)}">${escapeHtml(b.id.replace(/^[a-z]+-/, ''))}: ${escapeHtml(b.title)}</div>`)
+      .join('');
+
+    el.innerHTML = `
+      <div class="agent-window-header">
+        <span class="agent-window-name">${escapeHtml(agentName)}</span>
+        <span class="agent-window-badge" style="color:${statusColor}">${agentStatus || '?'}</span>
+        <span class="agent-window-badge">${assigned.length}</span>
+        <button class="agent-window-close">&times;</button>
+      </div>
+      ${beadsList ? `<div class="agent-window-beads">${beadsList}</div>` : ''}
+      <div class="agent-feed"><div class="agent-window-empty">waiting for events...</div></div>
+      <div class="agent-mail-compose">
+        <input class="agent-mail-input" type="text" placeholder="Send message to ${escapeHtml(agentName)}..." />
+        <button class="agent-mail-send">&#x2709;</button>
+      </div>
+    `;
+
+    const header = el.querySelector('.agent-window-header');
+    header.onclick = (e) => {
+      if (e.target.classList.contains('agent-window-close')) return;
+      const win = agentWindows.get(node.id);
+      if (win) {
+        win.collapsed = !win.collapsed;
+        el.classList.toggle('collapsed', win.collapsed);
+      }
+    };
+
+    el.querySelector('.agent-window-close').onclick = () => closeAgentWindow(node.id);
+
+    // Mail compose
+    const mailInput = el.querySelector('.agent-mail-input');
+    const mailSend = el.querySelector('.agent-mail-send');
+    const doSend = async () => {
+      const text = mailInput.value.trim();
+      if (!text) return;
+      mailInput.value = '';
+      mailInput.disabled = true;
+      mailSend.disabled = true;
+      try {
+        await api.sendMail(agentName, text);
+        const win = agentWindows.get(node.id);
+        if (win) {
+          const empty = win.feedEl.querySelector('.agent-window-empty');
+          if (empty) empty.remove();
+          const ts = new Date().toTimeString().slice(0, 8);
+          win.feedEl.appendChild(createEntry(ts, '\u25b6', `sent: ${text}`, 'mail mail-sent'));
+          autoScroll(win);
+        }
+      } catch (err) {
+        console.error('[beads3d] mail send failed:', err);
+        mailInput.value = text;
+        const compose = el.querySelector('.agent-mail-compose');
+        compose.classList.add('send-error');
+        setTimeout(() => compose.classList.remove('send-error'), 2000);
+      }
+      mailInput.disabled = false;
+      mailSend.disabled = false;
+      mailInput.focus();
+    };
+    mailSend.onclick = doSend;
+    mailInput.onkeydown = (e) => { if (e.key === 'Enter') doSend(); };
+
+    grid.appendChild(el);
+
+    const feedEl = el.querySelector('.agent-feed');
+    agentWindows.set(node.id, {
+      el, feedEl, node,
+      entries: [],
+      pendingTool: null,
+      collapsed: false,
+    });
+  }
+
+  overlay.classList.add('open');
+  agentsViewOpen = true;
+}
+
+function closeAgentsView() {
+  const overlay = document.getElementById('agents-view');
+  if (!overlay) return;
+
+  // Move windows back to bottom tray (don't destroy — preserves event history)
+  const tray = document.getElementById('agent-windows');
+  if (tray) {
+    for (const [, win] of agentWindows) {
+      if (win.el.parentElement !== tray) {
+        win.collapsed = true;
+        win.el.classList.add('collapsed');
+        tray.appendChild(win.el);
+      }
+    }
+  }
+
+  overlay.classList.remove('open');
+  overlay.innerHTML = '';
+  agentsViewOpen = false;
+}
+
 function appendAgentEvent(agentId, evt) {
   const win = agentWindows.get(agentId);
   if (!win) return;
@@ -5131,6 +5332,11 @@ async function main() {
     window.__beads3d_closeAgentWindow = closeAgentWindow;
     window.__beads3d_appendAgentEvent = appendAgentEvent;
     window.__beads3d_agentWindows = () => agentWindows;
+    // Expose agents view overlay for testing (bd-jgvas)
+    window.__beads3d_toggleAgentsView = toggleAgentsView;
+    window.__beads3d_openAgentsView = openAgentsView;
+    window.__beads3d_closeAgentsView = closeAgentsView;
+    window.__beads3d_agentsViewOpen = () => agentsViewOpen;
     // Expose event sprite internals for testing (bd-9qeto)
     window.__beads3d_spawnStatusPulse = spawnStatusPulse;
     window.__beads3d_spawnEdgeSpark = spawnEdgeSpark;
