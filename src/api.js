@@ -95,7 +95,7 @@ export class BeadsAPI {
     }
   }
 
-  // SSE event stream for live updates
+  // SSE event stream for live updates (mutation events)
   connectEvents(onEvent) {
     const url = `${this.baseUrl}/events`;
     const es = new EventSource(url);
@@ -106,6 +106,35 @@ export class BeadsAPI {
         onEvent(data);
       } catch { /* skip malformed */ }
     };
+
+    es.onerror = () => {
+      // EventSource auto-reconnects
+    };
+
+    return es;
+  }
+
+  // SSE bus event stream — all NATS event streams (bd-c7723)
+  // streams: comma-separated stream names (e.g., "agents,hooks,oj") or "all"
+  connectBusEvents(streams, onEvent) {
+    const url = `${this.baseUrl}/bus/events?stream=${encodeURIComponent(streams)}`;
+    const es = new EventSource(url);
+
+    es.addEventListener('agents', (e) => {
+      try { onEvent(JSON.parse(e.data)); } catch { /* skip */ }
+    });
+    es.addEventListener('hooks', (e) => {
+      try { onEvent(JSON.parse(e.data)); } catch { /* skip */ }
+    });
+    es.addEventListener('oj', (e) => {
+      try { onEvent(JSON.parse(e.data)); } catch { /* skip */ }
+    });
+    es.addEventListener('mutations', (e) => {
+      try { onEvent(JSON.parse(e.data)); } catch { /* skip */ }
+    });
+    es.addEventListener('decisions', (e) => {
+      try { onEvent(JSON.parse(e.data)); } catch { /* skip */ }
+    });
 
     es.onerror = () => {
       // EventSource auto-reconnects

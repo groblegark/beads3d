@@ -170,6 +170,9 @@ let isBoxSelecting = false;
 let boxSelectStart = null; // {x, y} screen coords
 let cameraFrozen = false; // true when multi-select has locked orbit controls (bd-casin)
 
+// Live event doots — floating text particles above agent nodes (bd-c7723)
+const doots = []; // { sprite, node, birth, lifetime, vx, vy, vz }
+
 // --- Minimap ---
 const minimapCanvas = document.getElementById('minimap');
 const minimapCtx = minimapCanvas.getContext('2d');
@@ -796,6 +799,9 @@ function startAnimation() {
         }
       });
     }
+
+    // Update live event doots (bd-c7723)
+    updateDoots(t);
 
     // Minimap: render every 3rd frame for perf
     if (!animate._frame) animate._frame = 0;
@@ -2420,6 +2426,163 @@ function connectLiveUpdates() {
   } catch { /* polling fallback */ }
 }
 
+// --- Live event doots (bd-c7723) ---
+
+const DOOT_LIFETIME = 4.0; // seconds before fully faded
+const DOOT_RISE_SPEED = 8; // units per second upward
+const DOOT_MAX = 30; // max active doots (oldest get pruned)
+
+// Short human-readable label for a bus event
+function dootLabel(evt) {
+  const type = evt.type || '';
+  const p = evt.payload || {};
+
+  // Agent lifecycle
+  if (type === 'AgentStarted') return 'started';
+  if (type === 'AgentStopped') return 'stopped';
+  if (type === 'AgentCrashed') return 'crashed!';
+  if (type === 'AgentIdle') return 'idle';
+  if (type === 'AgentHeartbeat') return null; // too noisy
+
+  // Hook events (tool use, session, etc.)
+  if (type === 'PreToolUse' || type === 'PostToolUse') {
+    const tool = p.tool_name || p.toolName || '';
+    return tool ? tool.toLowerCase() : 'tool';
+  }
+  if (type === 'SessionStart') return 'session start';
+  if (type === 'SessionEnd') return 'session end';
+  if (type === 'Stop') return 'stop';
+  if (type === 'UserPromptSubmit') return 'prompt';
+  if (type === 'PreCompact') return 'compacting...';
+
+  // OddJobs
+  if (type === 'OjJobCreated') return 'job created';
+  if (type === 'OjStepAdvanced') return 'step';
+  if (type === 'OjAgentSpawned') return 'spawned';
+  if (type === 'OjAgentIdle') return 'idle';
+  if (type === 'OjJobCompleted') return 'job done';
+  if (type === 'OjJobFailed') return 'job failed!';
+
+  // Mutations
+  if (type === 'MutationCreate') return 'created bead';
+  if (type === 'MutationUpdate') return 'updated';
+  if (type === 'MutationStatus') return p.new_status || 'status';
+  if (type === 'MutationClose') return 'closed';
+
+  // Decisions
+  if (type === 'DecisionCreated') return 'decision?';
+  if (type === 'DecisionResponded') return 'decided';
+
+  return type.replace(/([A-Z])/g, ' $1').trim().toLowerCase().slice(0, 20);
+}
+
+// Color based on event type
+function dootColor(evt) {
+  const type = evt.type || '';
+  if (type.includes('Crash') || type.includes('Failed')) return '#ff3333';
+  if (type.includes('Stop') || type.includes('End')) return '#888888';
+  if (type.includes('Started') || type.includes('Spawned') || type.includes('Created')) return '#2d8a4e';
+  if (type.includes('Tool')) return '#4a9eff';
+  if (type.includes('Decision')) return '#d4a017';
+  if (type.includes('Idle')) return '#666666';
+  return '#ff6b35'; // agent orange default
+}
+
+// Find the agent node for a bus event (by actor/agent_id in payload)
+function findAgentNode(evt) {
+  const p = evt.payload || {};
+  const actor = p.actor || p.agent_id || p.agentID || '';
+  if (!actor) return null;
+
+  // Look for agent node matching the actor name
+  for (const node of graphData.nodes) {
+    if (node.issue_type !== 'agent') continue;
+    // Agent node IDs or titles often contain the actor name
+    if (node.id === actor || node.title === actor ||
+        (node.title && node.title.includes(actor)) ||
+        (node.id && node.id.includes(actor))) {
+      return node;
+    }
+  }
+  return null;
+}
+
+function spawnDoot(node, text, color) {
+  if (!node || !text || !graph) return;
+
+  const sprite = makeTextSprite(text, { fontSize: 16, color, opacity: 0.9 });
+  // Random horizontal jitter so overlapping doots spread out
+  const jx = (Math.random() - 0.5) * 6;
+  const jz = (Math.random() - 0.5) * 6;
+  sprite.position.set(
+    (node.x || 0) + jx,
+    (node.y || 0) + 10, // start just above node
+    (node.z || 0) + jz,
+  );
+  sprite.renderOrder = 999;
+  graph.scene().add(sprite);
+
+  doots.push({
+    sprite,
+    node,
+    birth: performance.now() / 1000,
+    lifetime: DOOT_LIFETIME,
+    jx, jz,
+  });
+
+  // Prune oldest if over limit
+  while (doots.length > DOOT_MAX) {
+    const old = doots.shift();
+    graph.scene().remove(old.sprite);
+    old.sprite.material.map?.dispose();
+    old.sprite.material.dispose();
+  }
+}
+
+// Update doot positions and opacity in animate loop
+function updateDoots(t) {
+  for (let i = doots.length - 1; i >= 0; i--) {
+    const d = doots[i];
+    const age = t - d.birth;
+
+    if (age > d.lifetime) {
+      // Remove expired doot
+      graph.scene().remove(d.sprite);
+      d.sprite.material.map?.dispose();
+      d.sprite.material.dispose();
+      doots.splice(i, 1);
+      continue;
+    }
+
+    // Rise upward, follow node position (nodes can move during force layout)
+    const rise = age * DOOT_RISE_SPEED;
+    d.sprite.position.set(
+      (d.node.x || 0) + d.jx,
+      (d.node.y || 0) + 10 + rise,
+      (d.node.z || 0) + d.jz,
+    );
+
+    // Fade out over last 40% of lifetime
+    const fadeStart = d.lifetime * 0.6;
+    const opacity = age < fadeStart ? 0.9 : 0.9 * (1 - (age - fadeStart) / (d.lifetime - fadeStart));
+    d.sprite.material.opacity = Math.max(0, opacity);
+  }
+}
+
+function connectBusStream() {
+  try {
+    api.connectBusEvents('agents,hooks,oj,mutations,decisions', (evt) => {
+      const label = dootLabel(evt);
+      if (!label) return; // skip noisy events
+
+      const node = findAgentNode(evt);
+      if (!node) return; // no matching agent node in graph
+
+      spawnDoot(node, label, dootColor(evt));
+    });
+  } catch { /* SSE not available — degrade gracefully */ }
+}
+
 // --- Init ---
 async function main() {
   try {
@@ -2430,6 +2593,7 @@ async function main() {
     setupBoxSelect();
     await refresh();
     connectLiveUpdates();
+    connectBusStream(); // bd-c7723: live NATS event doots on agent nodes
     setInterval(refresh, POLL_INTERVAL);
     graph.cameraPosition({ x: 0, y: 0, z: 400 });
     // Expose for Playwright tests
