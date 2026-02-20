@@ -21,7 +21,7 @@ const GEO = {
   torus:      new THREE.TorusGeometry(1, 0.15, 6, 20), // unit torus for rings
   icosa:      new THREE.IcosahedronGeometry(1, 1),     // epic shell
   octa:       new THREE.OctahedronGeometry(1, 0),      // blocked spikes
-  box:        new THREE.BoxGeometry(1, 1, 1),           // agent node (monitor/computer)
+  box:        new THREE.BoxGeometry(1, 1, 1),           // descent stage, general purpose
 };
 
 // --- Link icon textures (shared, one per dep type) ---
@@ -138,7 +138,7 @@ function drawPerson(ctx, s, color) {
 const LINK_ICON_MATERIALS = {
   'blocks':       makeLinkIconTexture(drawShield, '#d04040'),
   'waits-for':    makeLinkIconTexture(drawClock,  '#d4a017'),
-  'parent-child': makeLinkIconTexture(drawChain,  '#8b45a666'),
+  'parent-child': makeLinkIconTexture(drawChain,  '#8b45a6'),
   'relates-to':   makeLinkIconTexture(drawDot,    '#4a9eff'),
   'assigned_to':  makeLinkIconTexture(drawPerson, '#ff6b35'),
 };
@@ -476,48 +476,73 @@ function initGraph() {
         group.add(ring);
       }
 
-      // Agent: monitor/computer-dude — box core with glowing screen face
+      // Agent: retro lunar lander — cute spaceship with landing legs (beads-yp2y)
       if (n.issue_type === 'agent') {
-        // Replace sphere core with box
         group.remove(core);
         group.remove(glow);
+        const s = size;
+        const matOrange = new THREE.MeshBasicMaterial({ color: 0xff6b35, transparent: true, opacity: 0.85 });
+        const matDark = new THREE.MeshBasicMaterial({ color: 0x2a2a3a, transparent: true, opacity: 0.9 });
+        const matGold = new THREE.MeshBasicMaterial({ color: 0xd4a017, transparent: true, opacity: 0.7 });
 
-        // Monitor body — solid dark box
-        const body = new THREE.Mesh(GEO.box, new THREE.MeshBasicMaterial({
-          color: 0x2a2a3a, transparent: true, opacity: 0.9,
+        // Cabin — squat octahedron (angular Apollo LM shape)
+        const cabin = new THREE.Mesh(GEO.octa, matOrange.clone());
+        cabin.scale.set(s * 1.0, s * 0.7, s * 1.0);
+        group.add(cabin);
+
+        // Viewport window — small sphere on front face
+        const window = new THREE.Mesh(GEO.sphereHi, new THREE.MeshBasicMaterial({
+          color: 0x88ccff, transparent: true, opacity: 0.8,
         }));
-        body.scale.set(size * 1.6, size * 1.2, size * 0.6);
-        group.add(body);
+        window.scale.setScalar(s * 0.25);
+        window.position.set(0, s * 0.15, s * 0.55);
+        group.add(window);
 
-        // Screen face — bright orange glow on front
-        const screen = new THREE.Mesh(
-          new THREE.PlaneGeometry(1, 1),
-          new THREE.MeshBasicMaterial({
-            color: 0xff6b35, transparent: true, opacity: 0.7, side: THREE.DoubleSide,
-          }),
-        );
-        screen.scale.set(size * 1.3, size * 0.9, 1);
-        screen.position.z = size * 0.31;
-        group.add(screen);
+        // Descent stage — wider box below cabin
+        const descent = new THREE.Mesh(GEO.box, matGold.clone());
+        descent.scale.set(s * 1.4, s * 0.35, s * 1.4);
+        descent.position.y = -s * 0.55;
+        group.add(descent);
 
-        // Scan lines overlay — horizontal stripes for retro-tech look
-        const scanCanvas = document.createElement('canvas');
-        scanCanvas.width = 64;
-        scanCanvas.height = 64;
-        const sCtx = scanCanvas.getContext('2d');
-        for (let y = 0; y < 64; y += 4) {
-          sCtx.fillStyle = 'rgba(0,0,0,0.3)';
-          sCtx.fillRect(0, y, 64, 2);
+        // Thruster nozzle — cone below descent stage
+        const nozzleGeo = new THREE.ConeGeometry(0.3, 0.5, 6);
+        const nozzle = new THREE.Mesh(nozzleGeo, matDark.clone());
+        nozzle.scale.setScalar(s);
+        nozzle.position.y = -s * 1.0;
+        nozzle.rotation.x = Math.PI; // point down
+        group.add(nozzle);
+
+        // Landing legs — 4 angled cylinders
+        const legGeo = new THREE.CylinderGeometry(0.04, 0.04, 1, 4);
+        const padGeo = new THREE.SphereGeometry(0.12, 4, 4);
+        for (let i = 0; i < 4; i++) {
+          const angle = (i / 4) * Math.PI * 2 + Math.PI / 4;
+          const leg = new THREE.Mesh(legGeo, matOrange.clone());
+          leg.scale.setScalar(s);
+          leg.scale.y = s * 1.2;
+          leg.position.set(Math.cos(angle) * s * 0.7, -s * 0.9, Math.sin(angle) * s * 0.7);
+          leg.rotation.z = Math.cos(angle) * 0.4;
+          leg.rotation.x = -Math.sin(angle) * 0.4;
+          group.add(leg);
+          // Landing pad at foot
+          const pad = new THREE.Mesh(padGeo, matGold.clone());
+          pad.scale.setScalar(s);
+          pad.position.set(Math.cos(angle) * s * 1.1, -s * 1.5, Math.sin(angle) * s * 1.1);
+          group.add(pad);
         }
-        const scanTex = new THREE.CanvasTexture(scanCanvas);
-        scanTex.minFilter = THREE.LinearFilter;
-        const scanLines = new THREE.Mesh(
-          new THREE.PlaneGeometry(1, 1),
-          new THREE.MeshBasicMaterial({ map: scanTex, transparent: true, opacity: 0.5, side: THREE.DoubleSide }),
-        );
-        scanLines.scale.set(size * 1.3, size * 0.9, 1);
-        scanLines.position.z = size * 0.32;
-        group.add(scanLines);
+
+        // Antenna — thin cylinder on top
+        const antennaGeo = new THREE.CylinderGeometry(0.02, 0.02, 1, 3);
+        const antenna = new THREE.Mesh(antennaGeo, matOrange.clone());
+        antenna.scale.setScalar(s);
+        antenna.scale.y = s * 0.8;
+        antenna.position.y = s * 0.8;
+        group.add(antenna);
+        // Antenna tip
+        const tip = new THREE.Mesh(GEO.sphereHi, matOrange.clone());
+        tip.scale.setScalar(s * 0.1);
+        tip.position.y = s * 1.3;
+        group.add(tip);
 
         // Outer glow — orange fresnel shell, pulses with activity (beads-v0wa)
         const agentGlow = new THREE.Mesh(GEO.sphereLo, createFresnelMaterial(0xff6b35, { opacity: 0.25, power: 2.5 }));
