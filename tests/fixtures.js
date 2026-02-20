@@ -58,6 +58,299 @@ export const MOCK_GRAPH = {
 // Minimal response for Ping
 export const MOCK_PING = { version: '0.62.6', uptime: 3600 };
 
+// --- Multi-agent mock graph (bd-mll3i) ---
+// 9 active agents working on a realistic platform overhaul project.
+// Each agent has 1-3 in_progress beads. Fixed positions cluster agents
+// around their beads for clean simultaneous 9-agent view tests.
+export const MOCK_MULTI_AGENT_GRAPH = {
+  nodes: [
+    // --- EPIC: Platform Overhaul (top-left anchor) ---
+    { id: 'gt-epic-platform', title: 'Epic: Platform Overhaul', status: 'in_progress', priority: 0, issue_type: 'epic', assignee: '', created_at: '2026-01-10T09:00:00Z', updated_at: '2026-02-18T08:00:00Z', labels: ['platform'], dep_count: 6, dep_by_count: 0, blocked_by: [], fx: -200, fy: 0, fz: 0 },
+
+    // --- Agent: swift-newt (auth cluster) ---
+    { id: 'gt-auth-rpc', title: 'Implement auth RPC layer', status: 'in_progress', priority: 1, issue_type: 'feature', assignee: 'swift-newt', created_at: '2026-02-10T10:00:00Z', updated_at: '2026-02-19T11:30:00Z', labels: ['auth', 'rpc'], dep_count: 1, dep_by_count: 0, blocked_by: [], fx: -300, fy: -100, fz: 0 },
+    { id: 'gt-auth-tests', title: 'Auth integration tests', status: 'in_progress', priority: 2, issue_type: 'task', assignee: 'swift-newt', created_at: '2026-02-12T09:00:00Z', updated_at: '2026-02-19T11:00:00Z', labels: ['auth', 'testing'], dep_count: 0, dep_by_count: 1, blocked_by: ['gt-auth-rpc'], fx: -350, fy: -150, fz: 0 },
+
+    // --- Agent: keen-bird (storage cluster) ---
+    { id: 'gt-dolt-schema', title: 'Dolt schema migration v3', status: 'in_progress', priority: 1, issue_type: 'task', assignee: 'keen-bird', created_at: '2026-02-08T08:00:00Z', updated_at: '2026-02-19T10:45:00Z', labels: ['dolt', 'schema'], dep_count: 0, dep_by_count: 2, blocked_by: [], fx: -300, fy: 100, fz: 0 },
+    { id: 'gt-dolt-repl', title: 'Dolt replication health check', status: 'in_progress', priority: 2, issue_type: 'task', assignee: 'keen-bird', created_at: '2026-02-14T11:00:00Z', updated_at: '2026-02-19T09:30:00Z', labels: ['dolt', 'ops'], dep_count: 0, dep_by_count: 0, blocked_by: [], fx: -350, fy: 60, fz: 0 },
+
+    // --- Agent: vast-toad (visualization cluster) ---
+    { id: 'gt-graph-api', title: 'Graph API: agent synthesis', status: 'in_progress', priority: 1, issue_type: 'feature', assignee: 'vast-toad', created_at: '2026-02-15T10:00:00Z', updated_at: '2026-02-19T11:50:00Z', labels: ['api', 'graph'], dep_count: 0, dep_by_count: 1, blocked_by: [], fx: -100, fy: -200, fz: 0 },
+
+    // --- Agent: arch-seal (infra cluster) ---
+    { id: 'gt-k8s-deploy', title: 'K8s deployment manifests update', status: 'in_progress', priority: 1, issue_type: 'task', assignee: 'arch-seal', created_at: '2026-02-16T09:00:00Z', updated_at: '2026-02-19T10:00:00Z', labels: ['k8s', 'infra'], dep_count: 1, dep_by_count: 0, blocked_by: [], fx: -100, fy: 200, fz: 0 },
+    { id: 'gt-helm-chart', title: 'Helm chart: raise memory limits', status: 'in_progress', priority: 1, issue_type: 'task', assignee: 'arch-seal', created_at: '2026-02-17T08:00:00Z', updated_at: '2026-02-19T11:20:00Z', labels: ['helm', 'infra'], dep_count: 0, dep_by_count: 1, blocked_by: [], fx: -50, fy: 250, fz: 0 },
+
+    // --- Agent: lush-mole (test data cluster) ---
+    { id: 'gt-e2e-fixtures', title: 'E2E fixture data: multi-agent sessions', status: 'in_progress', priority: 1, issue_type: 'task', assignee: 'lush-mole', created_at: '2026-02-18T09:00:00Z', updated_at: '2026-02-19T11:55:00Z', labels: ['testing', 'e2e'], dep_count: 0, dep_by_count: 0, blocked_by: [], fx: 100, fy: -200, fz: 0 },
+
+    // --- Agent: deft-fox (UI/bugs cluster) ---
+    { id: 'gt-label-toggle', title: 'Fix label toggle key (l key bug)', status: 'in_progress', priority: 2, issue_type: 'bug', assignee: 'deft-fox', created_at: '2026-02-19T08:00:00Z', updated_at: '2026-02-19T11:40:00Z', labels: ['ui', 'bug'], dep_count: 0, dep_by_count: 0, blocked_by: [], fx: 100, fy: 0, fz: 0 },
+    { id: 'gt-doot-popup', title: 'Doot-triggered issue popup', status: 'in_progress', priority: 1, issue_type: 'feature', assignee: 'deft-fox', created_at: '2026-02-19T09:00:00Z', updated_at: '2026-02-19T11:45:00Z', labels: ['ui', 'doots'], dep_count: 0, dep_by_count: 0, blocked_by: [], fx: 150, fy: -50, fz: 0 },
+
+    // --- Agent: stout-mare (ops cluster) ---
+    { id: 'gt-oomkill', title: 'Fix OOMKilled gitlab-runner jobs', status: 'in_progress', priority: 0, issue_type: 'bug', assignee: 'stout-mare', created_at: '2026-02-17T10:00:00Z', updated_at: '2026-02-19T11:00:00Z', labels: ['ops', 'critical'], dep_count: 0, dep_by_count: 0, blocked_by: [], fx: 100, fy: 150, fz: 0 },
+
+    // --- Agent: tall-seal (coverage cluster) ---
+    { id: 'gt-coverage-e2e', title: 'Collect E2E coverage from Playwright', status: 'in_progress', priority: 2, issue_type: 'task', assignee: 'tall-seal', created_at: '2026-02-18T10:00:00Z', updated_at: '2026-02-19T10:30:00Z', labels: ['testing', 'coverage'], dep_count: 0, dep_by_count: 0, blocked_by: [], fx: 200, fy: 100, fz: 0 },
+    { id: 'gt-coverage-unit', title: 'Unit test coverage baseline', status: 'in_progress', priority: 2, issue_type: 'task', assignee: 'tall-seal', created_at: '2026-02-18T11:00:00Z', updated_at: '2026-02-19T10:00:00Z', labels: ['testing', 'coverage'], dep_count: 0, dep_by_count: 1, blocked_by: [], fx: 250, fy: 60, fz: 0 },
+
+    // --- Agent: arch-seal-1 (popup cluster) ---
+    { id: 'gt-popup-detect', title: 'Detect doot events on issue nodes', status: 'in_progress', priority: 1, issue_type: 'task', assignee: 'arch-seal-1', created_at: '2026-02-19T09:00:00Z', updated_at: '2026-02-19T11:30:00Z', labels: ['ui', 'doots'], dep_count: 0, dep_by_count: 0, blocked_by: [], fx: 300, fy: -100, fz: 0 },
+
+    // --- Blocked / open work (background context) ---
+    { id: 'gt-nats-bench', title: 'NATS throughput benchmark', status: 'open', priority: 3, issue_type: 'task', assignee: '', created_at: '2026-02-16T14:00:00Z', updated_at: '2026-02-19T08:00:00Z', labels: ['nats', 'perf'], dep_count: 0, dep_by_count: 1, blocked_by: ['gt-dolt-schema'], fx: -250, fy: 150, fz: 0 },
+    { id: 'gt-redis-ttl', title: 'Tune Redis cache TTL', status: 'open', priority: 3, issue_type: 'task', assignee: '', created_at: '2026-02-17T09:00:00Z', updated_at: '2026-02-18T14:00:00Z', labels: ['redis', 'perf'], dep_count: 0, dep_by_count: 1, blocked_by: ['gt-graph-api'], fx: -50, fy: -250, fz: 0 },
+
+    // --- Agent nodes (synthetic — one per active agent) ---
+    { id: 'agent:swift-newt', title: 'swift-newt', status: 'active', priority: 3, issue_type: 'agent', assignee: '', created_at: '2026-02-19T08:00:00Z', updated_at: '2026-02-19T11:55:00Z', labels: [], dep_count: 0, dep_by_count: 0, blocked_by: [], fx: -390, fy: -130, fz: 0 },
+    { id: 'agent:keen-bird', title: 'keen-bird', status: 'active', priority: 3, issue_type: 'agent', assignee: '', created_at: '2026-02-19T08:00:00Z', updated_at: '2026-02-19T11:55:00Z', labels: [], dep_count: 0, dep_by_count: 0, blocked_by: [], fx: -390, fy: 80, fz: 0 },
+    { id: 'agent:vast-toad', title: 'vast-toad', status: 'active', priority: 3, issue_type: 'agent', assignee: '', created_at: '2026-02-19T08:00:00Z', updated_at: '2026-02-19T11:55:00Z', labels: [], dep_count: 0, dep_by_count: 0, blocked_by: [], fx: -130, fy: -240, fz: 0 },
+    { id: 'agent:arch-seal', title: 'arch-seal', status: 'active', priority: 3, issue_type: 'agent', assignee: '', created_at: '2026-02-19T08:00:00Z', updated_at: '2026-02-19T11:55:00Z', labels: [], dep_count: 0, dep_by_count: 0, blocked_by: [], fx: -130, fy: 220, fz: 0 },
+    { id: 'agent:lush-mole', title: 'lush-mole', status: 'active', priority: 3, issue_type: 'agent', assignee: '', created_at: '2026-02-19T08:00:00Z', updated_at: '2026-02-19T11:55:00Z', labels: [], dep_count: 0, dep_by_count: 0, blocked_by: [], fx: 80, fy: -240, fz: 0 },
+    { id: 'agent:deft-fox', title: 'deft-fox', status: 'active', priority: 3, issue_type: 'agent', assignee: '', created_at: '2026-02-19T08:00:00Z', updated_at: '2026-02-19T11:55:00Z', labels: [], dep_count: 0, dep_by_count: 0, blocked_by: [], fx: 80, fy: 20, fz: 0 },
+    { id: 'agent:stout-mare', title: 'stout-mare', status: 'active', priority: 3, issue_type: 'agent', assignee: '', created_at: '2026-02-19T08:00:00Z', updated_at: '2026-02-19T11:55:00Z', labels: [], dep_count: 0, dep_by_count: 0, blocked_by: [], fx: 80, fy: 180, fz: 0 },
+    { id: 'agent:tall-seal', title: 'tall-seal', status: 'active', priority: 3, issue_type: 'agent', assignee: '', created_at: '2026-02-19T08:00:00Z', updated_at: '2026-02-19T11:55:00Z', labels: [], dep_count: 0, dep_by_count: 0, blocked_by: [], fx: 230, fy: 80, fz: 0 },
+    { id: 'agent:arch-seal-1', title: 'arch-seal-1', status: 'active', priority: 3, issue_type: 'agent', assignee: '', created_at: '2026-02-19T08:00:00Z', updated_at: '2026-02-19T11:55:00Z', labels: [], dep_count: 0, dep_by_count: 0, blocked_by: [], fx: 320, fy: -130, fz: 0 },
+  ],
+  edges: [
+    // Epic → features
+    { source: 'gt-epic-platform', target: 'gt-auth-rpc', dep_type: 'parent-child' },
+    { source: 'gt-epic-platform', target: 'gt-graph-api', dep_type: 'parent-child' },
+    { source: 'gt-epic-platform', target: 'gt-k8s-deploy', dep_type: 'parent-child' },
+    { source: 'gt-epic-platform', target: 'gt-e2e-fixtures', dep_type: 'parent-child' },
+    // Task dependency chains
+    { source: 'gt-auth-rpc', target: 'gt-auth-tests', dep_type: 'blocks' },
+    { source: 'gt-helm-chart', target: 'gt-k8s-deploy', dep_type: 'blocks' },
+    { source: 'gt-dolt-schema', target: 'gt-nats-bench', dep_type: 'blocks' },
+    { source: 'gt-graph-api', target: 'gt-redis-ttl', dep_type: 'blocks' },
+    { source: 'gt-coverage-unit', target: 'gt-coverage-e2e', dep_type: 'blocks' },
+    // Agent → bead assignments (assigned_to edges)
+    { source: 'agent:swift-newt', target: 'gt-auth-rpc', dep_type: 'assigned_to' },
+    { source: 'agent:swift-newt', target: 'gt-auth-tests', dep_type: 'assigned_to' },
+    { source: 'agent:keen-bird', target: 'gt-dolt-schema', dep_type: 'assigned_to' },
+    { source: 'agent:keen-bird', target: 'gt-dolt-repl', dep_type: 'assigned_to' },
+    { source: 'agent:vast-toad', target: 'gt-graph-api', dep_type: 'assigned_to' },
+    { source: 'agent:arch-seal', target: 'gt-k8s-deploy', dep_type: 'assigned_to' },
+    { source: 'agent:arch-seal', target: 'gt-helm-chart', dep_type: 'assigned_to' },
+    { source: 'agent:lush-mole', target: 'gt-e2e-fixtures', dep_type: 'assigned_to' },
+    { source: 'agent:deft-fox', target: 'gt-label-toggle', dep_type: 'assigned_to' },
+    { source: 'agent:deft-fox', target: 'gt-doot-popup', dep_type: 'assigned_to' },
+    { source: 'agent:stout-mare', target: 'gt-oomkill', dep_type: 'assigned_to' },
+    { source: 'agent:tall-seal', target: 'gt-coverage-e2e', dep_type: 'assigned_to' },
+    { source: 'agent:tall-seal', target: 'gt-coverage-unit', dep_type: 'assigned_to' },
+    { source: 'agent:arch-seal-1', target: 'gt-popup-detect', dep_type: 'assigned_to' },
+  ],
+  stats: {
+    total_open: 4,
+    total_in_progress: 13,
+    total_blocked: 4,
+    total_closed: 0,
+  },
+};
+
+// --- Synthetic bus event sessions (bd-mll3i) ---
+// Realistic tool call sequences for each agent, exercising the full doot pipeline.
+// Each session is an array of bus event objects (stream, type, payload).
+// Use with sseFrame() to inject into Playwright tests via /bus/events SSE.
+
+const T0 = '2026-02-19T11:00:00.000Z';
+
+// Build a bus event object (matches SSE payload format)
+function busEvent(stream, type, payload = {}, offsetMs = 0) {
+  const ts = new Date(new Date(T0).getTime() + offsetMs).toISOString();
+  return {
+    stream,
+    type,
+    subject: `${stream}.${type}`,
+    seq: Math.floor(Math.random() * 1000000),
+    ts,
+    payload,
+  };
+}
+
+// swift-newt: Auth RPC work session
+// - Session starts, reads proto files, edits server.go, runs tests
+export const SESSION_SWIFT_NEWT = [
+  busEvent('agents', 'AgentStarted',   { actor: 'swift-newt', issue_id: 'gt-auth-rpc' },               0),
+  busEvent('hooks',  'SessionStart',   { actor: 'swift-newt', session_id: 'sess-swift-001' },          200),
+  busEvent('hooks',  'PreToolUse',     { actor: 'swift-newt', tool_name: 'Read', tool_input: { file_path: '/beads/internal/rpc/protocol.go' } }, 800),
+  busEvent('hooks',  'PostToolUse',    { actor: 'swift-newt', tool_name: 'Read' },                     1200),
+  busEvent('hooks',  'PreToolUse',     { actor: 'swift-newt', tool_name: 'Grep', tool_input: { pattern: 'AuthService', path: '/beads/internal/rpc' } }, 1500),
+  busEvent('hooks',  'PostToolUse',    { actor: 'swift-newt', tool_name: 'Grep' },                     1900),
+  busEvent('hooks',  'PreToolUse',     { actor: 'swift-newt', tool_name: 'Edit', tool_input: { file_path: '/beads/internal/rpc/server_auth.go' } }, 2200),
+  busEvent('hooks',  'PostToolUse',    { actor: 'swift-newt', tool_name: 'Edit' },                     3500),
+  busEvent('hooks',  'PreToolUse',     { actor: 'swift-newt', tool_name: 'Bash', tool_input: { command: 'go test ./internal/rpc/... -run TestAuth -v 2>&1 | tail -30' } }, 3800),
+  busEvent('hooks',  'PostToolUse',    { actor: 'swift-newt', tool_name: 'Bash' },                     8200),
+  busEvent('hooks',  'PreToolUse',     { actor: 'swift-newt', tool_name: 'Edit', tool_input: { file_path: '/beads/internal/rpc/server_auth.go' } }, 8500),
+  busEvent('hooks',  'PostToolUse',    { actor: 'swift-newt', tool_name: 'Edit' },                     9200),
+  busEvent('hooks',  'PreToolUse',     { actor: 'swift-newt', tool_name: 'Bash', tool_input: { command: 'go test ./internal/rpc/... -run TestAuth -count=1 2>&1 | tail -20' } }, 9500),
+  busEvent('hooks',  'PostToolUse',    { actor: 'swift-newt', tool_name: 'Bash' },                     12000),
+  busEvent('mutations', 'MutationUpdate', { actor: 'swift-newt', issue_id: 'gt-auth-rpc', assignee: 'swift-newt', type: 'update' }, 12500),
+  busEvent('agents', 'AgentIdle',      { actor: 'swift-newt', issue_id: 'gt-auth-rpc' },               13000),
+];
+
+// keen-bird: Dolt schema migration session
+// - Reads existing schema, writes migration SQL, applies it, verifies
+export const SESSION_KEEN_BIRD = [
+  busEvent('agents', 'AgentStarted',   { actor: 'keen-bird', issue_id: 'gt-dolt-schema' },             0),
+  busEvent('hooks',  'SessionStart',   { actor: 'keen-bird', session_id: 'sess-keen-001' },            300),
+  busEvent('hooks',  'PreToolUse',     { actor: 'keen-bird', tool_name: 'Bash', tool_input: { command: 'dolt schema show --host gastown-next.app.e2e.dev.fics.ai' } }, 900),
+  busEvent('hooks',  'PostToolUse',    { actor: 'keen-bird', tool_name: 'Bash' },                      2000),
+  busEvent('hooks',  'PreToolUse',     { actor: 'keen-bird', tool_name: 'Write', tool_input: { file_path: '/gastown/migrations/v3_add_inbox_priority.sql' } }, 2400),
+  busEvent('hooks',  'PostToolUse',    { actor: 'keen-bird', tool_name: 'Write' },                     3100),
+  busEvent('hooks',  'PreToolUse',     { actor: 'keen-bird', tool_name: 'Bash', tool_input: { command: 'dolt sql -f /gastown/migrations/v3_add_inbox_priority.sql' } }, 3400),
+  busEvent('hooks',  'PostToolUse',    { actor: 'keen-bird', tool_name: 'Bash' },                      5800),
+  busEvent('hooks',  'PreToolUse',     { actor: 'keen-bird', tool_name: 'Bash', tool_input: { command: 'dolt schema show inbox_items | grep priority' } },          6000),
+  busEvent('hooks',  'PostToolUse',    { actor: 'keen-bird', tool_name: 'Bash' },                      6500),
+  busEvent('mutations', 'MutationUpdate', { actor: 'keen-bird', issue_id: 'gt-dolt-schema', agent_state: 'working' }, 7000),
+  busEvent('agents', 'AgentIdle',      { actor: 'keen-bird', issue_id: 'gt-dolt-schema' },             7500),
+];
+
+// vast-toad: Graph API work session
+// - Reads server_graph.go, adds agent synthesis logic, writes tests
+export const SESSION_VAST_TOAD = [
+  busEvent('agents', 'AgentStarted',   { actor: 'vast-toad', issue_id: 'gt-graph-api' },               0),
+  busEvent('hooks',  'SessionStart',   { actor: 'vast-toad', session_id: 'sess-vast-001' },            400),
+  busEvent('hooks',  'PreToolUse',     { actor: 'vast-toad', tool_name: 'Read', tool_input: { file_path: '/beads/internal/rpc/server_graph.go' } }, 1000),
+  busEvent('hooks',  'PostToolUse',    { actor: 'vast-toad', tool_name: 'Read' },                      1800),
+  busEvent('hooks',  'PreToolUse',     { actor: 'vast-toad', tool_name: 'Grep', tool_input: { pattern: 'GetIssuesByLabel', path: '/beads/internal/storage' } }, 2100),
+  busEvent('hooks',  'PostToolUse',    { actor: 'vast-toad', tool_name: 'Grep' },                      2600),
+  busEvent('hooks',  'PreToolUse',     { actor: 'vast-toad', tool_name: 'Edit', tool_input: { file_path: '/beads/internal/rpc/server_graph.go' } }, 3000),
+  busEvent('hooks',  'PostToolUse',    { actor: 'vast-toad', tool_name: 'Edit' },                      5200),
+  busEvent('hooks',  'PreToolUse',     { actor: 'vast-toad', tool_name: 'Bash', tool_input: { command: 'go test ./internal/rpc/... -run TestGraph -v -count=1 2>&1 | tail -40' } }, 5500),
+  busEvent('hooks',  'PostToolUse',    { actor: 'vast-toad', tool_name: 'Bash' },                      9000),
+  busEvent('agents', 'AgentIdle',      { actor: 'vast-toad', issue_id: 'gt-graph-api' },               9500),
+];
+
+// arch-seal: Helm chart memory limit fix session
+// - Reads values.yaml, edits limits, runs helm lint, commits
+export const SESSION_ARCH_SEAL = [
+  busEvent('agents', 'AgentStarted',   { actor: 'arch-seal', issue_id: 'gt-helm-chart' },              0),
+  busEvent('hooks',  'SessionStart',   { actor: 'arch-seal', session_id: 'sess-arch-001' },            200),
+  busEvent('hooks',  'PreToolUse',     { actor: 'arch-seal', tool_name: 'Bash', tool_input: { command: 'kubectl --context devops get pods -n gitlab-runner | grep -v Running' } }, 700),
+  busEvent('hooks',  'PostToolUse',    { actor: 'arch-seal', tool_name: 'Bash' },                      2100),
+  busEvent('hooks',  'PreToolUse',     { actor: 'arch-seal', tool_name: 'Read', tool_input: { file_path: '/fics-helm-chart/charts/gitlab-runner/values.yaml' } }, 2400),
+  busEvent('hooks',  'PostToolUse',    { actor: 'arch-seal', tool_name: 'Read' },                      2900),
+  busEvent('hooks',  'PreToolUse',     { actor: 'arch-seal', tool_name: 'Edit', tool_input: { file_path: '/fics-helm-chart/charts/gitlab-runner/values.yaml' } }, 3200),
+  busEvent('hooks',  'PostToolUse',    { actor: 'arch-seal', tool_name: 'Edit' },                      4000),
+  busEvent('hooks',  'PreToolUse',     { actor: 'arch-seal', tool_name: 'Bash', tool_input: { command: 'helm lint charts/gitlab-runner --strict' } },              4300),
+  busEvent('hooks',  'PostToolUse',    { actor: 'arch-seal', tool_name: 'Bash' },                      6800),
+  busEvent('hooks',  'PreToolUse',     { actor: 'arch-seal', tool_name: 'Bash', tool_input: { command: 'git add charts/gitlab-runner/values.yaml && git commit -m "fix: raise deploy job memory limits to 8Gi"' } }, 7000),
+  busEvent('hooks',  'PostToolUse',    { actor: 'arch-seal', tool_name: 'Bash' },                      7800),
+  busEvent('mutations', 'MutationUpdate', { actor: 'arch-seal', issue_id: 'gt-helm-chart', new_status: 'closed', type: 'close' }, 8200),
+  busEvent('mutations', 'MutationClose',  { actor: 'arch-seal', issue_id: 'gt-helm-chart' },           8400),
+  busEvent('agents', 'AgentIdle',      { actor: 'arch-seal', issue_id: 'gt-k8s-deploy' },              8800),
+];
+
+// lush-mole: E2E fixture writing session (meta!)
+// - Glob test files, read fixtures.js, write expanded fixtures, run playwright
+export const SESSION_LUSH_MOLE = [
+  busEvent('agents', 'AgentStarted',   { actor: 'lush-mole', issue_id: 'gt-e2e-fixtures' },            0),
+  busEvent('hooks',  'SessionStart',   { actor: 'lush-mole', session_id: 'sess-lush-001' },            300),
+  busEvent('hooks',  'PreToolUse',     { actor: 'lush-mole', tool_name: 'Glob', tool_input: { pattern: 'tests/**/*.spec.js' } }, 900),
+  busEvent('hooks',  'PostToolUse',    { actor: 'lush-mole', tool_name: 'Glob' },                      1300),
+  busEvent('hooks',  'PreToolUse',     { actor: 'lush-mole', tool_name: 'Read', tool_input: { file_path: '/beads3d/tests/fixtures.js' } }, 1600),
+  busEvent('hooks',  'PostToolUse',    { actor: 'lush-mole', tool_name: 'Read' },                      2400),
+  busEvent('hooks',  'PreToolUse',     { actor: 'lush-mole', tool_name: 'Read', tool_input: { file_path: '/beads3d/src/main.js' } }, 2700),
+  busEvent('hooks',  'PostToolUse',    { actor: 'lush-mole', tool_name: 'Read' },                      4200),
+  busEvent('hooks',  'PreToolUse',     { actor: 'lush-mole', tool_name: 'Edit', tool_input: { file_path: '/beads3d/tests/fixtures.js' } }, 4500),
+  busEvent('hooks',  'PostToolUse',    { actor: 'lush-mole', tool_name: 'Edit' },                      7800),
+  busEvent('hooks',  'PreToolUse',     { actor: 'lush-mole', tool_name: 'Write', tool_input: { file_path: '/beads3d/tests/sessions.spec.js' } }, 8100),
+  busEvent('hooks',  'PostToolUse',    { actor: 'lush-mole', tool_name: 'Write' },                     9500),
+  busEvent('hooks',  'PreToolUse',     { actor: 'lush-mole', tool_name: 'Bash', tool_input: { command: 'npx playwright test tests/sessions.spec.js --reporter=list 2>&1 | tail -30' } }, 9800),
+  busEvent('hooks',  'PostToolUse',    { actor: 'lush-mole', tool_name: 'Bash' },                      25000),
+  busEvent('mutations', 'MutationUpdate', { actor: 'lush-mole', issue_id: 'gt-e2e-fixtures', agent_state: 'working' }, 25500),
+  busEvent('agents', 'AgentIdle',      { actor: 'lush-mole', issue_id: 'gt-e2e-fixtures' },            26000),
+];
+
+// deft-fox: Label toggle bug fix session
+// - Reads main.js label handling, finds bug, fixes it, verifies
+export const SESSION_DEFT_FOX = [
+  busEvent('agents', 'AgentStarted',   { actor: 'deft-fox', issue_id: 'gt-label-toggle' },             0),
+  busEvent('hooks',  'SessionStart',   { actor: 'deft-fox', session_id: 'sess-deft-001' },             200),
+  busEvent('hooks',  'PreToolUse',     { actor: 'deft-fox', tool_name: 'Grep', tool_input: { pattern: "key.*'l'|keyCode.*76", path: '/beads3d/src/main.js' } }, 800),
+  busEvent('hooks',  'PostToolUse',    { actor: 'deft-fox', tool_name: 'Grep' },                       1400),
+  busEvent('hooks',  'PreToolUse',     { actor: 'deft-fox', tool_name: 'Read', tool_input: { file_path: '/beads3d/src/main.js', offset: 3300, limit: 80 } }, 1700),
+  busEvent('hooks',  'PostToolUse',    { actor: 'deft-fox', tool_name: 'Read' },                       2200),
+  busEvent('hooks',  'PreToolUse',     { actor: 'deft-fox', tool_name: 'Edit', tool_input: { file_path: '/beads3d/src/main.js' } }, 2500),
+  busEvent('hooks',  'PostToolUse',    { actor: 'deft-fox', tool_name: 'Edit' },                       3600),
+  busEvent('hooks',  'PreToolUse',     { actor: 'deft-fox', tool_name: 'Bash', tool_input: { command: 'npx playwright test tests/interactions.spec.js --grep "label" 2>&1 | tail -20' } }, 3900),
+  busEvent('hooks',  'PostToolUse',    { actor: 'deft-fox', tool_name: 'Bash' },                       18000),
+  busEvent('mutations', 'MutationClose',  { actor: 'deft-fox', issue_id: 'gt-label-toggle' },          18500),
+  busEvent('agents', 'AgentIdle',      { actor: 'deft-fox', issue_id: 'gt-doot-popup' },               19000),
+];
+
+// stout-mare: OOMKill investigation session
+// - Checks pod events, memory metrics, edits resource limits
+export const SESSION_STOUT_MARE = [
+  busEvent('agents', 'AgentStarted',   { actor: 'stout-mare', issue_id: 'gt-oomkill' },                0),
+  busEvent('hooks',  'SessionStart',   { actor: 'stout-mare', session_id: 'sess-stout-001' },          200),
+  busEvent('hooks',  'PreToolUse',     { actor: 'stout-mare', tool_name: 'Bash', tool_input: { command: 'kubectl --context devops get events -n gitlab-runner --field-selector reason=OOMKilling --sort-by=.lastTimestamp | tail -20' } }, 800),
+  busEvent('hooks',  'PostToolUse',    { actor: 'stout-mare', tool_name: 'Bash' },                     3500),
+  busEvent('hooks',  'PreToolUse',     { actor: 'stout-mare', tool_name: 'Bash', tool_input: { command: 'kubectl --context devops top pod -n gitlab-runner --sort-by=memory | head -15' } }, 3800),
+  busEvent('hooks',  'PostToolUse',    { actor: 'stout-mare', tool_name: 'Bash' },                     5200),
+  busEvent('hooks',  'PreToolUse',     { actor: 'stout-mare', tool_name: 'Read', tool_input: { file_path: '/fics-helm-chart/charts/gitlab-runner/values.yaml' } }, 5600),
+  busEvent('hooks',  'PostToolUse',    { actor: 'stout-mare', tool_name: 'Read' },                     6100),
+  busEvent('mutations', 'MutationUpdate', { actor: 'stout-mare', issue_id: 'gt-oomkill', agent_state: 'working' }, 6500),
+  busEvent('agents', 'AgentIdle',      { actor: 'stout-mare', issue_id: 'gt-oomkill' },                7000),
+];
+
+// tall-seal: Coverage collection session
+// - Runs playwright with coverage, collects lcov, merges with unit
+export const SESSION_TALL_SEAL = [
+  busEvent('agents', 'AgentStarted',   { actor: 'tall-seal', issue_id: 'gt-coverage-e2e' },            0),
+  busEvent('hooks',  'SessionStart',   { actor: 'tall-seal', session_id: 'sess-tall-001' },            400),
+  busEvent('hooks',  'PreToolUse',     { actor: 'tall-seal', tool_name: 'Bash', tool_input: { command: 'npx playwright test --reporter=line --coverage 2>&1 | tail -40' } }, 1100),
+  busEvent('hooks',  'PostToolUse',    { actor: 'tall-seal', tool_name: 'Bash' },                      28000),
+  busEvent('hooks',  'PreToolUse',     { actor: 'tall-seal', tool_name: 'Bash', tool_input: { command: 'ls coverage/ && cat coverage/coverage-summary.json | python3 -c "import sys,json; d=json.load(sys.stdin); print(d[\"total\"])"' } }, 28400),
+  busEvent('hooks',  'PostToolUse',    { actor: 'tall-seal', tool_name: 'Bash' },                      29000),
+  busEvent('mutations', 'MutationUpdate', { actor: 'tall-seal', issue_id: 'gt-coverage-e2e', agent_state: 'working' }, 29500),
+  busEvent('agents', 'AgentIdle',      { actor: 'tall-seal', issue_id: 'gt-coverage-e2e' },            30000),
+];
+
+// arch-seal-1: Popup detection session
+// - Reads doot handling, finds issue node, adds event trigger
+export const SESSION_ARCH_SEAL_1 = [
+  busEvent('agents', 'AgentStarted',   { actor: 'arch-seal-1', issue_id: 'gt-popup-detect' },          0),
+  busEvent('hooks',  'SessionStart',   { actor: 'arch-seal-1', session_id: 'sess-arch1-001' },         300),
+  busEvent('hooks',  'PreToolUse',     { actor: 'arch-seal-1', tool_name: 'Grep', tool_input: { pattern: 'spawnDoot|findAgentNode', path: '/beads3d/src/main.js' } }, 900),
+  busEvent('hooks',  'PostToolUse',    { actor: 'arch-seal-1', tool_name: 'Grep' },                    1500),
+  busEvent('hooks',  'PreToolUse',     { actor: 'arch-seal-1', tool_name: 'Read', tool_input: { file_path: '/beads3d/src/main.js', offset: 3690, limit: 100 } }, 1800),
+  busEvent('hooks',  'PostToolUse',    { actor: 'arch-seal-1', tool_name: 'Read' },                    2600),
+  busEvent('hooks',  'PreToolUse',     { actor: 'arch-seal-1', tool_name: 'Edit', tool_input: { file_path: '/beads3d/src/main.js' } }, 2900),
+  busEvent('hooks',  'PostToolUse',    { actor: 'arch-seal-1', tool_name: 'Edit' },                    4500),
+  busEvent('hooks',  'PreToolUse',     { actor: 'arch-seal-1', tool_name: 'Bash', tool_input: { command: 'npx playwright test tests/doots.spec.js --reporter=list 2>&1 | tail -25' } }, 4800),
+  busEvent('hooks',  'PostToolUse',    { actor: 'arch-seal-1', tool_name: 'Bash' },                    20000),
+  busEvent('mutations', 'MutationUpdate', { actor: 'arch-seal-1', issue_id: 'gt-popup-detect', agent_state: 'working' }, 20500),
+  busEvent('agents', 'AgentIdle',      { actor: 'arch-seal-1', issue_id: 'gt-popup-detect' },          21000),
+];
+
+// All 9 agent sessions for convenience
+export const ALL_SESSIONS = {
+  'swift-newt':  SESSION_SWIFT_NEWT,
+  'keen-bird':   SESSION_KEEN_BIRD,
+  'vast-toad':   SESSION_VAST_TOAD,
+  'arch-seal':   SESSION_ARCH_SEAL,
+  'lush-mole':   SESSION_LUSH_MOLE,
+  'deft-fox':    SESSION_DEFT_FOX,
+  'stout-mare':  SESSION_STOUT_MARE,
+  'tall-seal':   SESSION_TALL_SEAL,
+  'arch-seal-1': SESSION_ARCH_SEAL_1,
+};
+
+// Helper: serialize a bus event to an SSE frame string
+// stream: the SSE event name (matches EventSource.addEventListener stream)
+export function toSseFrame(evt) {
+  return `event: ${evt.stream}\ndata: ${JSON.stringify(evt)}\n\n`;
+}
+
+// Helper: build a complete SSE response body from an array of events
+export function sessionToSseBody(events) {
+  return events.map(toSseFrame).join('');
+}
+
 // Minimal response for Show (bd-feat1 as example)
 export const MOCK_SHOW = {
   id: 'bd-feat1',

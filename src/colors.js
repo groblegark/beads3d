@@ -55,8 +55,9 @@ export function nodeSize(issue) {
   const base = PRIORITY_SIZES[issue.priority] ?? 4;
   // Epics are bigger
   if (issue.issue_type === 'epic') return base * 1.8;
-  // Agents slightly bigger
-  if (issue.issue_type === 'agent') return base * 1.4;
+  // Agents are the dominant visual element — largest nodes (bd-t1g9o)
+  // Floor of 8 ensures agents always stand out; 2.5x makes them bigger than epics
+  if (issue.issue_type === 'agent') return Math.max(base, 8) * 2.5;
   return base;
 }
 
