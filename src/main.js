@@ -2898,7 +2898,10 @@ function highlightEpic(epicNode) {
     epicNode, 800
   );
 
-  // Find all child/descendant node IDs via parent-child edges
+  // Find all child/descendant node IDs via parent-child edges.
+  // Direction is inconsistent: raw edges have source=parent, target=child;
+  // promoted blocks edges have source=child, target=parent (epic).
+  // So we check both directions.
   const childIds = new Set();
   const queue = [epicNode.id];
   while (queue.length > 0) {
@@ -2907,10 +2910,12 @@ function highlightEpic(epicNode) {
       if (l.dep_type !== 'parent-child') continue;
       const srcId = typeof l.source === 'object' ? l.source.id : l.source;
       const tgtId = typeof l.target === 'object' ? l.target.id : l.target;
-      // parent-child: source=child, target=parent (child depends on parent epic)
-      if (tgtId === parentId && !childIds.has(srcId)) {
-        childIds.add(srcId);
-        queue.push(srcId);
+      let childId = null;
+      if (srcId === parentId && !childIds.has(tgtId)) childId = tgtId;
+      else if (tgtId === parentId && !childIds.has(srcId)) childId = srcId;
+      if (childId) {
+        childIds.add(childId);
+        queue.push(childId);
       }
     }
   }
