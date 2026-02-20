@@ -936,7 +936,7 @@ async function fetchViaGraph(statusEl) {
     include_deps: true,
     include_body: true,
     include_agents: true,
-    exclude_types: ['message', 'config', 'gate', 'wisp', 'convoy'], // bd-04wet: filter noise types
+    exclude_types: ['message', 'config', 'gate', 'wisp', 'convoy', 'molecule'], // bd-04wet, bd-t25i1: filter noise types
   });
 
   let nodes = (result.nodes || []).map(n => ({
@@ -955,11 +955,12 @@ async function fetchViaGraph(statusEl) {
       dep_type: e.type || 'blocks',
     }));
 
-  // Filter disconnected decisions: only show decision nodes that have at least
+  // Filter disconnected decisions and molecules: only show if they have at least
   // one edge connecting them to a visible bead (bd-t25i1)
+  const LINKED_ONLY = new Set(['decision', 'molecule']);
   const connectedIds = new Set();
   for (const l of links) { connectedIds.add(l.source); connectedIds.add(l.target); }
-  nodes = nodes.filter(n => n.issue_type !== 'decision' || connectedIds.has(n.id));
+  nodes = nodes.filter(n => !LINKED_ONLY.has(n.issue_type) || connectedIds.has(n.id));
 
   statusEl.textContent = `graph api · ${nodes.length} beads · ${links.length} links`;
   statusEl.className = 'connected';
@@ -969,7 +970,7 @@ async function fetchViaGraph(statusEl) {
 }
 
 async function fetchViaList(statusEl) {
-  const SKIP_TYPES = new Set(['message', 'config', 'gate', 'wisp', 'convoy', 'decision']);
+  const SKIP_TYPES = new Set(['message', 'config', 'gate', 'wisp', 'convoy', 'decision', 'molecule']);
 
   // Parallel fetch: open/in_progress beads + blocked + stats
   const [openIssues, inProgress, blocked, stats] = await Promise.all([
