@@ -1291,11 +1291,75 @@ function selectNode(node, componentIds) {
   graph.linkWidth(graph.linkWidth());
 }
 
+// Temporarily spread out highlighted subgraph nodes for readability (beads-k38a).
+// Installs a radial repulsion force on just the component nodes, then removes it
+// after the layout settles.  Computes centroid, pushes nodes outward with a
+// velocity-based force that decays over ~2 seconds.
+let _spreadTimeout = null;
+function spreadSubgraph(componentIds) {
+  // Remove any previous spread force
+  if (graph.d3Force('subgraphSpread')) {
+    graph.d3Force('subgraphSpread', null);
+  }
+  if (_spreadTimeout) {
+    clearTimeout(_spreadTimeout);
+    _spreadTimeout = null;
+  }
+
+  if (!componentIds || componentIds.size < 2) return;
+
+  // Compute centroid of the component
+  let cx = 0, cy = 0, cz = 0, count = 0;
+  for (const node of graphData.nodes) {
+    if (!componentIds.has(node.id)) continue;
+    cx += (node.x || 0);
+    cy += (node.y || 0);
+    cz += (node.z || 0);
+    count++;
+  }
+  if (count < 2) return;
+  cx /= count; cy /= count; cz /= count;
+
+  // Target minimum spacing: scale with component size so labels have room
+  const minSpacing = Math.max(30, count * 8);
+
+  // Install a custom force that pushes component nodes outward from centroid
+  graph.d3Force('subgraphSpread', (alpha) => {
+    for (const node of graphData.nodes) {
+      if (!componentIds.has(node.id)) continue;
+      const dx = (node.x || 0) - cx;
+      const dy = (node.y || 0) - cy;
+      const dz = (node.z || 0) - cz;
+      const dist = Math.sqrt(dx * dx + dy * dy + dz * dz) || 1;
+      // Only push if too close to centroid
+      if (dist < minSpacing) {
+        const push = alpha * (minSpacing - dist) * 0.1;
+        node.vx += (dx / dist) * push;
+        node.vy += (dy / dist) * push;
+        node.vz += (dz / dist) * push;
+      }
+    }
+  });
+
+  // Gently reheat so the force takes effect
+  graph.d3ReheatSimulation();
+
+  // Remove the spread force after it settles (2.5s)
+  _spreadTimeout = setTimeout(() => {
+    graph.d3Force('subgraphSpread', null);
+    _spreadTimeout = null;
+  }, 2500);
+}
+
 function clearSelection() {
   selectedNode = null;
   highlightNodes.clear();
   highlightLinks.clear();
   multiSelected.clear();
+  // Remove subgraph spread force (beads-k38a)
+  if (graph.d3Force('subgraphSpread')) {
+    graph.d3Force('subgraphSpread', null);
+  }
   // Clear revealed subgraph and re-apply filters (hq-vorf47)
   if (revealedNodes.size > 0) {
     revealedNodes.clear();
@@ -1325,11 +1389,12 @@ function focusDeepLinkBead(beadId) {
   const component = getConnectedComponent(node.id);
   selectNode(node, component);
 
-  // Reveal the subgraph and zoom to it
+  // Reveal the subgraph, spread for readability, and zoom to it
   revealedNodes.clear();
   for (const id of component) revealedNodes.add(id);
   applyFilters();
 
+  spreadSubgraph(component); // beads-k38a: push nodes apart for readability
   zoomToNodes(component);
 
   // Show detail panel after camera starts moving
@@ -2000,6 +2065,7 @@ function handleNodeClick(node) {
   }
   applyFilters(); // re-run filters to un-hide revealed nodes
 
+  spreadSubgraph(component); // beads-k38a: push nodes apart for readability
   zoomToNodes(component);
   showDetail(node);
 
