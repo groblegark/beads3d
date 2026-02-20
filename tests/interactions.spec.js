@@ -866,16 +866,20 @@ test.describe('search navigation', () => {
     await page.goto('/');
     await waitForGraph(page);
 
-    // Get total node count
+    // Get total node count (includes all nodes regardless of _hidden)
     const totalBefore = await page.evaluate(() => {
       const b = window.__beads3d;
       return b ? b.graphData().nodes.length : 0;
     });
 
-    // Search to filter
+    // Search to filter — poll until some nodes are hidden (avoids fixed timeout race)
     await page.keyboard.press('/');
     await page.keyboard.type('epic');
-    await page.waitForTimeout(500);
+    await page.waitForFunction(() => {
+      const b = window.__beads3d;
+      if (!b) return false;
+      return b.graphData().nodes.some(n => n._hidden);
+    }, { timeout: 5000 });
 
     // Verify some nodes are hidden
     const visibleDuring = await page.evaluate(() => {
@@ -884,18 +888,22 @@ test.describe('search navigation', () => {
     });
     expect(visibleDuring).toBeLessThan(totalBefore);
 
-    // Press Escape to clear
+    // Press Escape to clear search — poll until search filter is removed and
+    // age filter has settled (exactly 1 node should remain hidden: bd-old1)
     await page.keyboard.press('Escape');
-    await page.waitForTimeout(500);
+    await page.waitForFunction((expected) => {
+      const b = window.__beads3d;
+      if (!b) return false;
+      const visible = b.graphData().nodes.filter(n => !n._hidden).length;
+      return visible === expected;
+    }, totalBefore - 1, { timeout: 5000 });
 
-    // All nodes should be visible again (except those still hidden by age filter)
     const visibleAfter = await page.evaluate(() => {
       const b = window.__beads3d;
       return b ? b.graphData().nodes.filter(n => !n._hidden).length : 0;
     });
     // With default 7d age filter, bd-old1 (disconnected, closed, updated 2025-12-15) stays hidden.
     // bd-old2 is rescued because it's connected to active bd-task3.
-    // So visibleAfter should be totalBefore minus age-filtered nodes (1).
     expect(visibleAfter).toBe(totalBefore - 1);
   });
 

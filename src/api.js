@@ -6,6 +6,7 @@ const DEFAULT_BASE = '/api';
 export class BeadsAPI {
   constructor(baseUrl = DEFAULT_BASE) {
     this.baseUrl = baseUrl;
+    this._eventSources = []; // track SSE connections for cleanup (bd-7n4g8)
   }
 
   async _rpc(method, body = {}) {
@@ -114,6 +115,7 @@ export class BeadsAPI {
       // EventSource auto-reconnects
     };
 
+    this._eventSources.push(es);
     return es;
   }
 
@@ -143,6 +145,15 @@ export class BeadsAPI {
       // EventSource auto-reconnects
     };
 
+    this._eventSources.push(es);
     return es;
+  }
+
+  // Close all SSE connections (bd-7n4g8)
+  destroy() {
+    for (const es of this._eventSources) {
+      es.close();
+    }
+    this._eventSources.length = 0;
   }
 }
