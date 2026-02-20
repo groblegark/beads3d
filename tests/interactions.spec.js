@@ -297,8 +297,11 @@ test.describe('keyboard shortcuts', () => {
 // CSS :hover submenus are fragile in Playwright, so we reveal + click via evaluate
 async function clickBulkAction(page, action, value) {
   await page.evaluate(({ action, value }) => {
-    // Hide all submenu panels first to avoid overlap/interception
-    document.querySelectorAll('#bulk-menu .bulk-submenu-panel').forEach(p => p.style.display = 'none');
+    // Hide all submenu panels and reset z-index to avoid overlap/interception
+    document.querySelectorAll('#bulk-menu .bulk-submenu-panel').forEach(p => {
+      p.style.display = 'none';
+      p.style.zIndex = '';
+    });
     // Find the target item and reveal only its parent submenu panel
     const selector = value !== undefined
       ? `#bulk-menu [data-action="${action}"][data-value="${value}"]`
@@ -306,7 +309,10 @@ async function clickBulkAction(page, action, value) {
     const item = document.querySelector(selector);
     if (item) {
       const panel = item.closest('.bulk-submenu-panel');
-      if (panel) panel.style.display = 'block';
+      if (panel) {
+        panel.style.display = 'block';
+        panel.style.zIndex = '10000'; // above all other panels
+      }
       item.click();
     }
   }, { action, value });

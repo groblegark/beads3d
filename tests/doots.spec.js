@@ -81,7 +81,9 @@ async function injectDoot(page, agentTitle, label, color) {
 // Get current doot count from the page
 async function getDootCount(page) {
   return page.evaluate(() => {
-    return typeof window.__beads3d_doots === 'function' ? window.__beads3d_doots().length : -1;
+    if (typeof window.__beads3d_doots !== 'function') return -1;
+    const arr = window.__beads3d_doots();
+    return Array.isArray(arr) ? arr.length : -1;
   });
 }
 
