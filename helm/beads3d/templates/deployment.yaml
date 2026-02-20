@@ -1,24 +1,25 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: {{ .Release.Name }}-beads3d
+  name: {{ include "beads3d.fullname" . }}
   labels:
-    app.kubernetes.io/name: beads3d
-    app.kubernetes.io/instance: {{ .Release.Name }}
+    {{- include "beads3d.labels" . | nindent 4 }}
 spec:
   replicas: {{ .Values.replicaCount }}
   selector:
     matchLabels:
-      app.kubernetes.io/name: beads3d
-      app.kubernetes.io/instance: {{ .Release.Name }}
+      {{- include "beads3d.selectorLabels" . | nindent 6 }}
   template:
     metadata:
       labels:
-        app.kubernetes.io/name: beads3d
-        app.kubernetes.io/instance: {{ .Release.Name }}
+        {{- include "beads3d.selectorLabels" . | nindent 8 }}
       annotations:
         checksum/nginx-config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
     spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
       containers:
         - name: beads3d
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
@@ -48,4 +49,4 @@ spec:
       volumes:
         - name: nginx-config
           configMap:
-            name: {{ .Release.Name }}-beads3d-nginx
+            name: {{ include "beads3d.fullname" . }}-nginx

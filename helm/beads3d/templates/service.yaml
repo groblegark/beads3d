@@ -1,10 +1,9 @@
 apiVersion: v1
 kind: Service
 metadata:
-  name: {{ .Release.Name }}-beads3d
+  name: {{ include "beads3d.fullname" . }}
   labels:
-    app.kubernetes.io/name: beads3d
-    app.kubernetes.io/instance: {{ .Release.Name }}
+    {{- include "beads3d.labels" . | nindent 4 }}
 spec:
   type: {{ .Values.service.type }}
   ports:
@@ -13,5 +12,4 @@ spec:
       protocol: TCP
       name: http
   selector:
-    app.kubernetes.io/name: beads3d
-    app.kubernetes.io/instance: {{ .Release.Name }}
+    {{- include "beads3d.selectorLabels" . | nindent 4 }}
