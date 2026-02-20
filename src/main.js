@@ -663,21 +663,16 @@ function createNodeLabelSprite(node) {
 
 function toggleLabels() {
   labelsVisible = !labelsVisible;
-  // Toggle visibility on all existing label sprites by traversing the scene
-  if (graph) {
-    graph.scene().traverse(child => {
-      if (child.userData && child.userData.nodeLabel) {
-        child.visible = labelsVisible;
-      }
-    });
-  }
+  // Immediately run LOD pass to show/hide correct labels (beads-bu3r)
+  resolveOverlappingLabels();
   const btn = document.getElementById('btn-labels');
   if (btn) btn.classList.toggle('active', labelsVisible);
 }
 
-// --- Label anti-overlap (beads-rgmh) ---
-// Screen-space repulsion pass: projects visible labels to 2D, detects overlap,
-// and nudges them apart. Runs every N frames in the animation loop.
+// --- Label anti-overlap with LOD (beads-rgmh, beads-bu3r) ---
+// Priority-based level-of-detail: only the top N labels are visible, where N
+// scales with zoom level.  Visible labels get multi-pass screen-space repulsion
+// to resolve overlaps.  Lower-priority visible labels fade to reduced opacity.
 function resolveOverlappingLabels() {
   if (!graph) return;
   const camera = graph.camera();
@@ -688,83 +683,128 @@ function resolveOverlappingLabels() {
   const height = renderer.domElement.clientHeight;
   if (width === 0 || height === 0) return;
 
-  // Collect visible label sprites with their screen positions
-  const labels = [];
+  // --- Phase 1: Collect all label sprites and compute priority scores ---
+  const allLabels = [];
   for (const node of graphData.nodes) {
     const threeObj = node.__threeObj;
     if (!threeObj) continue;
     threeObj.traverse(child => {
-      if (!child.userData.nodeLabel || !child.visible) return;
+      if (!child.userData.nodeLabel) return;
       // Reset to base position before computing new offsets
       if (child.userData.baseLabelY !== undefined) {
         child.position.y = child.userData.baseLabelY;
       }
-      // Get world position of the label sprite
-      const worldPos = new THREE.Vector3();
-      child.getWorldPosition(worldPos);
-      // Project to normalized device coords (-1..1)
-      const ndc = worldPos.clone().project(camera);
-      // Skip labels behind camera
-      if (ndc.z > 1) return;
-      // Convert to pixel coords
-      const sx = (ndc.x * 0.5 + 0.5) * width;
-      const sy = (-ndc.y * 0.5 + 0.5) * height;
-      // Label screen size (sizeAttenuation=false: scale is fraction of viewport)
-      const lw = child.scale.x * height;
-      const lh = child.scale.y * height;
-      labels.push({
-        sprite: child,
-        node,
-        sx, sy, lw, lh,
-        // Track cumulative offset applied this frame
-        offsetY: 0,
-      });
+      allLabels.push({ sprite: child, node });
     });
   }
 
-  if (labels.length < 2) return;
+  if (allLabels.length === 0) return;
 
-  // Sort by screen X for sweep-and-prune efficiency
-  labels.sort((a, b) => a.sx - b.sx);
+  // Compute priority for each label
+  for (const l of allLabels) {
+    l.pri = _labelPriority(l);
+  }
 
-  // Pairwise overlap check with nudge (sweep-and-prune on X)
-  const PADDING = 4; // pixels between labels
-  for (let i = 0; i < labels.length; i++) {
-    const a = labels[i];
-    const aRight = a.sx + a.lw / 2;
-    const aTop = a.sy - a.lh / 2 + a.offsetY;
-    const aBot = a.sy + a.lh / 2 + a.offsetY;
+  // --- Phase 2: LOD — determine how many labels to show (beads-bu3r) ---
+  // Camera distance to scene center drives the label budget.
+  // Close zoom: show many; far zoom: show fewer.
+  const camPos = camera.position;
+  const camDist = camPos.length(); // distance from origin
+  // Budget: at distance 100 show ~40 labels, at 500 show ~12, at 1000 show ~6
+  // Selected/multi-selected always shown (budget doesn't apply).
+  const BASE_BUDGET = 40;
+  const labelBudget = Math.max(6, Math.round(BASE_BUDGET * (100 / Math.max(camDist, 50))));
 
-    for (let j = i + 1; j < labels.length; j++) {
-      const b = labels[j];
-      const bLeft = b.sx - b.lw / 2;
-      // Sweep prune: if b's left edge is past a's right edge, no more overlaps for a
-      if (bLeft > aRight + PADDING) break;
-      const bTop = b.sy - b.lh / 2 + b.offsetY;
-      const bBot = b.sy + b.lh / 2 + b.offsetY;
+  // Sort by priority descending — highest priority labels shown first
+  allLabels.sort((a, b) => b.pri - a.pri);
 
-      // Check Y overlap
-      if (aTop > bBot + PADDING || bTop > aBot + PADDING) continue;
-
-      // Overlap detected — push the lower-priority label down
-      // Priority: selected > agent > lower priority number > alphabetical
-      const aPri = _labelPriority(a);
-      const bPri = _labelPriority(b);
-      const pushTarget = aPri >= bPri ? b : a;
-      const overlapY = Math.min(aBot, bBot) - Math.max(aTop, bTop) + PADDING;
-      pushTarget.offsetY += overlapY;
+  // Always-show: selected, multi-selected, and agents with in_progress tasks
+  let budgetUsed = 0;
+  for (const l of allLabels) {
+    const isForced = l.pri >= 500; // selected or multi-selected
+    if (isForced) {
+      l.show = true;
+    } else if (budgetUsed < labelBudget) {
+      l.show = true;
+      budgetUsed++;
+    } else {
+      l.show = false;
     }
   }
 
-  // Apply offsets back to sprite positions (in local Y, accounting for screen→world scale)
-  for (const l of labels) {
+  // Apply visibility — hide labels that didn't make the budget
+  for (const l of allLabels) {
+    if (!labelsVisible) {
+      l.sprite.visible = false;
+      continue;
+    }
+    l.sprite.visible = l.show;
+    // Opacity fade: top labels get full opacity, lower ones fade (beads-bu3r)
+    if (l.show && l.sprite.material) {
+      const rank = allLabels.indexOf(l);
+      const fadeStart = Math.max(6, labelBudget * 0.6);
+      if (rank < fadeStart || l.pri >= 500) {
+        l.sprite.material.opacity = 1.0;
+      } else {
+        // Fade from 1.0 down to 0.35 for the lowest-ranked visible labels
+        const fadeRange = Math.max(1, labelBudget - fadeStart);
+        const t = Math.min(1, (rank - fadeStart) / fadeRange);
+        l.sprite.material.opacity = 1.0 - t * 0.65;
+      }
+    }
+  }
+
+  // --- Phase 3: Project visible labels to screen space ---
+  const visibleLabels = [];
+  for (const l of allLabels) {
+    if (!l.show || !labelsVisible) continue;
+    const worldPos = new THREE.Vector3();
+    l.sprite.getWorldPosition(worldPos);
+    const ndc = worldPos.clone().project(camera);
+    if (ndc.z > 1) continue; // behind camera
+    const sx = (ndc.x * 0.5 + 0.5) * width;
+    const sy = (-ndc.y * 0.5 + 0.5) * height;
+    const lw = l.sprite.scale.x * height;
+    const lh = l.sprite.scale.y * height;
+    visibleLabels.push({ ...l, sx, sy, lw, lh, offsetY: 0 });
+  }
+
+  if (visibleLabels.length < 2) return;
+
+  // --- Phase 4: Multi-pass overlap resolution (beads-bu3r) ---
+  // Run 3 passes to resolve cascading overlaps.
+  const PADDING = 4;
+  for (let pass = 0; pass < 3; pass++) {
+    // Sort by screen X for sweep-and-prune
+    visibleLabels.sort((a, b) => a.sx - b.sx);
+
+    for (let i = 0; i < visibleLabels.length; i++) {
+      const a = visibleLabels[i];
+      const aRight = a.sx + a.lw / 2;
+
+      for (let j = i + 1; j < visibleLabels.length; j++) {
+        const b = visibleLabels[j];
+        const bLeft = b.sx - b.lw / 2;
+        if (bLeft > aRight + PADDING) break;
+
+        const aTop = a.sy - a.lh / 2 + a.offsetY;
+        const aBot = a.sy + a.lh / 2 + a.offsetY;
+        const bTop = b.sy - b.lh / 2 + b.offsetY;
+        const bBot = b.sy + b.lh / 2 + b.offsetY;
+
+        if (aTop > bBot + PADDING || bTop > aBot + PADDING) continue;
+
+        // Push the lower-priority label down
+        const pushTarget = a.pri >= b.pri ? b : a;
+        const overlapY = Math.min(aBot, bBot) - Math.max(aTop, bTop) + PADDING;
+        pushTarget.offsetY += overlapY;
+      }
+    }
+  }
+
+  // Apply offsets back to sprite positions
+  for (const l of visibleLabels) {
     if (l.offsetY === 0) continue;
-    // sizeAttenuation=false means sprite Y scale = fraction of viewport height
-    // So 1px screen = 1/height in sprite-local units, but position.y is in world space.
-    // For sizeAttenuation=false sprites parented to the node group, position.y is local.
-    // Convert pixel offset to the same units as sprite.position.y.
-    // The sprite's scale.y = spriteH (e.g. 0.06), which maps to lh pixels on screen.
-    // So 1 local unit = lh / scale.y pixels → 1 pixel = scale.y / lh local units.
     const pixToLocal = l.sprite.scale.y / l.lh;
     l.sprite.position.y += l.offsetY * pixToLocal;
   }
@@ -772,11 +812,13 @@ function resolveOverlappingLabels() {
 
 function _labelPriority(label) {
   const n = label.node;
-  // Higher = wins position contest (stays in place)
+  // Higher = wins position contest (stays in place) and survives LOD culling
   let pri = 0;
   if (selectedNode && n.id === selectedNode.id) pri += 1000;
   if (multiSelected.has(n.id)) pri += 500;
   if (n.issue_type === 'agent') pri += 100;
+  // In-progress beads are more important than open/closed
+  if (n.status === 'in_progress') pri += 50;
   // Lower priority number = more important
   pri += (4 - (n.priority || 2)) * 10;
   return pri;
@@ -1211,23 +1253,36 @@ function linkKey(l) {
   return `${s}->${t}`;
 }
 
-// Select a node: highlight it and all directly connected nodes/links
-function selectNode(node) {
+// Select a node: highlight it and its entire connected component (beads-1sqr)
+function selectNode(node, componentIds) {
   selectedNode = node;
   highlightNodes.clear();
   highlightLinks.clear();
 
   if (!node) return;
 
-  highlightNodes.add(node.id);
+  // If a pre-computed connected component is provided, highlight the full subgraph.
+  // Otherwise fall back to direct neighbors only (e.g. for keyboard navigation).
+  const targetIds = componentIds || new Set([node.id]);
+  if (!componentIds) {
+    // Legacy: direct neighbors only
+    for (const l of graphData.links) {
+      const srcId = typeof l.source === 'object' ? l.source.id : l.source;
+      const tgtId = typeof l.target === 'object' ? l.target.id : l.target;
+      if (srcId === node.id || tgtId === node.id) {
+        targetIds.add(srcId);
+        targetIds.add(tgtId);
+      }
+    }
+  }
 
-  // Walk all links to find connected nodes
+  for (const id of targetIds) highlightNodes.add(id);
+
+  // Highlight all links between nodes in the component
   for (const l of graphData.links) {
     const srcId = typeof l.source === 'object' ? l.source.id : l.source;
     const tgtId = typeof l.target === 'object' ? l.target.id : l.target;
-    if (srcId === node.id || tgtId === node.id) {
-      highlightNodes.add(srcId);
-      highlightNodes.add(tgtId);
+    if (highlightNodes.has(srcId) && highlightNodes.has(tgtId)) {
       highlightLinks.add(linkKey(l));
     }
   }
@@ -1266,17 +1321,16 @@ function focusDeepLinkBead(beadId) {
     return;
   }
 
-  // Select and highlight the node + its neighbors
-  selectNode(node);
+  // Select and highlight the full connected component (beads-1sqr)
+  const component = getConnectedComponent(node.id);
+  selectNode(node, component);
 
-  // Fly camera to the node
-  const x = node.x || 0, y = node.y || 0, z = node.z || 0;
-  const distance = 120; // close-up view
-  graph.cameraPosition(
-    { x: x, y: y, z: z + distance },
-    { x, y, z },
-    1500, // 1.5s fly animation
-  );
+  // Reveal the subgraph and zoom to it
+  revealedNodes.clear();
+  for (const id of component) revealedNodes.add(id);
+  applyFilters();
+
+  zoomToNodes(component);
 
   // Show detail panel after camera starts moving
   setTimeout(() => showDetail(node), 500);
@@ -1410,10 +1464,10 @@ function restoreAllNodeOpacity() {
     const threeObj = node.__threeObj;
     if (!threeObj) continue;
 
-    // Hide selection-shown labels (bd-xk0tx): revert to global toggle state
+    // Revert selection-shown labels (bd-xk0tx): LOD pass will re-apply budget (beads-bu3r)
     threeObj.traverse(child => {
       if (child.userData.nodeLabel) {
-        child.visible = labelsVisible;
+        child.visible = false; // LOD pass (resolveOverlappingLabels) re-shows the right ones
       }
     });
 
@@ -1459,9 +1513,6 @@ function startAnimation() {
       const isSelected = (hasSelection && node.id === selectedNode.id) || isMultiSelected;
       const dimFactor = isHighlighted ? 1.0 : 0.35;
 
-      // Show labels on highlighted beads when there's an active selection (bd-xk0tx)
-      const showLabel = hasSelection ? isHighlighted : labelsVisible;
-
       // Skip traversal when nothing to update (agents always animate — beads-v0wa)
       if (!hasSelection && !isMultiSelected && node.status !== 'in_progress' && node.issue_type !== 'agent' && !labelsVisible) continue;
 
@@ -1471,9 +1522,13 @@ function startAnimation() {
       threeObj.traverse(child => {
         if (!child.material) return;
 
-        // Label sprites: show on highlighted nodes or when global toggle is on (bd-xk0tx)
+        // Label sprites: show on highlighted nodes when selected (bd-xk0tx)
+        // When no selection, LOD pass (resolveOverlappingLabels) manages visibility (beads-bu3r)
         if (child.userData.nodeLabel) {
-          child.visible = showLabel;
+          if (hasSelection) {
+            child.visible = isHighlighted;
+          }
+          // else: LOD pass handles visibility via label budget
           return;
         }
 
@@ -1934,13 +1989,12 @@ function handleNodeClick(node) {
   // Allow clicking revealed nodes even when they'd normally be hidden (hq-vorf47)
   if (node._hidden && !revealedNodes.has(node.id)) return;
 
-  selectNode(node);
+  // Compute full connected component first, then highlight it all (beads-1sqr)
+  const component = getConnectedComponent(node.id);
+  selectNode(node, component);
 
   // Reveal entire connected subgraph regardless of filters (hq-vorf47).
-  // BFS across ALL links (including hidden nodes) to find the full component,
-  // then force those nodes visible via applyFilters override.
   revealedNodes.clear();
-  const component = getConnectedComponent(node.id);
   for (const id of component) {
     revealedNodes.add(id);
   }
