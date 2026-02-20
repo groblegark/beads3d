@@ -16,6 +16,8 @@ tasks:
     with:
       repository: https://github.com/groblegark/beads3d.git
       ref: ${{ init.commit-sha }}
+      preserve-git-dir: true   # needed for update-snapshots to commit/push (bd-xe68g)
+      fetch-full-depth: true   # needed for git push from update-snapshots
 
   # ── Node.js toolchain ─────────────────────────────────────────────────
   - key: node
