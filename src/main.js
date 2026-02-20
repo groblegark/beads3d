@@ -172,6 +172,13 @@ let isBoxSelecting = false;
 let boxSelectStart = null; // {x, y} screen coords
 let cameraFrozen = false; // true when multi-select has locked orbit controls (bd-casin)
 let labelsVisible = false; // true when persistent info labels are shown on all nodes (bd-1o2f7)
+
+// Quake-style smooth camera movement (bd-zab4q)
+const _keysDown = new Set(); // currently held arrow keys
+const _camVelocity = { x: 0, y: 0, z: 0 }; // world-space camera velocity
+const CAM_ACCEL = 1.2;      // acceleration per frame while key held
+const CAM_MAX_SPEED = 16;   // max strafe speed (units/frame)
+const CAM_FRICTION = 0.88;  // velocity multiplier per frame when no key held (lower = more friction)
 const openPanels = new Map(); // beadId → panel element (bd-fbmq3: tiling detail panels)
 let activeAgeDays = 7; // age filter: show beads updated within N days (0 = all) (bd-uc0mw)
 
@@ -548,10 +555,10 @@ function initGraph() {
         group.add(tip);
 
         // Outer glow — orange fresnel shell (bd-s9b4v: subtler, tighter)
-        const agentGlow = new THREE.Mesh(GEO.sphereLo, createFresnelMaterial(0xff6b35, { opacity: 0.15, power: 3.0 }));
-        agentGlow.scale.setScalar(size * 1.4);
+        const agentGlow = new THREE.Mesh(GEO.sphereLo, createFresnelMaterial(0xff6b35, { opacity: 0.12, power: 3.5 }));
+        agentGlow.scale.setScalar(size * 1.3);
         agentGlow.userData.agentGlow = true;
-        agentGlow.userData.baseScale = size * 1.8;
+        agentGlow.userData.baseScale = size * 1.5;
         group.add(agentGlow);
 
         // Wake trail — elongated sprite behind agent's direction of travel (beads-v0wa)
@@ -1069,10 +1076,10 @@ function startAnimation() {
         } else if (child.userData.agentGlow) {
           // Agent glow: breathing pulse (beads-v0wa)
           const base = child.userData.baseScale || 1;
-          const pulse = 1.0 + Math.sin(t * 2) * 0.15;
+          const pulse = 1.0 + Math.sin(t * 2) * 0.08;
           child.scale.setScalar(base * pulse);
           if (child.material.uniforms && child.material.uniforms.opacity) {
-            child.material.uniforms.opacity.value = (0.2 + Math.sin(t * 2.5) * 0.1) * dimFactor;
+            child.material.uniforms.opacity.value = (0.1 + Math.sin(t * 2.5) * 0.05) * dimFactor;
           }
         } else if (child.userData.agentTrail) {
           // Wake trail: orient behind movement direction, fade based on speed (beads-v0wa)
@@ -1094,13 +1101,50 @@ function startAnimation() {
         } else if (child.userData.pulse) {
           child.rotation.z = t * 0.5;
           if (!child.material.uniforms) {
-            child.material.opacity = (0.3 + Math.sin(t * 3) * 0.2) * dimFactor;
+            child.material.opacity = (0.15 + Math.sin(t * 3) * 0.1) * dimFactor;
           }
         } else if (hasSelection) {
           saveBaseOpacity(child.material);
           setMaterialDim(child.material, dimFactor);
         }
       });
+    }
+
+    // Quake-style smooth camera movement (bd-zab4q)
+    if (_keysDown.size > 0 || Math.abs(_camVelocity.x) > 0.01 || Math.abs(_camVelocity.y) > 0.01 || Math.abs(_camVelocity.z) > 0.01) {
+      const camera = graph.camera();
+      const controls = graph.controls();
+      // Build desired direction from held keys
+      const right = new THREE.Vector3();
+      camera.getWorldDirection(new THREE.Vector3());
+      right.setFromMatrixColumn(camera.matrixWorld, 0).normalize();
+
+      // Accelerate in held directions
+      if (_keysDown.has('ArrowLeft'))  { _camVelocity.x -= right.x * CAM_ACCEL; _camVelocity.y -= right.y * CAM_ACCEL; _camVelocity.z -= right.z * CAM_ACCEL; }
+      if (_keysDown.has('ArrowRight')) { _camVelocity.x += right.x * CAM_ACCEL; _camVelocity.y += right.y * CAM_ACCEL; _camVelocity.z += right.z * CAM_ACCEL; }
+      if (_keysDown.has('ArrowUp'))    { _camVelocity.y += CAM_ACCEL; }
+      if (_keysDown.has('ArrowDown'))  { _camVelocity.y -= CAM_ACCEL; }
+
+      // Clamp speed
+      const speed = Math.sqrt(_camVelocity.x ** 2 + _camVelocity.y ** 2 + _camVelocity.z ** 2);
+      if (speed > CAM_MAX_SPEED) {
+        const s = CAM_MAX_SPEED / speed;
+        _camVelocity.x *= s; _camVelocity.y *= s; _camVelocity.z *= s;
+      }
+
+      // Apply velocity to camera + orbit target
+      const delta = new THREE.Vector3(_camVelocity.x, _camVelocity.y, _camVelocity.z);
+      camera.position.add(delta);
+      if (controls && controls.target) controls.target.add(delta);
+
+      // Friction: decelerate when no keys held (or gentle drag when keys held)
+      const friction = _keysDown.size > 0 ? 0.95 : CAM_FRICTION;
+      _camVelocity.x *= friction;
+      _camVelocity.y *= friction;
+      _camVelocity.z *= friction;
+
+      // Full stop below threshold
+      if (speed < 0.01) { _camVelocity.x = 0; _camVelocity.y = 0; _camVelocity.z = 0; }
     }
 
     // Update live event doots (bd-c7723)
@@ -2019,8 +2063,14 @@ async function expandDepTree(node) {
       } catch { /* placeholder stays as-is */ }
     }));
 
-    // Update the graph with new data
+    // Update the graph — save/restore camera to prevent library auto-reposition (bd-7ccyd)
+    const cam = graph.camera();
+    const savedPos = cam.position.clone();
+    const ctl = graph.controls();
+    const savedTgt = ctl?.target?.clone();
     graph.graphData(graphData);
+    cam.position.copy(savedPos);
+    if (ctl && savedTgt) { ctl.target.copy(savedTgt); ctl.update(); }
 
     // Highlight the expanded subtree
     selectNode(node);
@@ -2126,6 +2176,20 @@ function applyFilters() {
     n._hidden = hidden;
     n._searchMatch = !hidden && !!q;
   });
+
+  // Hide orphaned agents (bd-n0971): if all of an agent's connected beads are hidden
+  // (e.g. by search, age, or timeline filters), hide the agent too.
+  for (const n of graphData.nodes) {
+    if (n.issue_type !== 'agent' || n._hidden) continue;
+    const hasVisibleBead = graphData.links.some(l => {
+      const srcId = typeof l.source === 'object' ? l.source.id : l.source;
+      const tgtId = typeof l.target === 'object' ? l.target.id : l.target;
+      if (srcId !== n.id) return false;
+      const bead = graphData.nodes.find(nd => nd.id === tgtId);
+      return bead && !bead._hidden;
+    });
+    if (!hasVisibleBead) n._hidden = true;
+  }
 
   // Rescue age-filtered nodes that are directly connected to visible nodes (bd-uc0mw).
   // This ensures dependency chains remain visible even when old closed beads are culled.
@@ -3418,30 +3482,17 @@ function setupControls() {
       setLayout(layoutKeys[e.key]);
     }
 
-    // Arrow keys: strafe camera (bd-wnt17)
-    const STRAFE_SPEED = 8;
+    // Arrow keys: track held keys for Quake-style smooth camera (bd-zab4q)
     if (['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(e.key) &&
         document.activeElement !== searchInput) {
       e.preventDefault();
-      const camera = graph.camera();
-      const controls = graph.controls();
-      // Get camera's right and up vectors in world space
-      const right = new THREE.Vector3();
-      const up = new THREE.Vector3();
-      camera.getWorldDirection(new THREE.Vector3()); // ensure matrix is current
-      right.setFromMatrixColumn(camera.matrixWorld, 0).normalize();
-      up.setFromMatrixColumn(camera.matrixWorld, 1).normalize();
-
-      const delta = new THREE.Vector3();
-      if (e.key === 'ArrowLeft')  delta.addScaledVector(right, -STRAFE_SPEED);
-      if (e.key === 'ArrowRight') delta.addScaledVector(right,  STRAFE_SPEED);
-      if (e.key === 'ArrowUp')    delta.addScaledVector(up,     STRAFE_SPEED);
-      if (e.key === 'ArrowDown')  delta.addScaledVector(up,    -STRAFE_SPEED);
-
-      // Move both camera and orbit target to strafe without changing orientation
-      camera.position.add(delta);
-      if (controls && controls.target) controls.target.add(delta);
+      _keysDown.add(e.key);
     }
+  });
+
+  // Release arrow keys — velocity decays via friction in animation loop (bd-zab4q)
+  document.addEventListener('keyup', (e) => {
+    _keysDown.delete(e.key);
   });
 }
 
@@ -3514,17 +3565,46 @@ async function refresh() {
   applyFilters();
 
   if (structureChanged) {
-    // graph.graphData() reheats d3-force to alpha=1, scattering all positioned nodes.
-    // Fix (bd-vacsl): temporarily crank d3VelocityDecay so existing nodes barely move
-    // during the initial high-alpha ticks, then restore for gentle settling.
-    const prevVelocityDecay = graph.d3VelocityDecay();
-    graph.d3VelocityDecay(0.9); // heavy friction: velocity *= 0.1 each tick
+    // graph.graphData() reheats d3-force to alpha=1, which scatters positioned nodes.
+    // Fix (bd-7ccyd): pin ALL existing nodes at their current positions during the
+    // graphData() call. Only new nodes (without positions) float freely. After a brief
+    // settling period, unpin so the layout can gently adjust.
+    const pinnedNodes = [];
+    for (const n of mergedNodes) {
+      if (n.x !== undefined && n.fx === undefined) {
+        n.fx = n.x;
+        n.fy = n.y;
+        n.fz = n.z || 0;
+        pinnedNodes.push(n);
+      }
+    }
+
+    // Save camera state — graphData() triggers the library's onUpdate which
+    // auto-repositions the camera when it detects a (0,0,Z) default position.
+    // We restore immediately after to prevent any camera jump (bd-7ccyd).
+    const cam = graph.camera();
+    const savedCamPos = cam.position.clone();
+    const controls = graph.controls();
+    const savedTarget = controls?.target?.clone();
 
     graph.graphData(graphData);
 
-    // After 200ms (~12 frames at 60fps), alpha decays from 1→~0.76.
-    // Restore normal friction so new nodes can drift to their equilibrium.
-    setTimeout(() => graph.d3VelocityDecay(prevVelocityDecay), 200);
+    // Restore camera position immediately (prevents library auto-reposition)
+    cam.position.copy(savedCamPos);
+    if (controls && savedTarget) {
+      controls.target.copy(savedTarget);
+      controls.update();
+    }
+
+    // After 1.5s — enough for new nodes to settle near their neighbors —
+    // release the pins so the layout can breathe gently.
+    setTimeout(() => {
+      for (const n of pinnedNodes) {
+        delete n.fx;
+        delete n.fy;
+        delete n.fz;
+      }
+    }, 1500);
   }
   // If only properties changed (status, title, etc.), the existing three.js
   // objects pick up the changes via the animation tick — no layout reset needed.
