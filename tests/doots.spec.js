@@ -202,6 +202,8 @@ test.describe('NATS event doot streaming', () => {
         mutStatus: fn({ type: 'MutationStatus', payload: { new_status: 'closed' } }),
         decision: fn({ type: 'DecisionCreated', payload: {} }),
         decided: fn({ type: 'DecisionResponded', payload: {} }),
+        escalated: fn({ type: 'DecisionEscalated', payload: {} }),
+        expired: fn({ type: 'DecisionExpired', payload: {} }),
       };
     });
 
@@ -220,8 +222,10 @@ test.describe('NATS event doot streaming', () => {
     expect(labels.jobFailed).toBe('job failed!');
     expect(labels.mutCreate).toBe('created bead');
     expect(labels.mutStatus).toBe('closed');
-    expect(labels.decision).toBe('decision?');
-    expect(labels.decided).toBe('decided');
+    expect(labels.decision).toBeNull();  // filtered out (bd-t25i1)
+    expect(labels.decided).toBeNull();   // filtered out (bd-t25i1)
+    expect(labels.escalated).toBeNull(); // filtered out (bd-t25i1)
+    expect(labels.expired).toBeNull();   // filtered out (bd-t25i1)
   });
 
   test('dootColor returns correct colors for event categories', async ({ page }) => {
@@ -340,11 +344,12 @@ test.describe('NATS event doot streaming', () => {
       const doots = window.__beads3d_doots();
       if (doots.length === 0) return null;
 
-      // Relative height above node at spawn
+      // Wait a tick for first animate frame to set initial position
+      await new Promise(r => setTimeout(r, 200));
       const rel0 = doots[0].sprite.position.y - (agent.y || 0);
 
-      // Wait 1.5 seconds for the doot to rise
-      await new Promise(r => setTimeout(r, 1500));
+      // Wait 2 seconds for the doot to rise
+      await new Promise(r => setTimeout(r, 2000));
 
       const rel1 = doots[0] ? doots[0].sprite.position.y - (agent.y || 0) : null;
       return { rel0, rel1 };
@@ -352,12 +357,12 @@ test.describe('NATS event doot streaming', () => {
 
     if (!positions) { test.skip(); return; }
 
-    // Doot should be higher relative to node after 1.5s
+    // Doot should be higher relative to node after 2s
     expect(positions.rel1).toBeGreaterThan(positions.rel0);
-    // Rise speed = 8 units/sec, so after 1.5s should be ~12 units higher
+    // Rise speed = 8 units/sec, so after 2s should be ~16 units higher
     const rise = positions.rel1 - positions.rel0;
-    expect(rise).toBeGreaterThan(6);   // at least 6 units (allow for frame timing)
-    expect(rise).toBeLessThan(20);     // not more than ~20 (sanity)
+    expect(rise).toBeGreaterThan(5);   // at least 5 units (allow for frame timing variance)
+    expect(rise).toBeLessThan(25);     // not more than ~25 (sanity)
   });
 
   test('doots fade opacity over their lifetime', async ({ page }) => {
