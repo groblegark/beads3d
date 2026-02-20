@@ -6,8 +6,18 @@ Interactive 3D visualization of beads issues using `3d-force-graph`.
 
 ```bash
 npm install
-npm run dev   # starts vite on http://localhost:3333
+npm run dev   # starts vite on http://localhost:3333 (or http://beads3d.local:3333)
 ```
+
+### Local DNS (optional)
+
+Add to `/etc/hosts` for a friendly URL:
+
+```
+127.0.0.1  beads3d.local
+```
+
+Then access at `http://beads3d.local:3333`. Vite binds to all interfaces (`host: true`) so this works out of the box.
 
 ## Local Dev (connecting to remote daemon)
 

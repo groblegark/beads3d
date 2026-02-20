@@ -15,6 +15,7 @@ export default defineConfig(({ mode }) => {
   return {
     server: {
       port: 3333,
+      host: true, // bd-gbxri: bind to all interfaces so beads3d.local works
       open: true,
       proxy: {
         // SSE streams — long-lived connections, must come before /api catch-all
