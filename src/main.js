@@ -5743,7 +5743,7 @@ function showAgentWindow(node) {
     .filter(Boolean);
 
   const beadsList = assigned
-    .map(b => `<div class="agent-window-bead" title="${escapeHtml(b.id)}: ${escapeHtml(b.title)}">${escapeHtml(b.id.replace(/^[a-z]+-/, ''))}: ${escapeHtml(b.title)}</div>`)
+    .map(b => `<div class="agent-window-bead" data-bead-id="${escapeHtml(b.id)}" title="${escapeHtml(b.id)}: ${escapeHtml(b.title)}" style="cursor:pointer">${escapeHtml(b.id.replace(/^[a-z]+-/, ''))}: ${escapeHtml(b.title)}</div>`)
     .join('');
 
   const rigBadge = node.rig
@@ -5752,7 +5752,7 @@ function showAgentWindow(node) {
 
   el.innerHTML = `
     <div class="agent-window-header">
-      <span class="agent-window-name">${escapeHtml(agentName)}</span>
+      <span class="agent-window-name" style="cursor:pointer" title="Click to zoom to agent">${escapeHtml(agentName)}</span>
       ${rigBadge}
       <span class="agent-window-badge">${assigned.length}</span>
       <button class="agent-window-close">&times;</button>
@@ -5765,9 +5765,31 @@ function showAgentWindow(node) {
     </div>
   `;
 
+  // bd-2ysfj: Click agent name to highlight + zoom to agent node in 3D scene
+  el.querySelector('.agent-window-name').onclick = (e) => {
+    e.stopPropagation(); // Don't trigger header collapse
+    const agentNode = graphData.nodes.find(n => n.id === node.id);
+    if (agentNode) handleNodeClick(agentNode);
+  };
+
+  // bd-xm78e: Click assigned bead to highlight + zoom to bead node in 3D scene
+  const beadsContainer = el.querySelector('.agent-window-beads');
+  if (beadsContainer) {
+    beadsContainer.onclick = (e) => {
+      const beadEl = e.target.closest('.agent-window-bead');
+      if (!beadEl) return;
+      const beadId = beadEl.dataset.beadId;
+      if (!beadId) return;
+      e.stopPropagation();
+      const beadNode = graphData.nodes.find(n => n.id === beadId);
+      if (beadNode) handleNodeClick(beadNode);
+    };
+  }
+
   const header = el.querySelector('.agent-window-header');
   header.onclick = (e) => {
     if (e.target.classList.contains('agent-window-close')) return;
+    if (e.target.classList.contains('agent-window-name')) return; // bd-2ysfj: name has its own handler
     const win = agentWindows.get(node.id);
     if (win) {
       win.collapsed = !win.collapsed;
@@ -5929,7 +5951,7 @@ function openAgentsView() {
       .filter(Boolean);
 
     const beadsList = assigned
-      .map(b => `<div class="agent-window-bead" title="${escapeHtml(b.id)}: ${escapeHtml(b.title)}">${escapeHtml(b.id.replace(/^[a-z]+-/, ''))}: ${escapeHtml(b.title)}</div>`)
+      .map(b => `<div class="agent-window-bead" data-bead-id="${escapeHtml(b.id)}" title="${escapeHtml(b.id)}: ${escapeHtml(b.title)}" style="cursor:pointer">${escapeHtml(b.id.replace(/^[a-z]+-/, ''))}: ${escapeHtml(b.title)}</div>`)
       .join('');
 
     const avRigBadge = node.rig
@@ -5938,7 +5960,7 @@ function openAgentsView() {
 
     el.innerHTML = `
       <div class="agent-window-header">
-        <span class="agent-window-name">${escapeHtml(agentName)}</span>
+        <span class="agent-window-name" style="cursor:pointer" title="Click to zoom to agent">${escapeHtml(agentName)}</span>
         ${avRigBadge}
         <span class="agent-window-badge" style="color:${statusColor}">${agentStatus || '?'}</span>
         <span class="agent-window-badge">${assigned.length}</span>
@@ -5952,9 +5974,31 @@ function openAgentsView() {
       </div>
     `;
 
+    // bd-2ysfj: Click agent name to highlight + zoom to agent node in 3D scene
+    el.querySelector('.agent-window-name').onclick = (e) => {
+      e.stopPropagation();
+      const agentNode = graphData.nodes.find(n => n.id === node.id);
+      if (agentNode) handleNodeClick(agentNode);
+    };
+
+    // bd-xm78e: Click assigned bead to highlight + zoom to bead node in 3D scene
+    const beadsContainer = el.querySelector('.agent-window-beads');
+    if (beadsContainer) {
+      beadsContainer.onclick = (e) => {
+        const beadEl = e.target.closest('.agent-window-bead');
+        if (!beadEl) return;
+        const beadId = beadEl.dataset.beadId;
+        if (!beadId) return;
+        e.stopPropagation();
+        const beadNode = graphData.nodes.find(n => n.id === beadId);
+        if (beadNode) handleNodeClick(beadNode);
+      };
+    }
+
     const header = el.querySelector('.agent-window-header');
     header.onclick = (e) => {
       if (e.target.classList.contains('agent-window-close')) return;
+      if (e.target.classList.contains('agent-window-name')) return; // bd-2ysfj: name has its own handler
       const win = agentWindows.get(node.id);
       if (win) {
         win.collapsed = !win.collapsed;
@@ -6062,12 +6106,12 @@ function createAgentWindowInGrid(node) {
     .filter(Boolean) : [];
 
   const beadsList = assigned
-    .map(b => `<div class="agent-window-bead" title="${escapeHtml(b.id)}: ${escapeHtml(b.title)}">${escapeHtml(b.id.replace(/^[a-z]+-/, ''))}: ${escapeHtml(b.title)}</div>`)
+    .map(b => `<div class="agent-window-bead" data-bead-id="${escapeHtml(b.id)}" title="${escapeHtml(b.id)}: ${escapeHtml(b.title)}" style="cursor:pointer">${escapeHtml(b.id.replace(/^[a-z]+-/, ''))}: ${escapeHtml(b.title)}</div>`)
     .join('');
 
   el.innerHTML = `
     <div class="agent-window-header">
-      <span class="agent-window-name">${escapeHtml(agentName)}</span>
+      <span class="agent-window-name" style="cursor:pointer" title="Click to zoom to agent">${escapeHtml(agentName)}</span>
       <span class="agent-window-badge" style="color:${statusColor}">${agentStatus || '?'}</span>
       <span class="agent-window-badge">${assigned.length}</span>
       <button class="agent-window-close">&times;</button>
@@ -6080,9 +6124,31 @@ function createAgentWindowInGrid(node) {
     </div>
   `;
 
+  // bd-2ysfj: Click agent name to highlight + zoom to agent node in 3D scene
+  el.querySelector('.agent-window-name').onclick = (e) => {
+    e.stopPropagation();
+    const agentNode = graphData.nodes.find(n => n.id === node.id);
+    if (agentNode) handleNodeClick(agentNode);
+  };
+
+  // bd-xm78e: Click assigned bead to highlight + zoom to bead node in 3D scene
+  const beadsContainer = el.querySelector('.agent-window-beads');
+  if (beadsContainer) {
+    beadsContainer.onclick = (e) => {
+      const beadEl = e.target.closest('.agent-window-bead');
+      if (!beadEl) return;
+      const beadId = beadEl.dataset.beadId;
+      if (!beadId) return;
+      e.stopPropagation();
+      const beadNode = graphData.nodes.find(n => n.id === beadId);
+      if (beadNode) handleNodeClick(beadNode);
+    };
+  }
+
   const header = el.querySelector('.agent-window-header');
   header.onclick = (e) => {
     if (e.target.classList.contains('agent-window-close')) return;
+    if (e.target.classList.contains('agent-window-name')) return; // bd-2ysfj: name has its own handler
     const win = agentWindows.get(node.id);
     if (win) {
       win.collapsed = !win.collapsed;
@@ -6465,7 +6531,7 @@ async function main() {
     }
     // Expose for Playwright tests
     window.__THREE = THREE;
-    window.__beads3d = { graph, graphData: () => graphData, multiSelected: () => multiSelected, highlightNodes: () => highlightNodes, showBulkMenu, showDetail, hideDetail, selectNode, highlightSubgraph, clearSelection };
+    window.__beads3d = { graph, graphData: () => graphData, multiSelected: () => multiSelected, highlightNodes: () => highlightNodes, showBulkMenu, showDetail, hideDetail, selectNode, highlightSubgraph, clearSelection, get selectedNode() { return selectedNode; }, get cameraFrozen() { return cameraFrozen; } };
     // Expose doot internals for testing (bd-pg7vy)
     window.__beads3d_spawnDoot = spawnDoot;
     window.__beads3d_doots = () => doots;
