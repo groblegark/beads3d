@@ -663,11 +663,17 @@ function centerCameraOnSelection() {
 
   graph.cameraPosition(camPos, lookAt, 1000);
 
-  // Freeze orbit controls after the fly animation
+  // Freeze orbit controls + pin all node positions after the fly animation
   cameraFrozen = true;
   setTimeout(() => {
     const controls = graph.controls();
     if (controls) controls.enabled = false;
+    // Pin every node so forces don't drift them (bd-casin)
+    for (const node of graphData.nodes) {
+      node.fx = node.x;
+      node.fy = node.y;
+      node.fz = node.z;
+    }
   }, 1050);
 }
 
@@ -676,6 +682,12 @@ function unfreezeCamera() {
   cameraFrozen = false;
   const controls = graph.controls();
   if (controls) controls.enabled = true;
+  // Unpin all nodes so forces resume (bd-casin)
+  for (const node of graphData.nodes) {
+    node.fx = undefined;
+    node.fy = undefined;
+    node.fz = undefined;
+  }
 }
 
 // --- Node opacity helpers ---
