@@ -50,7 +50,7 @@ tasks:
   # ── Update visual snapshots (run with --target update-snapshots) ──────
   # Generates Linux baselines and pushes them to the repo.
   - key: update-snapshots
-    use: [build, browsers]
+    use: [code, build, browsers]
     timeout: 30 minutes
     run: |
       echo "Generating/updating visual test snapshots..."
