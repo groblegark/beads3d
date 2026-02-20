@@ -2,24 +2,42 @@ import { defineConfig, loadEnv } from 'vite';
 
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), '');
+  const target = env.VITE_BD_API_URL || 'http://localhost:9080';
+  const token = env.VITE_BD_TOKEN;
+
+  // Shared proxy config: rewrite /api prefix, inject auth header
+  const addAuth = (proxy) => {
+    proxy.on('proxyReq', (proxyReq) => {
+      if (token) proxyReq.setHeader('Authorization', `Bearer ${token}`);
+    });
+  };
 
   return {
     server: {
       port: 3333,
       open: true,
       proxy: {
-        // Proxy /api → beads daemon (avoids CORS)
-        '/api': {
-          target: env.VITE_BD_API_URL || 'http://localhost:9080',
+        // SSE streams — long-lived connections, must come before /api catch-all
+        '/api/events': {
+          target,
           changeOrigin: true,
           rewrite: (path) => path.replace(/^\/api/, ''),
-          configure: (proxy) => {
-            proxy.on('proxyReq', (proxyReq) => {
-              if (env.VITE_BD_TOKEN) {
-                proxyReq.setHeader('Authorization', `Bearer ${env.VITE_BD_TOKEN}`);
-              }
-            });
-          },
+          timeout: 0,       // no timeout for SSE
+          configure: addAuth,
+        },
+        '/api/bus/': {
+          target,
+          changeOrigin: true,
+          rewrite: (path) => path.replace(/^\/api/, ''),
+          timeout: 0,
+          configure: addAuth,
+        },
+        // RPC catch-all — short-lived request/response
+        '/api': {
+          target,
+          changeOrigin: true,
+          rewrite: (path) => path.replace(/^\/api/, ''),
+          configure: addAuth,
         },
       },
     },

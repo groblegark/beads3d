@@ -9,19 +9,36 @@ npm install
 npm run dev   # starts vite on http://localhost:3333
 ```
 
-## Environment
+## Local Dev (connecting to remote daemon)
 
-Connection to the beads daemon is configured via `.env` (untracked, contains secrets):
+Two approaches — both work. The `.env` file (untracked, gitignored) configures the connection.
+
+### Option A: Direct HTTPS (default, zero setup)
 
 ```
+# .env
 VITE_BD_API_URL=https://gastown-next.app.e2e.dev.fics.ai
-VITE_BD_TOKEN=<bearer token>
+VITE_BD_TOKEN=<bearer-token-from-daemon>
 ```
 
-The daemon env vars are available in the shell as `BD_DAEMON_HOST` and `BD_DAEMON_TOKEN`.
-Copy them to `.env` with the `VITE_` prefix for Vite to pick them up.
+Vite proxies `/api` → remote daemon with auth header injection. Works for RPC, SSE events, and bus SSE.
 
-You can also override via URL params: `?api=http://localhost:9080&token=xyz`
+### Option B: kubectl port-forward (in-cluster, no auth needed)
+
+```bash
+# Terminal 1: port-forward the daemon service
+kubectl -n gastown-next port-forward svc/gastown-next-bd-daemon-daemon 9080:9080
+```
+
+```
+# .env
+VITE_BD_API_URL=http://localhost:9080
+# VITE_BD_TOKEN not needed for port-forward
+```
+
+### URL param override
+
+You can also override at runtime: `?api=http://localhost:9080&token=xyz`
 
 ## Tech Stack
 
@@ -31,10 +48,12 @@ You can also override via URL params: `?api=http://localhost:9080&token=xyz`
 
 ## API
 
-Connects to beads daemon HTTP API (Connect-RPC JSON):
-- `POST /bd.v1.BeadsService/List` — fetch all issues
-- `POST /bd.v1.BeadsService/Stats` — project statistics
-- `GET /events` — SSE live updates
+Connects to beads daemon HTTP API (Connect-RPC JSON). All RPC via `POST /api/bd.v1.BeadsService/<Method>`.
+
+Read: `Ping`, `List`, `Show`, `Stats`, `Ready`, `Blocked`, `Graph`, `DepTree`, `EpicOverview`
+Write: `Update`, `Close`, `Create`
+Decisions: `DecisionGet`, `DecisionList`, `DecisionListRecent`, `DecisionResolve`, `DecisionCancel`, `DecisionRemind`
+SSE: `GET /api/events` (mutation stream), `GET /api/bus/events?stream=<names>` (NATS bus)
 
 ## Design Vision
 
