@@ -144,7 +144,7 @@ const LINK_ICON_MATERIALS = {
 };
 const LINK_ICON_DEFAULT = makeLinkIconTexture(drawDot, '#2a2a3a');
 
-const LINK_ICON_SCALE = 8; // sprite size in world units
+const LINK_ICON_SCALE = 12; // sprite size in world units (bd-t1g9o: increased for visibility)
 
 // --- State ---
 let graphData = { nodes: [], links: [] };
@@ -3559,9 +3559,39 @@ function dootLabel(evt) {
   if (type === 'AgentIdle') return 'idle';
   if (type === 'AgentHeartbeat') return null; // too noisy
 
-  // Hook events (tool use, session, etc.)
+  // Hook events (tool use, session, etc.) — show full command context (bd-wn5he)
   if (type === 'PreToolUse' || type === 'PostToolUse') {
     const tool = p.tool_name || p.toolName || '';
+    const input = p.tool_input || {};
+    if (tool === 'Bash' || tool === 'bash') {
+      const cmd = input.command || input.cmd || '';
+      const short = cmd.replace(/^cd [^ ]+ && /, '').split('\n')[0].slice(0, 60);
+      return short || 'bash';
+    }
+    if (tool === 'Read' || tool === 'read') {
+      const fp = input.file_path || input.path || '';
+      return fp ? `read ${fp.split('/').pop()}` : 'read';
+    }
+    if (tool === 'Edit' || tool === 'edit') {
+      const fp = input.file_path || input.path || '';
+      return fp ? `edit ${fp.split('/').pop()}` : 'edit';
+    }
+    if (tool === 'Write' || tool === 'write') {
+      const fp = input.file_path || input.path || '';
+      return fp ? `write ${fp.split('/').pop()}` : 'write';
+    }
+    if (tool === 'Grep' || tool === 'grep') {
+      const pat = input.pattern || '';
+      return pat ? `grep ${pat.slice(0, 30)}` : 'grep';
+    }
+    if (tool === 'Glob' || tool === 'glob') {
+      const pat = input.pattern || '';
+      return pat ? `glob ${pat.slice(0, 30)}` : 'glob';
+    }
+    if (tool === 'Task' || tool === 'task') {
+      const desc = input.description || '';
+      return desc ? `task: ${desc.slice(0, 40)}` : 'task';
+    }
     return tool ? tool.toLowerCase() : 'tool';
   }
   if (type === 'SessionStart') return 'session start';
@@ -3578,12 +3608,22 @@ function dootLabel(evt) {
   if (type === 'OjJobCompleted') return 'job done';
   if (type === 'OjJobFailed') return 'job failed!';
 
-  // Mutations (bd-5knqx: filter noisy heartbeat-style updates)
-  if (type === 'MutationCreate') return 'created bead';
+  // Mutations (bd-wn5he: rate-limit noisy heartbeat updates, show meaningful ones)
+  if (type === 'MutationCreate') return `new: ${(p.title || p.issue_id || 'bead').slice(0, 40)}`;
   if (type === 'MutationUpdate') {
     if (p.type === 'rpc_audit') return null; // daemon-token bookkeeping noise
-    if (p.agent_state && !p.new_status) return null; // periodic agent heartbeat
-    return 'updated';
+    // Rate-limit agent heartbeats: one doot per agent per 10s
+    if (p.agent_state && !p.new_status) {
+      const key = p.issue_id || p.actor || '';
+      const now = Date.now();
+      if (!dootLabel._lastHeartbeat) dootLabel._lastHeartbeat = {};
+      if (now - (dootLabel._lastHeartbeat[key] || 0) < 10000) return null;
+      dootLabel._lastHeartbeat[key] = now;
+      return p.agent_state; // "working", "idle", etc.
+    }
+    // Show assignee claims
+    if (p.assignee && p.type === 'update') return `claimed by ${p.assignee}`;
+    return p.title ? p.title.slice(0, 50) : 'updated';
   }
   if (type === 'MutationStatus') return p.new_status || 'status';
   if (type === 'MutationClose') return 'closed';
@@ -3844,6 +3884,10 @@ async function main() {
     window.__beads3d_findAgentNode = findAgentNode;
     // Expose mutation handler for testing (bd-03b5v)
     window.__beads3d_applyMutation = applyMutationOptimistic;
+    // Expose popup internals for testing (beads-xmix)
+    window.__beads3d_showDootPopup = showDootPopup;
+    window.__beads3d_dismissDootPopup = dismissDootPopup;
+    window.__beads3d_dootPopups = () => dootPopups;
 
     // Cleanup on page unload (bd-7n4g8): close SSE, clear intervals
     window.addEventListener('beforeunload', () => {

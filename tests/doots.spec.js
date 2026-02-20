@@ -201,11 +201,19 @@ test.describe('NATS event doot streaming', () => {
         jobDone: fn({ type: 'OjJobCompleted', payload: {} }),
         jobFailed: fn({ type: 'OjJobFailed', payload: {} }),
         mutCreate: fn({ type: 'MutationCreate', payload: {} }),
+        mutCreateTitle: fn({ type: 'MutationCreate', payload: { title: 'Fix login bug' } }),
         mutStatus: fn({ type: 'MutationStatus', payload: { new_status: 'closed' } }),
+        mutRpcAudit: fn({ type: 'MutationUpdate', payload: { type: 'rpc_audit' } }),
         decision: fn({ type: 'DecisionCreated', payload: {} }),
         decided: fn({ type: 'DecisionResponded', payload: {} }),
         escalated: fn({ type: 'DecisionEscalated', payload: {} }),
         expired: fn({ type: 'DecisionExpired', payload: {} }),
+        // Rich tool labels (bd-wn5he)
+        bashCmd: fn({ type: 'PreToolUse', payload: { tool_name: 'Bash', tool_input: { command: 'git status' } } }),
+        readFile: fn({ type: 'PreToolUse', payload: { tool_name: 'Read', tool_input: { file_path: '/src/main.js' } } }),
+        editFile: fn({ type: 'PreToolUse', payload: { tool_name: 'Edit', tool_input: { file_path: '/src/api.js' } } }),
+        grepPat: fn({ type: 'PreToolUse', payload: { tool_name: 'Grep', tool_input: { pattern: 'findAgentNode' } } }),
+        taskAgent: fn({ type: 'PreToolUse', payload: { tool_name: 'Task', tool_input: { description: 'Explore codebase' } } }),
       };
     });
 
@@ -222,12 +230,20 @@ test.describe('NATS event doot streaming', () => {
     expect(labels.jobCreated).toBe('job created');
     expect(labels.jobDone).toBe('job done');
     expect(labels.jobFailed).toBe('job failed!');
-    expect(labels.mutCreate).toBe('created bead');
+    expect(labels.mutCreate).toBe('new: bead'); // bd-wn5he: shows title or fallback
+    expect(labels.mutCreateTitle).toBe('new: Fix login bug'); // bd-wn5he: shows actual title
     expect(labels.mutStatus).toBe('closed');
+    expect(labels.mutRpcAudit).toBeNull(); // rpc_audit noise filtered
     expect(labels.decision).toBeNull();  // filtered out (bd-t25i1)
     expect(labels.decided).toBeNull();   // filtered out (bd-t25i1)
     expect(labels.escalated).toBeNull(); // filtered out (bd-t25i1)
     expect(labels.expired).toBeNull();   // filtered out (bd-t25i1)
+    // Rich tool labels (bd-wn5he)
+    expect(labels.bashCmd).toBe('git status');
+    expect(labels.readFile).toBe('read main.js');
+    expect(labels.editFile).toBe('edit api.js');
+    expect(labels.grepPat).toBe('grep findAgentNode');
+    expect(labels.taskAgent).toBe('task: Explore codebase');
   });
 
   test('dootColor returns correct colors for event categories', async ({ page }) => {
@@ -786,5 +802,255 @@ test.describe('doot rendering and cleanup', () => {
     expect(result.heartbeat).toBeNull();
     expect(result.decisionCreated).toBeNull();
     expect(result.decisionResponded).toBeNull();
+  });
+});
+
+// --- Doot-triggered popup tests (beads-xmix) ---
+
+test.describe('Doot-triggered issue popups', () => {
+
+  // Helper: get popup count from DOM
+  async function getPopupCount(page) {
+    return page.evaluate(() => {
+      const container = document.getElementById('doot-popups');
+      return container ? container.querySelectorAll('.doot-popup').length : 0;
+    });
+  }
+
+  // Helper: get popup map size (internal state)
+  async function getPopupMapSize(page) {
+    return page.evaluate(() => {
+      const fn = window.__beads3d_dootPopups;
+      return fn ? fn().size : -1;
+    });
+  }
+
+  // Helper: trigger popup on a non-agent node by calling showDootPopup directly
+  async function triggerPopup(page, nodeId) {
+    return page.evaluate((id) => {
+      const b = window.__beads3d;
+      const showPopup = window.__beads3d_showDootPopup;
+      if (!b || !showPopup) return { triggered: false, reason: 'not exposed' };
+      const node = b.graphData().nodes.find(n => n.id === id);
+      if (!node) return { triggered: false, reason: `node ${id} not found` };
+      showPopup(node);
+      return { triggered: true };
+    }, nodeId);
+  }
+
+  test('popup appears when doot fires on a non-agent issue node', async ({ page }) => {
+    await mockAPI(page);
+    await page.route('**/api/bus/events*', route =>
+      route.fulfill({ status: 200, contentType: 'text/event-stream', body: ': keepalive\n\n' }));
+
+    await page.goto('/');
+    await waitForGraph(page);
+
+    const result = await triggerPopup(page, 'bd-epic1');
+    if (!result.triggered) { test.skip(); return; }
+
+    expect(await getPopupCount(page)).toBe(1);
+    expect(await getPopupMapSize(page)).toBe(1);
+
+    // Verify the popup card contains the node's bead ID and title
+    const text = await page.evaluate(() => {
+      const popup = document.querySelector('.doot-popup');
+      return popup ? popup.textContent : '';
+    });
+    expect(text).toContain('bd-epic1');
+    expect(text).toContain('Epic: Platform Overhaul');
+  });
+
+  test('popup does NOT appear for agent nodes', async ({ page }) => {
+    await mockAPI(page);
+    await page.route('**/api/bus/events*', route =>
+      route.fulfill({ status: 200, contentType: 'text/event-stream', body: ': keepalive\n\n' }));
+
+    await page.goto('/');
+    await waitForGraph(page);
+
+    const result = await triggerPopup(page, 'agent:alice');
+    if (!result.triggered) { test.skip(); return; }
+
+    // Agent nodes should be filtered out by showDootPopup
+    expect(await getPopupCount(page)).toBe(0);
+    expect(await getPopupMapSize(page)).toBe(0);
+  });
+
+  test('popup timer resets on subsequent doots (pulse animation)', async ({ page }) => {
+    await mockAPI(page);
+    await page.route('**/api/bus/events*', route =>
+      route.fulfill({ status: 200, contentType: 'text/event-stream', body: ': keepalive\n\n' }));
+
+    await page.goto('/');
+    await waitForGraph(page);
+
+    const result = await triggerPopup(page, 'bd-feat1');
+    if (!result.triggered) { test.skip(); return; }
+
+    expect(await getPopupCount(page)).toBe(1);
+
+    // Fire again on same node — should still be 1 popup but with pulse class
+    await triggerPopup(page, 'bd-feat1');
+    expect(await getPopupCount(page)).toBe(1);
+
+    const hasPulse = await page.evaluate(() => {
+      const popup = document.querySelector('.doot-popup');
+      return popup ? popup.classList.contains('doot-pulse') : false;
+    });
+    expect(hasPulse).toBe(true);
+  });
+
+  test('max 3 simultaneous popups — oldest evicted', async ({ page }) => {
+    await mockAPI(page);
+    await page.route('**/api/bus/events*', route =>
+      route.fulfill({ status: 200, contentType: 'text/event-stream', body: ': keepalive\n\n' }));
+
+    await page.goto('/');
+    await waitForGraph(page);
+
+    // Trigger 4 popups on different non-agent nodes
+    const nodes = ['bd-epic1', 'bd-feat1', 'bd-bug1', 'bd-task1'];
+    for (const nodeId of nodes) {
+      const r = await triggerPopup(page, nodeId);
+      if (!r.triggered) { test.skip(); return; }
+      // Small delay so lastDoot timestamps differ
+      await page.waitForTimeout(50);
+    }
+
+    // Wait for oldest popup's DOM removal (dismissDootPopup uses 300ms setTimeout)
+    await page.waitForTimeout(400);
+
+    // Should have max 3 popups (oldest evicted)
+    expect(await getPopupCount(page)).toBe(3);
+    expect(await getPopupMapSize(page)).toBe(3);
+
+    // The first popup (bd-epic1) should have been evicted
+    const hasFirst = await page.evaluate(() => {
+      return !!document.querySelector('.doot-popup[data-bead-id="bd-epic1"]');
+    });
+    expect(hasFirst).toBe(false);
+  });
+
+  test('popup dismissed by close button click', async ({ page }) => {
+    await mockAPI(page);
+    await page.route('**/api/bus/events*', route =>
+      route.fulfill({ status: 200, contentType: 'text/event-stream', body: ': keepalive\n\n' }));
+
+    await page.goto('/');
+    await waitForGraph(page);
+
+    const result = await triggerPopup(page, 'bd-feat1');
+    if (!result.triggered) { test.skip(); return; }
+
+    expect(await getPopupCount(page)).toBe(1);
+
+    // Click the close button
+    await page.click('.doot-popup-close');
+
+    // Wait for the 300ms fade-out transition
+    await page.waitForTimeout(400);
+
+    expect(await getPopupCount(page)).toBe(0);
+    expect(await getPopupMapSize(page)).toBe(0);
+  });
+
+  test('Escape key dismisses all popups', async ({ page }) => {
+    await mockAPI(page);
+    await page.route('**/api/bus/events*', route =>
+      route.fulfill({ status: 200, contentType: 'text/event-stream', body: ': keepalive\n\n' }));
+
+    await page.goto('/');
+    await waitForGraph(page);
+
+    // Create 2 popups
+    await triggerPopup(page, 'bd-epic1');
+    await triggerPopup(page, 'bd-feat1');
+    expect(await getPopupCount(page)).toBe(2);
+
+    // Press Escape
+    await page.keyboard.press('Escape');
+
+    // Wait for 300ms fade-out
+    await page.waitForTimeout(400);
+
+    expect(await getPopupMapSize(page)).toBe(0);
+  });
+
+  test('popup shows countdown bar with animation', async ({ page }) => {
+    await mockAPI(page);
+    await page.route('**/api/bus/events*', route =>
+      route.fulfill({ status: 200, contentType: 'text/event-stream', body: ': keepalive\n\n' }));
+
+    await page.goto('/');
+    await waitForGraph(page);
+
+    const result = await triggerPopup(page, 'bd-feat1');
+    if (!result.triggered) { test.skip(); return; }
+
+    // Check countdown bar exists and has animation
+    const barInfo = await page.evaluate(() => {
+      const bar = document.querySelector('.doot-popup-bar');
+      if (!bar) return null;
+      return {
+        exists: true,
+        animationDuration: bar.style.animationDuration,
+      };
+    });
+    expect(barInfo).not.toBeNull();
+    expect(barInfo.animationDuration).toBe('30000ms');
+  });
+
+  test('popup click navigates to detail panel', async ({ page }) => {
+    await mockAPI(page);
+    await page.route('**/api/bus/events*', route =>
+      route.fulfill({ status: 200, contentType: 'text/event-stream', body: ': keepalive\n\n' }));
+
+    await page.goto('/');
+    await waitForGraph(page);
+
+    const result = await triggerPopup(page, 'bd-feat1');
+    if (!result.triggered) { test.skip(); return; }
+
+    // Click the popup title (not the close button)
+    await page.click('.doot-popup-title');
+
+    // Detail panel should open — container becomes visible with a .detail-panel child
+    await page.waitForSelector('#detail .detail-panel', { state: 'visible', timeout: 5000 });
+    const panelText = await page.evaluate(() => {
+      const panel = document.querySelector('#detail .detail-panel');
+      return panel ? panel.textContent : '';
+    });
+    expect(panelText).toContain('bd-feat1');
+  });
+
+  test('spawnDoot on non-agent node triggers popup automatically', async ({ page }) => {
+    await mockAPI(page);
+    await page.route('**/api/bus/events*', route =>
+      route.fulfill({ status: 200, contentType: 'text/event-stream', body: ': keepalive\n\n' }));
+
+    await page.goto('/');
+    await waitForGraph(page);
+
+    // Use injectDoot on an issue node (bd-feat1 is assigned to alice)
+    // spawnDoot internally calls showDootPopup, so a popup should appear
+    const result = await page.evaluate(() => {
+      const b = window.__beads3d;
+      const spawnDoot = window.__beads3d_spawnDoot;
+      if (!b || !spawnDoot) return { spawned: false };
+      // Find a non-agent node
+      const node = b.graphData().nodes.find(n => n.id === 'bd-feat1');
+      if (!node) return { spawned: false };
+      spawnDoot(node, 'test-popup', '#4a9eff');
+      return { spawned: true };
+    });
+    if (!result.spawned) { test.skip(); return; }
+
+    expect(await getPopupCount(page)).toBe(1);
+    const text = await page.evaluate(() => {
+      const popup = document.querySelector('.doot-popup');
+      return popup ? popup.textContent : '';
+    });
+    expect(text).toContain('bd-feat1');
   });
 });
