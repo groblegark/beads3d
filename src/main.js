@@ -516,10 +516,22 @@ function initGraph() {
         scanLines.position.z = size * 0.32;
         group.add(scanLines);
 
-        // Outer glow — orange fresnel shell (slightly bigger than box)
+        // Outer glow — orange fresnel shell, pulses with activity (beads-v0wa)
         const agentGlow = new THREE.Mesh(GEO.sphereLo, createFresnelMaterial(0xff6b35, { opacity: 0.25, power: 2.5 }));
         agentGlow.scale.setScalar(size * 1.8);
+        agentGlow.userData.agentGlow = true;
+        agentGlow.userData.baseScale = size * 1.8;
         group.add(agentGlow);
+
+        // Wake trail — elongated sprite behind agent's direction of travel (beads-v0wa)
+        const trailMat = new THREE.SpriteMaterial({
+          color: 0xff6b35, transparent: true, opacity: 0.0, // starts invisible
+        });
+        const trail = new THREE.Sprite(trailMat);
+        trail.scale.set(size * 0.4, size * 3, 1);
+        trail.userData.agentTrail = true;
+        trail.userData.prevPos = { x: 0, y: 0, z: 0 };
+        group.add(trail);
       }
 
       // Epic: wireframe organelle membrane
@@ -580,24 +592,52 @@ function initGraph() {
     .linkThreeObjectExtend(true)
     .linkThreeObject(l => {
       const baseMat = LINK_ICON_MATERIALS[l.dep_type] || LINK_ICON_DEFAULT;
-      const sprite = new THREE.Sprite(baseMat.clone()); // clone so per-link opacity works
+      const sprite = new THREE.Sprite(baseMat.clone());
       sprite.scale.setScalar(LINK_ICON_SCALE);
+
+      if (l.dep_type === 'assigned_to') {
+        // Agent link: icon sprite + pulsing glow tube (beads-v0wa)
+        const group = new THREE.Group();
+        group.userData.isAgentLink = true;
+        group.add(sprite);
+        const tubeMat = new THREE.MeshBasicMaterial({
+          color: 0xff6b35, transparent: true, opacity: 0.12,
+        });
+        const tube = new THREE.Mesh(new THREE.CylinderGeometry(0.6, 0.6, 1, 6, 1, true), tubeMat);
+        tube.userData.isGlowTube = true;
+        group.add(tube);
+        return group;
+      }
       return sprite;
     })
     .linkPositionUpdate((obj, { start, end }, l) => {
-      // Position icon at midpoint of the link
-      if (obj && obj.isSprite) {
-        const mid = {
-          x: (start.x + end.x) / 2,
-          y: (start.y + end.y) / 2,
-          z: (start.z + end.z) / 2,
-        };
+      const mid = {
+        x: (start.x + end.x) / 2,
+        y: (start.y + end.y) / 2,
+        z: (start.z + end.z) / 2,
+      };
+      if (obj && obj.userData.isAgentLink) {
+        // Agent link group: icon at midpoint, glow tube stretched between endpoints
+        const t = (performance.now() - startTime) / 1000;
+        const dimTarget = selectedNode ? (highlightLinks.has(linkKey(l)) ? 1.0 : 0.08) : 1.0;
+        for (const child of obj.children) {
+          if (child.isSprite) {
+            child.position.set(mid.x, mid.y, mid.z);
+            child.material.opacity = 0.85 * dimTarget;
+          } else if (child.userData.isGlowTube) {
+            child.position.set(mid.x, mid.y, mid.z);
+            const dx = end.x - start.x, dy = end.y - start.y, dz = end.z - start.z;
+            const dist = Math.sqrt(dx * dx + dy * dy + dz * dz) || 1;
+            child.scale.set(1, dist, 1);
+            child.lookAt(end.x, end.y, end.z);
+            child.rotateX(Math.PI / 2);
+            child.material.opacity = (0.08 + Math.sin(t * 3) * 0.06) * dimTarget;
+          }
+        }
+      } else if (obj && obj.isSprite) {
         obj.position.set(mid.x, mid.y, mid.z);
-
-        // Dim icon when not part of selection highlight
         if (selectedNode) {
-          const lk = linkKey(l);
-          obj.material.opacity = highlightLinks.has(lk) ? 0.85 : 0.08;
+          obj.material.opacity = highlightLinks.has(linkKey(l)) ? 0.85 : 0.08;
         } else {
           obj.material.opacity = 0.85;
         }
@@ -944,8 +984,8 @@ function startAnimation() {
       // Show labels on highlighted beads when there's an active selection (bd-xk0tx)
       const showLabel = hasSelection ? isHighlighted : labelsVisible;
 
-      // Skip traversal when nothing to update
-      if (!hasSelection && !isMultiSelected && node.status !== 'in_progress' && !labelsVisible) continue;
+      // Skip traversal when nothing to update (agents always animate — beads-v0wa)
+      if (!hasSelection && !isMultiSelected && node.status !== 'in_progress' && node.issue_type !== 'agent' && !labelsVisible) continue;
 
       // Track dimmed nodes for restoration in clearSelection()
       if (hasSelection && !isHighlighted) node._wasDimmed = true;
@@ -968,6 +1008,31 @@ function startAnimation() {
           if (isSelected) {
             child.rotation.x = t * 1.2;
             child.rotation.y = t * 0.8;
+          }
+        } else if (child.userData.agentGlow) {
+          // Agent glow: breathing pulse (beads-v0wa)
+          const base = child.userData.baseScale || 1;
+          const pulse = 1.0 + Math.sin(t * 2) * 0.15;
+          child.scale.setScalar(base * pulse);
+          if (child.material.uniforms && child.material.uniforms.opacity) {
+            child.material.uniforms.opacity.value = (0.2 + Math.sin(t * 2.5) * 0.1) * dimFactor;
+          }
+        } else if (child.userData.agentTrail) {
+          // Wake trail: orient behind movement direction, fade based on speed (beads-v0wa)
+          const prev = child.userData.prevPos;
+          const dx = (node.x || 0) - prev.x;
+          const dy = (node.y || 0) - prev.y;
+          const dz = (node.z || 0) - prev.z;
+          const speed = Math.sqrt(dx * dx + dy * dy + dz * dz);
+          // Smoothly update previous position
+          prev.x += dx * 0.1; prev.y += dy * 0.1; prev.z += dz * 0.1;
+          // Trail visible only when moving (speed > threshold)
+          const trailOpacity = Math.min(speed * 0.15, 0.35) * dimFactor;
+          child.material.opacity = trailOpacity;
+          // Position trail behind the agent (opposite of travel direction)
+          if (speed > 0.5) {
+            const nx = -dx / speed, ny = -dy / speed, nz = -dz / speed;
+            child.position.set(nx * 6, ny * 6, nz * 6);
           }
         } else if (child.userData.pulse) {
           child.rotation.z = t * 0.5;
