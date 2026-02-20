@@ -170,6 +170,7 @@ let isBoxSelecting = false;
 let boxSelectStart = null; // {x, y} screen coords
 let cameraFrozen = false; // true when multi-select has locked orbit controls (bd-casin)
 let labelsVisible = false; // true when persistent info labels are shown on all nodes (bd-1o2f7)
+const openPanels = new Map(); // beadId → panel element (bd-fbmq3: tiling detail panels)
 let activeAgeDays = 7; // age filter: show beads updated within N days (0 = all) (bd-uc0mw)
 
 // Resource cleanup refs (bd-7n4g8)
@@ -981,14 +982,28 @@ async function fetchViaGraph(statusEl) {
   }));
 
   // Graph API edges: { source, target, type } → links: { source, target, dep_type }
+  // For parent-child edges, create ghost placeholder nodes when the parent is missing
+  // so DAG links remain visible even if the parent was filtered/closed. (bd-uqkpq)
   const nodeIds = new Set(nodes.map(n => n.id));
-  const links = (result.edges || [])
-    .filter(e => nodeIds.has(e.source) && nodeIds.has(e.target))
-    .map(e => ({
-      source: e.source,
-      target: e.target,
-      dep_type: e.type || 'blocks',
-    }));
+  const links = [];
+  for (const e of (result.edges || [])) {
+    const hasSrc = nodeIds.has(e.source);
+    const hasTgt = nodeIds.has(e.target);
+    if (hasSrc && hasTgt) {
+      links.push({ source: e.source, target: e.target, dep_type: e.type || 'blocks' });
+    } else if (e.type === 'parent-child' && (hasSrc || hasTgt)) {
+      // Create ghost node for the missing endpoint
+      const missingId = hasSrc ? e.target : e.source;
+      if (!nodeIds.has(missingId)) {
+        nodes.push({
+          id: missingId, title: missingId, status: 'open', priority: 3,
+          issue_type: 'epic', _placeholder: true, _blocked: false,
+        });
+        nodeIds.add(missingId);
+      }
+      links.push({ source: e.source, target: e.target, dep_type: 'parent-child' });
+    }
+  }
 
   // Filter disconnected decisions and molecules: only show if they have at least
   // one edge connecting them to a visible bead (bd-t25i1)
@@ -1107,11 +1122,19 @@ function buildGraphData(issues) {
       }
     }
 
-    // Parent-child
-    if (issue.parent && issueMap.has(issue.parent)) {
+    // Parent-child — create placeholder if parent not loaded (bd-uqkpq)
+    if (issue.parent) {
       const key = `${issue.id}->parent:${issue.parent}`;
       if (!seenLinks.has(key)) {
         seenLinks.add(key);
+        if (!issueMap.has(issue.parent)) {
+          const placeholder = {
+            id: issue.parent, title: issue.parent, status: 'open',
+            priority: 3, issue_type: 'epic', _placeholder: true,
+          };
+          issueMap.set(issue.parent, placeholder);
+          nodes.push({ ...placeholder, _blocked: false });
+        }
         links.push({ source: issue.id, target: issue.parent, dep_type: 'parent-child' });
       }
     }
@@ -1196,9 +1219,25 @@ function handleNodeClick(node) {
 }
 
 async function showDetail(node) {
-  const panel = document.getElementById('detail');
-  panel.style.display = 'block';
-  panel.classList.add('open');
+  const container = document.getElementById('detail');
+
+  // Toggle: if this bead's panel is already open, close it (bd-fbmq3)
+  if (openPanels.has(node.id)) {
+    closeDetailPanel(node.id);
+    return;
+  }
+
+  container.style.display = 'block';
+
+  // Create a new panel element
+  const panel = document.createElement('div');
+  panel.className = 'detail-panel';
+  panel.dataset.beadId = node.id;
+  container.appendChild(panel);
+
+  // Track it
+  openPanels.set(node.id, panel);
+  repositionPanels();
 
   const pLabel = ['P0 CRIT', 'P1 HIGH', 'P2 MED', 'P3 LOW', 'P4 BACKLOG'][node.priority] || '';
 
@@ -1206,7 +1245,7 @@ async function showDetail(node) {
   panel.innerHTML = `
     <div class="detail-header">
       <span class="detail-id">${escapeHtml(node.id)}</span>
-      <button class="detail-close" onclick="document.getElementById('detail').classList.remove('open'); document.getElementById('detail').style.display='none';">&times;</button>
+      <button class="detail-close">&times;</button>
     </div>
     <div class="detail-title">${escapeHtml(node.title || node.id)}</div>
     <div class="detail-meta">
@@ -1219,16 +1258,52 @@ async function showDetail(node) {
     <div class="detail-body loading">loading full details...</div>
   `;
 
+  // Close button handler
+  panel.querySelector('.detail-close').onclick = () => closeDetailPanel(node.id);
+
+  // Animate open
+  requestAnimationFrame(() => panel.classList.add('open'));
+
   // Lazy-load full details via Show
   try {
     const full = await api.show(node.id);
     const body = panel.querySelector('.detail-body');
-    body.classList.remove('loading');
-    body.innerHTML = renderFullDetail(full);
+    if (body) {
+      body.classList.remove('loading');
+      body.innerHTML = renderFullDetail(full);
+    }
   } catch (err) {
     const body = panel.querySelector('.detail-body');
-    body.classList.remove('loading');
-    body.textContent = `Could not load: ${err.message}`;
+    if (body) {
+      body.classList.remove('loading');
+      body.textContent = `Could not load: ${err.message}`;
+    }
+  }
+}
+
+// Close a single detail panel by bead ID (bd-fbmq3)
+function closeDetailPanel(beadId) {
+  const panel = openPanels.get(beadId);
+  if (!panel) return;
+  panel.classList.remove('open');
+  openPanels.delete(beadId);
+  setTimeout(() => {
+    panel.remove();
+    repositionPanels();
+    if (openPanels.size === 0) {
+      document.getElementById('detail').style.display = 'none';
+    }
+  }, 200); // wait for slide-out animation
+}
+
+// Position panels side-by-side from right edge (bd-fbmq3)
+function repositionPanels() {
+  let offset = 0;
+  // Iterate in insertion order (Map preserves order) — newest on right
+  const entries = [...openPanels.entries()].reverse();
+  for (const [, panel] of entries) {
+    panel.style.right = `${offset}px`;
+    offset += 384; // 380px width + 4px gap
   }
 }
 
@@ -1281,9 +1356,10 @@ function renderFullDetail(issue) {
 }
 
 function hideDetail() {
-  const panel = document.getElementById('detail');
-  panel.classList.remove('open');
-  setTimeout(() => { panel.style.display = 'none'; }, 200);
+  // Close all open panels (bd-fbmq3)
+  for (const [beadId] of openPanels) {
+    closeDetailPanel(beadId);
+  }
 }
 
 function escapeHtml(str) {
