@@ -204,6 +204,11 @@ const CAM_FRICTION = 0.88;  // velocity multiplier per frame when no key held (l
 const openPanels = new Map(); // beadId → panel element (bd-fbmq3: tiling detail panels)
 let activeAgeDays = 7; // age filter: show beads updated within N days (0 = all) (bd-uc0mw)
 
+// Agent filter state (bd-8o2gd: configurable filter dashboard, phase 1)
+let agentFilterShow = true;        // master toggle — show/hide all agent nodes
+let agentFilterOrphaned = false;   // show agents with no visible connected beads
+let agentFilterRigExclude = new Set(); // hide agents on these rigs (exact match)
+
 // Check if a text input element is focused — suppress keyboard shortcuts (beads-lznc)
 function isTextInputFocused() {
   const el = document.activeElement;
@@ -2762,11 +2767,19 @@ function applyFilters() {
       hidden = true;
     }
 
-    // Hide closed/dead agents (bd-n0971): agents with status closed, tombstone,
-    // or that have no in-progress beads assigned to them are not shown.
+    // Agent visibility controls (bd-n0971, bd-8o2gd)
     if (n.issue_type === 'agent') {
       const agentStatus = (n.status || '').toLowerCase();
+      // Always hide closed/tombstone agents
       if (agentStatus === 'closed' || agentStatus === 'tombstone') {
+        hidden = true;
+      }
+      // Master toggle: hide all agents (bd-8o2gd)
+      if (!agentFilterShow) {
+        hidden = true;
+      }
+      // Rig exclusion: hide agents on excluded rigs (bd-8o2gd)
+      if (agentFilterRigExclude.size > 0 && n.rig && agentFilterRigExclude.has(n.rig)) {
         hidden = true;
       }
     }
@@ -2816,12 +2829,13 @@ function applyFilters() {
     n._searchMatch = !hidden && !!q;
   });
 
-  // Hide orphaned agents (bd-n0971): if all of an agent's connected beads are hidden
-  // (e.g. by search, age, or timeline filters), hide the agent too.
+  // Hide orphaned agents (bd-n0971, bd-8o2gd): if all of an agent's connected
+  // beads are hidden, hide the agent too — unless agentFilterOrphaned is true.
   // Exception (bd-ixx3d): never hide agents with active/idle status — these are
   // live agents from the roster and must always be visible even without edges.
   for (const n of graphData.nodes) {
     if (n.issue_type !== 'agent' || n._hidden) continue;
+    if (agentFilterOrphaned) continue; // bd-8o2gd: user wants to see orphaned agents
     const agentStatus = (n.status || '').toLowerCase();
     if (agentStatus === 'active' || agentStatus === 'idle') continue;
     const hasVisibleBead = graphData.links.some(l => {
@@ -3301,6 +3315,53 @@ function hideEpicHUD() {
   clearTimeout(_epicHUDTimer);
   if (_epicHUDEl) {
     _epicHUDEl.style.display = 'none';
+  }
+}
+
+// Populate rig filter pills — clickable pills for each discovered rig (bd-8o2gd)
+function updateRigPills(nodes) {
+  const container = document.getElementById('agent-rig-pills');
+  if (!container) return;
+
+  const rigs = new Set();
+  for (const n of nodes) {
+    if (n.issue_type === 'agent' && n.rig) rigs.add(n.rig);
+  }
+  const sortedRigs = [...rigs].sort();
+
+  // Only rebuild if rig set changed
+  const currentRigs = [...container.querySelectorAll('.rig-pill')].map(p => p.dataset.rig);
+  if (currentRigs.length === sortedRigs.length && currentRigs.every((r, i) => r === sortedRigs[i])) {
+    // Just update excluded state
+    for (const pill of container.querySelectorAll('.rig-pill')) {
+      pill.classList.toggle('excluded', agentFilterRigExclude.has(pill.dataset.rig));
+    }
+    return;
+  }
+
+  container.innerHTML = '';
+  for (const rig of sortedRigs) {
+    const pill = document.createElement('span');
+    pill.className = 'rig-pill';
+    pill.dataset.rig = rig;
+    pill.textContent = rig;
+    pill.style.color = rigColor(rig);
+    pill.style.borderColor = rigColor(rig) + '66';
+    pill.style.background = rigColor(rig) + '18';
+    if (agentFilterRigExclude.has(rig)) pill.classList.add('excluded');
+    pill.title = `Click to ${agentFilterRigExclude.has(rig) ? 'show' : 'hide'} agents on ${rig}`;
+    pill.addEventListener('click', () => {
+      if (agentFilterRigExclude.has(rig)) {
+        agentFilterRigExclude.delete(rig);
+        pill.classList.remove('excluded');
+      } else {
+        agentFilterRigExclude.add(rig);
+        pill.classList.add('excluded');
+      }
+      pill.title = `Click to ${agentFilterRigExclude.has(rig) ? 'show' : 'hide'} agents on ${rig}`;
+      applyFilters();
+    });
+    container.appendChild(pill);
   }
 }
 
@@ -3810,6 +3871,11 @@ function exportGraphJSON() {
       search: searchFilter || null,
       status: statusFilter.size > 0 ? [...statusFilter] : null,
       type: typeFilter.size > 0 ? [...typeFilter] : null,
+      agents: {
+        show: agentFilterShow,
+        orphaned: agentFilterOrphaned,
+        rig_exclude: agentFilterRigExclude.size > 0 ? [...agentFilterRigExclude] : null,
+      },
     },
     stats: {
       total_nodes: graphData.nodes.length,
@@ -4180,6 +4246,26 @@ function setupControls() {
     });
   });
 
+  // Agent filter controls (bd-8o2gd)
+  const btnAgentShow = document.getElementById('btn-agent-show');
+  const btnAgentOrphaned = document.getElementById('btn-agent-orphaned');
+
+  if (btnAgentShow) {
+    btnAgentShow.addEventListener('click', () => {
+      agentFilterShow = !agentFilterShow;
+      btnAgentShow.classList.toggle('active', agentFilterShow);
+      applyFilters();
+    });
+  }
+
+  if (btnAgentOrphaned) {
+    btnAgentOrphaned.addEventListener('click', () => {
+      agentFilterOrphaned = !agentFilterOrphaned;
+      btnAgentOrphaned.classList.toggle('active', agentFilterOrphaned);
+      applyFilters();
+    });
+  }
+
   // Age filter (bd-uc0mw): radio-style — only one active at a time.
   // Triggers a full re-fetch because the server uses max_age_days to limit
   // which closed issues are returned (avoids pulling thousands of stale beads).
@@ -4396,6 +4482,10 @@ async function refresh() {
   const structureChanged = nodesAdded > 0 || nodesRemoved > 0 || linksChanged;
 
   graphData = { nodes: mergedNodes, links: data.links };
+
+  // Populate rig filter pills from agent nodes (bd-8o2gd)
+  updateRigPills(mergedNodes);
+
   applyFilters();
   rebuildEpicIndex();
 

@@ -122,6 +122,32 @@
     .ctrl-btn:hover { border-color: #4a9eff; color: #ccc; }
     .ctrl-btn.active { border-color: #4a9eff; color: #4a9eff; }
 
+    /* Agent rig filter pills (bd-8o2gd) */
+    .agent-rig-pills {
+      width: 100%;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 3px;
+      margin-top: 2px;
+    }
+    .agent-rig-pills:empty { display: none; }
+    .rig-pill {
+      font-size: 8px;
+      padding: 2px 6px;
+      border-radius: 10px;
+      cursor: pointer;
+      border: 1px solid;
+      transition: all 0.15s;
+      white-space: nowrap;
+      max-width: 100px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .rig-pill.excluded {
+      opacity: 0.35;
+      text-decoration: line-through;
+    }
+
     /* Layout + action buttons row */
     .btn-row {
       display: flex;
@@ -1053,7 +1079,13 @@
       <button class="ctrl-btn filter-type" data-type="feature">feature</button>
       <button class="ctrl-btn filter-type" data-type="bug">bug</button>
       <button class="ctrl-btn filter-type" data-type="task">task</button>
-      <button class="ctrl-btn filter-type" data-type="agent">agent</button>
+    </div>
+
+    <div class="filter-group" id="agent-filter-group">
+      <label>agents</label>
+      <button class="ctrl-btn filter-agent-toggle active" id="btn-agent-show">show</button>
+      <button class="ctrl-btn filter-agent-toggle" id="btn-agent-orphaned">orphaned</button>
+      <div class="agent-rig-pills" id="agent-rig-pills"></div>
     </div>
 
     <div class="filter-group">
