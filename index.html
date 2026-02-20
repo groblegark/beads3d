@@ -477,6 +477,20 @@
       gap: 4px;
     }
     .fd-priority-range .fd-btn { flex: 1; text-align: center; }
+    .fd-agent-exclude-input {
+      width: 100%;
+      margin-top: 4px;
+      background: rgba(20, 20, 35, 0.85);
+      border: 1px solid #2a2a3a;
+      color: #ccc;
+      font-family: inherit;
+      font-size: 9px;
+      padding: 4px 6px;
+      border-radius: 3px;
+      outline: none;
+    }
+    .fd-agent-exclude-input:focus { border-color: #4a9eff; }
+    .fd-agent-exclude-input::placeholder { color: #444; }
     .fd-profile-bar {
       display: flex;
       gap: 4px;
@@ -1346,6 +1360,7 @@
         <button class="fd-btn fd-agent-toggle active" id="fd-agent-show">show</button>
         <button class="fd-btn fd-agent-toggle" id="fd-agent-orphaned">orphaned</button>
         <div class="agent-rig-pills" id="fd-rig-pills"></div>
+        <input type="text" class="fd-agent-exclude-input" id="fd-agent-exclude" placeholder="hide agents: gt-*, bd-beads-*" spellcheck="false" autocomplete="off">
       </div>
     </div>
 
@@ -1356,6 +1371,7 @@
 
     <div class="fd-footer">
       <span id="fd-node-count">0/0 nodes</span>
+      <button class="fd-reset" id="fd-share" title="Copy shareable URL">share</button>
       <button class="fd-reset" id="fd-reset">reset</button>
     </div>
   </div>

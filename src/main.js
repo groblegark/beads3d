@@ -10,6 +10,10 @@ import { createFresnelMaterial, createPulseRingMaterial, createSelectionRingMate
 const params = new URLSearchParams(window.location.search);
 const API_BASE = params.get('api') || '/api';
 const DEEP_LINK_BEAD = params.get('bead') || ''; // bd-he95o: URL deep-linking
+const URL_PROFILE = params.get('profile') || ''; // bd-8o2gd phase 4: load named profile from URL
+const URL_ASSIGNEE = params.get('assignee') || ''; // bd-8o2gd phase 4: filter by assignee via URL
+const URL_STATUS = params.get('status') || ''; // bd-8o2gd phase 4: comma-separated statuses
+const URL_TYPES = params.get('types') || ''; // bd-8o2gd phase 4: comma-separated types
 const POLL_INTERVAL = 30000; // bd-c1x6p: reduced from 10s to 30s — SSE handles live updates
 const MAX_NODES = 1000; // bd-04wet: raised from 500 to show more relevant beads
 
@@ -211,6 +215,13 @@ let activeAgeDays = 7; // age filter: show beads updated within N days (0 = all)
 let agentFilterShow = true;        // master toggle — show/hide all agent nodes
 let agentFilterOrphaned = false;   // show agents with no visible connected beads
 let agentFilterRigExclude = new Set(); // hide agents on these rigs (exact match)
+let agentFilterNameExclude = []; // glob patterns to hide agents by name (bd-8o2gd phase 4)
+
+// Simple glob matcher: supports * (any chars) and ? (single char) (bd-8o2gd phase 4)
+function globMatch(pattern, str) {
+  const re = new RegExp('^' + pattern.replace(/[.+^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*').replace(/\?/g, '.') + '$', 'i');
+  return re.test(str);
+}
 
 // Check if a text input element is focused — suppress keyboard shortcuts (beads-lznc)
 function isTextInputFocused() {
@@ -2785,6 +2796,11 @@ function applyFilters() {
       if (agentFilterRigExclude.size > 0 && n.rig && agentFilterRigExclude.has(n.rig)) {
         hidden = true;
       }
+      // Name exclusion: hide agents matching glob patterns (bd-8o2gd phase 4)
+      if (agentFilterNameExclude.length > 0) {
+        const name = (n.id || '').toLowerCase();
+        if (agentFilterNameExclude.some(p => globMatch(p, name))) hidden = true;
+      }
     }
 
     // Status filter — agent nodes are exempt from user status filters (bd-keeha)
@@ -3518,6 +3534,7 @@ function _currentFilterState() {
       show: agentFilterShow,
       orphaned: agentFilterOrphaned,
       rig_exclude: [...agentFilterRigExclude],
+      name_exclude: agentFilterNameExclude.length > 0 ? [...agentFilterNameExclude] : [],
     },
   };
 }
@@ -3536,6 +3553,10 @@ function _applyFilterState(state) {
     agentFilterOrphaned = !!state.agents.orphaned;
     agentFilterRigExclude.clear();
     (state.agents.rig_exclude || []).forEach(r => agentFilterRigExclude.add(r));
+    agentFilterNameExclude = state.agents.name_exclude || [];
+    // Update the exclude input field
+    const excludeInput = document.getElementById('fd-agent-exclude');
+    if (excludeInput) excludeInput.value = agentFilterNameExclude.join(', ');
   }
   syncFilterDashboard();
   syncToolbarControls();
@@ -3637,6 +3658,68 @@ async function deleteFilterProfile(name) {
   }
 }
 
+// Apply URL query params to filter state (bd-8o2gd phase 4)
+async function applyUrlFilterParams() {
+  let needRefresh = false;
+
+  // ?profile=<name> — load a named profile
+  if (URL_PROFILE) {
+    await loadFilterProfile(URL_PROFILE);
+    const select = document.getElementById('fd-profile-select');
+    if (select) select.value = URL_PROFILE;
+    return; // profile applies all settings; skip individual params
+  }
+
+  // ?status=open,in_progress — comma-separated status filter
+  if (URL_STATUS) {
+    statusFilter.clear();
+    URL_STATUS.split(',').forEach(s => statusFilter.add(s.trim()));
+    needRefresh = true;
+  }
+
+  // ?types=epic,bug — comma-separated type filter
+  if (URL_TYPES) {
+    typeFilter.clear();
+    URL_TYPES.split(',').forEach(t => typeFilter.add(t.trim()));
+    needRefresh = true;
+  }
+
+  // ?assignee=cool-trout — filter by assignee
+  if (URL_ASSIGNEE) {
+    assigneeFilter = URL_ASSIGNEE;
+    needRefresh = true;
+  }
+
+  if (needRefresh) {
+    syncFilterDashboard();
+    syncToolbarControls();
+    applyFilters();
+  }
+}
+
+// Generate a shareable URL with current filter state (bd-8o2gd phase 4)
+function getShareableUrl() {
+  const url = new URL(window.location.href);
+  // Clear old filter params
+  url.searchParams.delete('profile');
+  url.searchParams.delete('status');
+  url.searchParams.delete('types');
+  url.searchParams.delete('assignee');
+
+  // Check if current state matches a saved profile
+  const select = document.getElementById('fd-profile-select');
+  if (select?.value) {
+    url.searchParams.set('profile', select.value);
+  } else {
+    // Encode individual filter params
+    if (statusFilter.size > 0) url.searchParams.set('status', [...statusFilter].join(','));
+    if (typeFilter.size > 0) url.searchParams.set('types', [...typeFilter].join(','));
+    if (assigneeFilter) url.searchParams.set('assignee', assigneeFilter);
+  }
+
+  return url.toString();
+}
+
 function initFilterDashboard() {
   const panel = document.getElementById('filter-dashboard');
   if (!panel) return;
@@ -3730,6 +3813,27 @@ function initFilterDashboard() {
     applyFilters();
   });
 
+  // Agent name exclusion input — glob patterns, comma-separated (bd-8o2gd phase 4)
+  const agentExcludeInput = document.getElementById('fd-agent-exclude');
+  if (agentExcludeInput) {
+    agentExcludeInput.addEventListener('input', () => {
+      const val = agentExcludeInput.value.trim();
+      agentFilterNameExclude = val ? val.split(',').map(p => p.trim().toLowerCase()).filter(Boolean) : [];
+      applyFilters();
+    });
+  }
+
+  // Share button — copy shareable URL to clipboard (bd-8o2gd phase 4)
+  document.getElementById('fd-share')?.addEventListener('click', () => {
+    const url = getShareableUrl();
+    navigator.clipboard.writeText(url).then(() => {
+      const btn = document.getElementById('fd-share');
+      if (btn) { btn.textContent = 'copied!'; setTimeout(() => { btn.textContent = 'share'; }, 1500); }
+    }).catch(() => {
+      prompt('Copy this URL:', url);
+    });
+  });
+
   // Reset button
   document.getElementById('fd-reset')?.addEventListener('click', () => {
     statusFilter.clear();
@@ -3739,6 +3843,9 @@ function initFilterDashboard() {
     agentFilterShow = true;
     agentFilterOrphaned = false;
     agentFilterRigExclude.clear();
+    agentFilterNameExclude = [];
+    const excludeInput = document.getElementById('fd-agent-exclude');
+    if (excludeInput) excludeInput.value = '';
     activeAgeDays = 7;
     timelineSelStart = 0;
     timelineSelEnd = 1;
@@ -3755,8 +3862,10 @@ function initFilterDashboard() {
   const btnSaveAs = document.getElementById('fd-profile-save-as');
   const btnDelete = document.getElementById('fd-profile-delete');
 
-  // Load profile list on first dashboard open
-  loadFilterProfiles();
+  // Load profile list, then apply URL params (bd-8o2gd phase 4)
+  loadFilterProfiles().then(() => {
+    applyUrlFilterParams();
+  });
 
   // Profile dropdown change — load selected profile
   profileSelect?.addEventListener('change', () => {
