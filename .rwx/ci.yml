@@ -1,0 +1,72 @@
+# CI — manual only (no auto-trigger on push/PR).
+# Run manually: rwx run .rwx/ci.yml --init commit-sha=$(git rev-parse HEAD) --wait
+on:
+  cli:
+    init:
+      commit-sha: ${{ event.git.sha }}
+
+base:
+  image: ubuntu:24.04
+  config: rwx/base 1.0.0
+
+tasks:
+  # ── Clone ──────────────────────────────────────────────────────────────
+  - key: code
+    call: git/clone 2.0.3
+    with:
+      repository: https://github.com/groblegark/beads3d.git
+      ref: ${{ init.commit-sha }}
+
+  # ── Node.js toolchain ─────────────────────────────────────────────────
+  - key: node
+    call: node/install 1.1.0
+    with:
+      node-version: "22"
+
+  # ── Install dependencies (cached by lockfile) ─────────────────────────
+  - key: deps
+    use: [code, node]
+    filter:
+      - package-lock.json
+    run: npm ci
+
+  # ── Build (vite production build) ─────────────────────────────────────
+  - key: build
+    use: deps
+    filter:
+      - src/**
+      - index.html
+      - vite.config.js
+      - package.json
+    run: |
+      echo "Building beads3d..."
+      npm run build
+      echo "Build output:"
+      ls -la dist/
+
+  # ── Playwright browser install (cached by Playwright version) ─────────
+  - key: browsers
+    use: deps
+    filter:
+      - package-lock.json
+    run: |
+      npx playwright install --with-deps chromium
+
+  # ── Tests (Playwright E2E with mock API) ──────────────────────────────
+  - key: test
+    use: [build, browsers]
+    filter:
+      - src/**
+      - tests/**
+      - playwright.config.js
+      - index.html
+    run: |
+      echo "Running Playwright tests..."
+      npx playwright test --reporter=list 2>&1 | tee test-output.txt
+      echo "Test complete."
+    outputs:
+      artifacts:
+        - key: test-results
+          path: test-results/
+        - key: test-output
+          path: test-output.txt

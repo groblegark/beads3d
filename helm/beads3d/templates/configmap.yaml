@@ -1,0 +1,58 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Release.Name }}-beads3d-nginx
+  labels:
+    app.kubernetes.io/name: beads3d
+    app.kubernetes.io/instance: {{ .Release.Name }}
+data:
+  default.conf: |
+    server {
+        listen 80;
+        server_name _;
+        root /usr/share/nginx/html;
+        index index.html;
+
+        # Static assets with cache headers
+        location /assets/ {
+            expires 7d;
+            add_header Cache-Control "public, immutable";
+        }
+
+        # SPA fallback
+        location / {
+            try_files $uri $uri/ /index.html;
+            expires 1h;
+        }
+
+        # Reverse-proxy daemon API
+        location /api/ {
+            proxy_pass {{ .Values.daemon.url }}/;
+            proxy_http_version 1.1;
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto $scheme;
+            proxy_read_timeout 30s;
+        }
+
+        # SSE events stream (long-lived connection)
+        location /api/events {
+            proxy_pass {{ .Values.daemon.url }}/events;
+            proxy_http_version 1.1;
+            proxy_set_header Connection "";
+            proxy_buffering off;
+            proxy_cache off;
+            proxy_read_timeout 3600s;
+        }
+
+        # SSE bus events stream (NATS event bus)
+        location /api/bus/ {
+            proxy_pass {{ .Values.daemon.url }}/bus/;
+            proxy_http_version 1.1;
+            proxy_set_header Connection "";
+            proxy_buffering off;
+            proxy_cache off;
+            proxy_read_timeout 3600s;
+        }
+    }

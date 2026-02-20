@@ -1,0 +1,28 @@
+image:
+  repository: ghcr.io/groblegark/beads3d
+  tag: latest
+  pullPolicy: IfNotPresent
+
+replicaCount: 1
+
+service:
+  type: ClusterIP
+  port: 80
+
+ingress:
+  enabled: false
+  className: nginx
+  host: beads3d.app.e2e.dev.fics.ai
+  tls: []
+
+# URL of the beads daemon service (used in nginx reverse proxy)
+daemon:
+  url: http://bd-daemon:9080
+
+resources:
+  limits:
+    cpu: 200m
+    memory: 128Mi
+  requests:
+    cpu: 50m
+    memory: 64Mi

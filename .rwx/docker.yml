@@ -1,0 +1,128 @@
+# Docker image build + push to GHCR.
+# Triggers: main push, CalVer tags (20*), or manual CLI.
+# Image: ghcr.io/groblegark/beads3d:<tag>
+on:
+  github:
+    push:
+      branches: [main]
+      init:
+        commit-sha: ${{ event.git.sha }}
+        ref-name: ${{ event.git.branch }}
+    tags:
+      if: ${{ starts-with(event.git.tag, '20') }}
+      init:
+        commit-sha: ${{ event.git.sha }}
+        ref-name: ${{ event.git.tag }}
+  cli:
+    init:
+      commit-sha: ${{ event.git.sha }}
+      ref-name: cli
+
+base:
+  image: ubuntu:24.04
+  config: rwx/base 1.0.0
+
+tasks:
+  # ── Clone ──────────────────────────────────────────────────────────────
+  - key: code
+    call: git/clone 2.0.3
+    with:
+      repository: https://github.com/groblegark/beads3d.git
+      ref: ${{ init.commit-sha }}
+      preserve-git-dir: true
+
+  # ── Node.js toolchain ─────────────────────────────────────────────────
+  - key: node
+    call: node/install 1.1.0
+    with:
+      node-version: "22"
+
+  # ── Install dependencies ──────────────────────────────────────────────
+  - key: deps
+    use: [code, node]
+    filter:
+      - package-lock.json
+    run: npm ci
+
+  # ── Build (vite production build) ─────────────────────────────────────
+  - key: build
+    use: deps
+    filter:
+      - src/**
+      - index.html
+      - vite.config.js
+      - package.json
+    run: |
+      npm run build
+      ls -la dist/
+
+  # ── Build OCI image layer ─────────────────────────────────────────────
+  - key: image
+    use: build
+    cache: false
+    run: |
+      # Install crane
+      CRANE_VERSION=0.20.2
+      curl -fsSL "https://github.com/google/go-containerregistry/releases/download/v${CRANE_VERSION}/go-containerregistry_Linux_x86_64.tar.gz" \
+        | sudo tar -xz -C /usr/local/bin crane
+
+      # Determine tag
+      TAG="${{ init.ref-name }}"
+      if [ "$TAG" = "main" ] || [ "$TAG" = "cli" ]; then
+        TAG="latest"
+      fi
+      echo "Image tag: $TAG"
+
+      # Build layer: dist/ files + nginx.conf
+      mkdir -p /tmp/layer/usr/share/nginx/html
+      mkdir -p /tmp/layer/etc/nginx/conf.d
+      cp -r dist/* /tmp/layer/usr/share/nginx/html/
+      cp nginx.conf /tmp/layer/etc/nginx/conf.d/default.conf
+
+      # Create tarball
+      cd /tmp/layer
+      sudo tar cf /tmp/beads3d-layer.tar .
+      cd -
+
+      # Build image: nginx base + our layer
+      crane append \
+        --base nginx:1.27-alpine \
+        --new_layer /tmp/beads3d-layer.tar \
+        --output /tmp/beads3d-image.tar
+
+      # Mutate OCI config
+      crane mutate /tmp/beads3d-image.tar \
+        --cmd '["nginx", "-g", "daemon off;"]' \
+        --output /tmp/beads3d-final.tar
+
+      echo "Image built: /tmp/beads3d-final.tar"
+      echo "$TAG" > /tmp/image-tag.txt
+
+  # ── Push to GHCR ──────────────────────────────────────────────────────
+  - key: push
+    use: image
+    cache: false
+    run: |
+      TAG=$(cat /tmp/image-tag.txt)
+      IMAGE="ghcr.io/groblegark/beads3d:${TAG}"
+
+      # Install crane (not cached from image task)
+      CRANE_VERSION=0.20.2
+      curl -fsSL "https://github.com/google/go-containerregistry/releases/download/v${CRANE_VERSION}/go-containerregistry_Linux_x86_64.tar.gz" \
+        | sudo tar -xz -C /usr/local/bin crane
+
+      # Auth to GHCR
+      echo "$GHCR_TOKEN" | crane auth login ghcr.io -u "$GITHUB_USER" --password-stdin
+
+      # Push
+      crane push /tmp/beads3d-final.tar "$IMAGE"
+      echo "Pushed: $IMAGE"
+
+      # Also tag as latest if this is a CalVer tag
+      if [ "$TAG" != "latest" ]; then
+        crane tag "$IMAGE" latest
+        echo "Also tagged: ghcr.io/groblegark/beads3d:latest"
+      fi
+    env:
+      GHCR_TOKEN: ${{ secrets.GHCR_TOKEN }}
+      GITHUB_USER: ${{ secrets.GITHUB_USER }}
