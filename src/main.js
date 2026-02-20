@@ -9,7 +9,7 @@ import { createFresnelMaterial, createPulseRingMaterial, createSelectionRingMate
 const params = new URLSearchParams(window.location.search);
 const API_BASE = params.get('api') || '/api';
 const POLL_INTERVAL = 10000;
-const MAX_NODES = 500; // raised for scaling
+const MAX_NODES = 1000; // bd-04wet: raised from 500 to show more relevant beads
 
 const api = new BeadsAPI(API_BASE);
 
@@ -169,6 +169,7 @@ let multiSelected = new Set(); // set of node IDs currently multi-selected
 let isBoxSelecting = false;
 let boxSelectStart = null; // {x, y} screen coords
 let cameraFrozen = false; // true when multi-select has locked orbit controls (bd-casin)
+let labelsVisible = false; // true when persistent info labels are shown on all nodes (bd-1o2f7)
 
 // Live event doots — floating text particles above agent nodes (bd-c7723)
 const doots = []; // { sprite, node, birth, lifetime, vx, vy, vz }
@@ -321,6 +322,101 @@ function toggleMinimap() {
   minimapLabel.style.display = minimapVisible ? 'block' : 'none';
 }
 
+// --- Persistent node labels (bd-1o2f7) ---
+// Creates a THREE.Sprite with canvas-rendered text showing bead info.
+// Positioned above the node, billboard-aligned to camera.
+function createNodeLabelSprite(node) {
+  const pLabel = ['P0', 'P1', 'P2', 'P3', 'P4'][node.priority] || '';
+  const title = (node.title || node.id).slice(0, 40) + ((node.title || node.id).length > 40 ? '...' : '');
+  const line1 = node.id;
+  const line2 = title;
+  const line3 = `${node.status || ''}${node.assignee ? ' · ' + node.assignee : ''} · ${pLabel}`;
+
+  const canvas = document.createElement('canvas');
+  const ctx = canvas.getContext('2d');
+  const fontSize = 28;
+  const lineHeight = fontSize * 1.3;
+  const padding = 14;
+
+  ctx.font = `bold ${fontSize}px "SF Mono", "Fira Code", monospace`;
+  const w1 = ctx.measureText(line1).width;
+  ctx.font = `${fontSize}px "SF Mono", "Fira Code", monospace`;
+  const w2 = ctx.measureText(line2).width;
+  const w3 = ctx.measureText(line3).width;
+  const textW = Math.max(w1, w2, w3);
+
+  canvas.width = Math.ceil(textW + padding * 2);
+  canvas.height = Math.ceil(lineHeight * 3 + padding * 2);
+
+  // Background with rounded corners
+  ctx.fillStyle = 'rgba(10, 10, 18, 0.85)';
+  const r = 6, cw = canvas.width, ch = canvas.height;
+  ctx.beginPath();
+  ctx.moveTo(r, 0);
+  ctx.lineTo(cw - r, 0); ctx.arcTo(cw, 0, cw, r, r);
+  ctx.lineTo(cw, ch - r); ctx.arcTo(cw, ch, cw - r, ch, r);
+  ctx.lineTo(r, ch); ctx.arcTo(0, ch, 0, ch - r, r);
+  ctx.lineTo(0, r); ctx.arcTo(0, 0, r, 0, r);
+  ctx.closePath();
+  ctx.fill();
+
+  // Border
+  ctx.strokeStyle = 'rgba(74, 158, 255, 0.3)';
+  ctx.lineWidth = 1;
+  ctx.stroke();
+
+  // Line 1: ID (bold, blue)
+  ctx.font = `bold ${fontSize}px "SF Mono", "Fira Code", monospace`;
+  ctx.fillStyle = '#4a9eff';
+  ctx.fillText(line1, padding, padding + fontSize);
+
+  // Line 2: title (white)
+  ctx.font = `${fontSize}px "SF Mono", "Fira Code", monospace`;
+  ctx.fillStyle = '#e0e0e0';
+  ctx.fillText(line2, padding, padding + fontSize + lineHeight);
+
+  // Line 3: status · assignee · priority (dim)
+  ctx.fillStyle = '#888';
+  ctx.fillText(line3, padding, padding + fontSize + lineHeight * 2);
+
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.minFilter = THREE.LinearFilter;
+  const material = new THREE.SpriteMaterial({
+    map: texture,
+    transparent: true,
+    depthWrite: false,
+    depthTest: false,
+  });
+  const sprite = new THREE.Sprite(material);
+
+  // Scale sprite so it's readable — size proportional to canvas aspect
+  const aspect = canvas.width / canvas.height;
+  const spriteH = 12;
+  sprite.scale.set(spriteH * aspect, spriteH, 1);
+
+  // Position above the node
+  const size = nodeSize(node);
+  sprite.position.y = size * 2.5 + spriteH / 2 + 2;
+
+  sprite.userData.nodeLabel = true;
+  sprite.visible = labelsVisible;
+  return sprite;
+}
+
+function toggleLabels() {
+  labelsVisible = !labelsVisible;
+  // Toggle visibility on all existing label sprites by traversing the scene
+  if (graph) {
+    graph.scene().traverse(child => {
+      if (child.userData && child.userData.nodeLabel) {
+        child.visible = labelsVisible;
+      }
+    });
+  }
+  const btn = document.getElementById('btn-labels');
+  if (btn) btn.classList.toggle('active', labelsVisible);
+}
+
 // --- Build graph ---
 function initGraph() {
   graph = ForceGraph3D({ rendererConfig: { preserveDrawingBuffer: true } })(document.getElementById('graph'))
@@ -430,6 +526,10 @@ function initGraph() {
       selRing.scale.setScalar(size * 2.5);
       selRing.userData.selectionRing = true;
       group.add(selRing);
+
+      // Persistent info label sprite (bd-1o2f7) — hidden until 'l' toggles labels on
+      const labelSprite = createNodeLabelSprite(n);
+      group.add(labelSprite);
 
       return group;
     })
@@ -835,9 +935,10 @@ async function fetchViaGraph(statusEl) {
     include_deps: true,
     include_body: true,
     include_agents: true,
+    exclude_types: ['message', 'config', 'gate', 'wisp', 'convoy'], // bd-04wet: filter noise types
   });
 
-  const nodes = (result.nodes || []).map(n => ({
+  let nodes = (result.nodes || []).map(n => ({
     id: n.id,
     ...n,
     _blocked: !!(n.blocked_by && n.blocked_by.length > 0),
@@ -853,6 +954,12 @@ async function fetchViaGraph(statusEl) {
       dep_type: e.type || 'blocks',
     }));
 
+  // Filter disconnected decisions: only show decision nodes that have at least
+  // one edge connecting them to a visible bead (bd-t25i1)
+  const connectedIds = new Set();
+  for (const l of links) { connectedIds.add(l.source); connectedIds.add(l.target); }
+  nodes = nodes.filter(n => n.issue_type !== 'decision' || connectedIds.has(n.id));
+
   statusEl.textContent = `graph api · ${nodes.length} beads · ${links.length} links`;
   statusEl.className = 'connected';
   updateStats(result.stats, nodes);
@@ -861,7 +968,7 @@ async function fetchViaGraph(statusEl) {
 }
 
 async function fetchViaList(statusEl) {
-  const SKIP_TYPES = new Set(['message', 'config', 'gate', 'wisp', 'convoy']);
+  const SKIP_TYPES = new Set(['message', 'config', 'gate', 'wisp', 'convoy', 'decision']);
 
   // Parallel fetch: open/in_progress beads + blocked + stats
   const [openIssues, inProgress, blocked, stats] = await Promise.all([
@@ -2254,6 +2361,9 @@ function setupControls() {
     btnBloom.classList.toggle('active', bloomEnabled);
   };
 
+  // Labels toggle (bd-1o2f7)
+  document.getElementById('btn-labels').onclick = () => toggleLabels();
+
   // Search — input updates filter, Enter/arrows navigate results
   searchInput.addEventListener('input', (e) => {
     searchFilter = e.target.value;
@@ -2345,6 +2455,10 @@ function setupControls() {
     // 'm' to toggle minimap
     if (e.key === 'm' && document.activeElement !== searchInput) {
       toggleMinimap();
+    }
+    // 'l' for labels toggle (bd-1o2f7)
+    if (e.key === 'l' && document.activeElement !== searchInput) {
+      toggleLabels();
     }
     // 'p' for screenshot
     if (e.key === 'p' && document.activeElement !== searchInput) {
@@ -2478,9 +2592,11 @@ function dootLabel(evt) {
   if (type === 'MutationStatus') return p.new_status || 'status';
   if (type === 'MutationClose') return 'closed';
 
-  // Decisions
-  if (type === 'DecisionCreated') return 'decision?';
-  if (type === 'DecisionResponded') return 'decided';
+  // Decisions — filtered out of doots (bd-t25i1: too noisy, not tied to visible beads)
+  if (type === 'DecisionCreated') return null;
+  if (type === 'DecisionResponded') return null;
+  if (type === 'DecisionEscalated') return null;
+  if (type === 'DecisionExpired') return null;
 
   return type.replace(/([A-Z])/g, ' $1').trim().toLowerCase().slice(0, 20);
 }
@@ -2580,7 +2696,7 @@ function updateDoots(t) {
 
 function connectBusStream() {
   try {
-    api.connectBusEvents('agents,hooks,oj,mutations,decisions', (evt) => {
+    api.connectBusEvents('agents,hooks,oj,mutations', (evt) => {
       const label = dootLabel(evt);
       if (!label) return; // skip noisy events
 
