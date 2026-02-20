@@ -407,6 +407,81 @@
       letter-spacing: 1px;
     }
 
+    /* Rubber-band selection overlay */
+    #select-overlay {
+      position: fixed;
+      top: 0; left: 0;
+      width: 100%; height: 100%;
+      z-index: 200;
+      pointer-events: none;
+      display: none;
+    }
+
+    /* Bulk action menu (after multi-select) */
+    #bulk-menu {
+      position: fixed;
+      z-index: 250;
+      display: none;
+      background: rgba(12, 12, 22, 0.95);
+      border: 1px solid #4a9eff;
+      border-radius: 8px;
+      padding: 6px 0;
+      min-width: 180px;
+      backdrop-filter: blur(12px);
+      box-shadow: 0 4px 24px rgba(74, 158, 255, 0.2);
+      font-size: 12px;
+    }
+    #bulk-menu .bulk-header {
+      padding: 6px 12px;
+      color: #4a9eff;
+      font-weight: 600;
+      font-size: 11px;
+      border-bottom: 1px solid #1a1a2a;
+      margin-bottom: 2px;
+    }
+    #bulk-menu .bulk-item {
+      padding: 6px 12px;
+      color: #bbb;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    #bulk-menu .bulk-item:hover {
+      background: rgba(74, 158, 255, 0.12);
+      color: #fff;
+    }
+    #bulk-menu .bulk-sep {
+      height: 1px;
+      background: #1a1a2a;
+      margin: 4px 0;
+    }
+    #bulk-menu .bulk-item .bulk-submenu-panel {
+      display: none;
+      position: absolute;
+      left: 100%;
+      top: -4px;
+      background: rgba(12, 12, 22, 0.95);
+      border: 1px solid #2a2a3a;
+      border-radius: 6px;
+      padding: 4px 0;
+      min-width: 130px;
+      backdrop-filter: blur(12px);
+      box-shadow: 0 4px 24px rgba(0,0,0,0.6);
+    }
+    #bulk-menu .bulk-submenu {
+      position: relative;
+    }
+    #bulk-menu .bulk-submenu::after {
+      content: '\25B8';
+      margin-left: auto;
+      font-size: 9px;
+      color: #555;
+    }
+    #bulk-menu .bulk-submenu:hover > .bulk-submenu-panel {
+      display: block;
+    }
+
     /* Scrollbar styling */
     ::-webkit-scrollbar { width: 4px; }
     ::-webkit-scrollbar-track { background: transparent; }
@@ -481,10 +556,12 @@
   <span id="minimap-label">minimap</span>
   <canvas id="minimap" width="360" height="280"></canvas>
   <div id="status">connecting...</div>
-  <div id="keyhints">/ search &middot; enter fly &middot; &uarr;&darr; cycle &middot; esc close &middot; r refresh &middot; b bloom &middot; m minimap &middot; 1-5 layout</div>
+  <div id="keyhints">/ search &middot; enter fly &middot; &uarr;&darr; cycle &middot; esc close &middot; r refresh &middot; b bloom &middot; m minimap &middot; 1-5 layout &middot; shift+drag select</div>
 
   <div id="detail"></div>
   <div id="context-menu"></div>
+  <canvas id="select-overlay"></canvas>
+  <div id="bulk-menu"></div>
 
   <script type="module" src="/src/main.js"></script>
 </body>

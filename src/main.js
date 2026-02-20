@@ -164,6 +164,11 @@ let searchResults = []; // ordered list of matching node ids
 let searchResultIdx = -1; // current position in results (-1 = none)
 let minimapVisible = true;
 
+// Multi-selection state (rubber-band / shift+drag)
+let multiSelected = new Set(); // set of node IDs currently multi-selected
+let isBoxSelecting = false;
+let boxSelectStart = null; // {x, y} screen coords
+
 // --- Minimap ---
 const minimapCanvas = document.getElementById('minimap');
 const minimapCtx = minimapCanvas.getContext('2d');
@@ -592,6 +597,8 @@ function clearSelection() {
   selectedNode = null;
   highlightNodes.clear();
   highlightLinks.clear();
+  multiSelected.clear();
+  hideBulkMenu();
   restoreAllNodeOpacity();
   // Force link width recalculation
   graph.linkWidth(graph.linkWidth());
@@ -668,12 +675,13 @@ function startAnimation() {
       const threeObj = node.__threeObj;
       if (!threeObj) continue;
 
-      const isHighlighted = !hasSelection || highlightNodes.has(node.id);
-      const isSelected = hasSelection && node.id === selectedNode.id;
+      const isMultiSelected = multiSelected.has(node.id);
+      const isHighlighted = !hasSelection || highlightNodes.has(node.id) || isMultiSelected;
+      const isSelected = (hasSelection && node.id === selectedNode.id) || isMultiSelected;
       const dimFactor = isHighlighted ? 1.0 : 0.35;
 
       // Skip traversal when nothing to update
-      if (!hasSelection && node.status !== 'in_progress') continue;
+      if (!hasSelection && !isMultiSelected && node.status !== 'in_progress') continue;
 
       // Track dimmed nodes for restoration in clearSelection()
       if (hasSelection && !isHighlighted) node._wasDimmed = true;
@@ -1867,6 +1875,200 @@ function exportGraphJSON() {
   statusEl.className = 'connected';
 }
 
+// --- Rubber-band selection (shift+drag) ---
+const selectOverlay = document.getElementById('select-overlay');
+const selectCtx = selectOverlay.getContext('2d');
+const bulkMenu = document.getElementById('bulk-menu');
+
+function resizeSelectOverlay() {
+  selectOverlay.width = window.innerWidth;
+  selectOverlay.height = window.innerHeight;
+}
+window.addEventListener('resize', resizeSelectOverlay);
+resizeSelectOverlay();
+
+// Project a 3D node position to 2D screen coordinates
+function nodeToScreen(node) {
+  const camera = graph.camera();
+  const renderer = graph.renderer();
+  const { width, height } = renderer.domElement.getBoundingClientRect();
+  const vec = new THREE.Vector3(node.x || 0, node.y || 0, node.z || 0);
+  vec.project(camera);
+  return {
+    x: (vec.x * 0.5 + 0.5) * width,
+    y: (-vec.y * 0.5 + 0.5) * height,
+  };
+}
+
+function setupBoxSelect() {
+  const graphEl = document.getElementById('graph');
+
+  graphEl.addEventListener('mousedown', (e) => {
+    if (!e.shiftKey || e.button !== 0) return;
+    e.preventDefault();
+    e.stopPropagation();
+
+    isBoxSelecting = true;
+    boxSelectStart = { x: e.clientX, y: e.clientY };
+    selectOverlay.style.display = 'block';
+    selectOverlay.style.pointerEvents = 'auto';
+
+    // Disable orbit controls during box select
+    const controls = graph.controls();
+    if (controls) controls.enabled = false;
+  });
+
+  // Use document-level listeners so drag works even if mouse leaves graph
+  document.addEventListener('mousemove', (e) => {
+    if (!isBoxSelecting) return;
+    e.preventDefault();
+
+    const x0 = Math.min(boxSelectStart.x, e.clientX);
+    const y0 = Math.min(boxSelectStart.y, e.clientY);
+    const w = Math.abs(e.clientX - boxSelectStart.x);
+    const h = Math.abs(e.clientY - boxSelectStart.y);
+
+    selectCtx.clearRect(0, 0, selectOverlay.width, selectOverlay.height);
+
+    // Draw selection rectangle
+    selectCtx.fillStyle = 'rgba(74, 158, 255, 0.08)';
+    selectCtx.fillRect(x0, y0, w, h);
+    selectCtx.strokeStyle = 'rgba(74, 158, 255, 0.6)';
+    selectCtx.lineWidth = 1;
+    selectCtx.setLineDash([4, 4]);
+    selectCtx.strokeRect(x0, y0, w, h);
+    selectCtx.setLineDash([]);
+
+    // Live preview: highlight nodes inside the rectangle
+    const previewSet = new Set();
+    for (const node of graphData.nodes) {
+      if (node._hidden || node.issue_type === 'agent') continue;
+      const screen = nodeToScreen(node);
+      if (screen.x >= x0 && screen.x <= x0 + w && screen.y >= y0 && screen.y <= y0 + h) {
+        previewSet.add(node.id);
+        // Draw a small indicator dot on the overlay
+        selectCtx.beginPath();
+        selectCtx.arc(screen.x, screen.y, 4, 0, Math.PI * 2);
+        selectCtx.fillStyle = 'rgba(74, 158, 255, 0.5)';
+        selectCtx.fill();
+      }
+    }
+    multiSelected = previewSet;
+  });
+
+  document.addEventListener('mouseup', (e) => {
+    if (!isBoxSelecting) return;
+    isBoxSelecting = false;
+    selectOverlay.style.display = 'none';
+    selectOverlay.style.pointerEvents = 'none';
+    selectCtx.clearRect(0, 0, selectOverlay.width, selectOverlay.height);
+
+    // Re-enable orbit controls
+    const controls = graph.controls();
+    if (controls) controls.enabled = true;
+
+    // Finalize selection
+    if (multiSelected.size > 0) {
+      showBulkMenu(e.clientX, e.clientY);
+    }
+  });
+}
+
+function buildBulkStatusSubmenu() {
+  const statuses = [
+    { value: 'open', label: 'open', color: '#2d8a4e' },
+    { value: 'in_progress', label: 'in progress', color: '#d4a017' },
+    { value: 'closed', label: 'closed', color: '#333340' },
+  ];
+  return statuses.map(s =>
+    `<div class="bulk-item" data-action="bulk-status" data-value="${s.value}">` +
+    `<span class="ctx-dot" style="background:${s.color}"></span>${s.label}</div>`
+  ).join('');
+}
+
+function buildBulkPrioritySubmenu() {
+  const priorities = [
+    { value: 0, label: 'P0 critical', color: '#ff3333' },
+    { value: 1, label: 'P1 high', color: '#ff8833' },
+    { value: 2, label: 'P2 medium', color: '#d4a017' },
+    { value: 3, label: 'P3 low', color: '#4a9eff' },
+    { value: 4, label: 'P4 backlog', color: '#666' },
+  ];
+  return priorities.map(p =>
+    `<div class="bulk-item" data-action="bulk-priority" data-value="${p.value}">` +
+    `<span class="ctx-dot" style="background:${p.color}"></span>${p.label}</div>`
+  ).join('');
+}
+
+function showBulkMenu(x, y) {
+  const count = multiSelected.size;
+  bulkMenu.innerHTML = `
+    <div class="bulk-header">${count} bead${count !== 1 ? 's' : ''} selected</div>
+    <div class="bulk-item bulk-submenu">set status
+      <div class="bulk-submenu-panel">${buildBulkStatusSubmenu()}</div>
+    </div>
+    <div class="bulk-item bulk-submenu">set priority
+      <div class="bulk-submenu-panel">${buildBulkPrioritySubmenu()}</div>
+    </div>
+    <div class="bulk-sep"></div>
+    <div class="bulk-item" data-action="bulk-close">close all</div>
+    <div class="bulk-sep"></div>
+    <div class="bulk-item" data-action="bulk-clear">clear selection</div>
+  `;
+
+  bulkMenu.style.display = 'block';
+  const rect = bulkMenu.getBoundingClientRect();
+  if (x + rect.width > window.innerWidth) x = window.innerWidth - rect.width - 8;
+  if (y + rect.height > window.innerHeight) y = window.innerHeight - rect.height - 8;
+  bulkMenu.style.left = x + 'px';
+  bulkMenu.style.top = y + 'px';
+
+  bulkMenu.onclick = (e) => {
+    const item = e.target.closest('.bulk-item');
+    if (!item) return;
+    const action = item.dataset.action;
+    const value = item.dataset.value;
+    handleBulkAction(action, value);
+  };
+}
+
+function hideBulkMenu() {
+  bulkMenu.style.display = 'none';
+  bulkMenu.onclick = null;
+}
+
+async function handleBulkAction(action, value) {
+  const ids = [...multiSelected];
+  hideBulkMenu();
+
+  switch (action) {
+    case 'bulk-status': {
+      const results = await Promise.allSettled(ids.map(id => api.update(id, { status: value })));
+      const ok = results.filter(r => r.status === 'fulfilled').length;
+      showStatusToast(`${ok}/${ids.length} → ${value}`);
+      break;
+    }
+    case 'bulk-priority': {
+      const p = parseInt(value, 10);
+      const results = await Promise.allSettled(ids.map(id => api.update(id, { priority: p })));
+      const ok = results.filter(r => r.status === 'fulfilled').length;
+      showStatusToast(`${ok}/${ids.length} → P${p}`);
+      break;
+    }
+    case 'bulk-close': {
+      const results = await Promise.allSettled(ids.map(id => api.close(id)));
+      const ok = results.filter(r => r.status === 'fulfilled').length;
+      showStatusToast(`closed ${ok}/${ids.length}`);
+      break;
+    }
+    case 'bulk-clear':
+      break;
+  }
+
+  multiSelected.clear();
+  refresh();
+}
+
 // --- Controls ---
 function setupControls() {
   const btnRefresh = document.getElementById('btn-refresh');
@@ -1950,8 +2152,13 @@ function setupControls() {
       e.preventDefault();
       searchInput.focus();
     }
-    // Escape to clear search, close detail, close context menu, and deselect
+    // Escape to clear search, close detail, close context/bulk menu, and deselect
     if (e.key === 'Escape') {
+      if (bulkMenu.style.display === 'block') {
+        hideBulkMenu();
+        multiSelected.clear();
+        return;
+      }
       if (ctxMenu.style.display === 'block') {
         hideContextMenu();
         return;
@@ -2022,6 +2229,7 @@ async function main() {
     // Seed with empty data so the force layout initializes before first tick
     graph.graphData({ nodes: [], links: [] });
     setupControls();
+    setupBoxSelect();
     await refresh();
     connectLiveUpdates();
     setInterval(refresh, POLL_INTERVAL);
