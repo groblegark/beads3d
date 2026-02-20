@@ -203,6 +203,176 @@ const dootPopups = new Map(); // nodeId → { el, timer, node, lastDoot }
 // Agent activity feed windows — rich session transcript popups (bd-kau4k)
 const agentWindows = new Map(); // agentId → { el, feedEl, node, entries, pendingTool, collapsed }
 
+// --- Event sprites: pop-up animations for status changes + new associations (bd-9qeto) ---
+const eventSprites = []; // { mesh, birth, lifetime, type, ... }
+const EVENT_SPRITE_MAX = 40;
+
+// Status pulse colors by transition
+const STATUS_PULSE_COLORS = {
+  in_progress: 0xd4a017, // amber — just started
+  closed:      0x2d8a4e, // green — completed
+  open:        0x4a9eff, // blue — reopened
+  review:      0x4a9eff, // blue
+  on_ice:      0x3a5a7a, // muted blue
+};
+
+// Spawn an expanding ring burst when a bead changes status (bd-9qeto)
+function spawnStatusPulse(node, oldStatus, newStatus) {
+  if (!node || !graph) return;
+  const color = STATUS_PULSE_COLORS[newStatus] || 0x4a9eff;
+  const size = nodeSize({ priority: node.priority, issue_type: node.issue_type });
+
+  // Ring 1: fast expanding ring
+  const ringGeo = new THREE.RingGeometry(size * 0.8, size * 1.0, 24);
+  const ringMat = new THREE.MeshBasicMaterial({
+    color, transparent: true, opacity: 0.7, side: THREE.DoubleSide, depthWrite: false,
+  });
+  const ring = new THREE.Mesh(ringGeo, ringMat);
+  ring.position.set(node.x || 0, node.y || 0, node.z || 0);
+  ring.lookAt(graph.camera().position);
+  graph.scene().add(ring);
+
+  eventSprites.push({
+    mesh: ring, node, birth: performance.now() / 1000, lifetime: 1.5,
+    type: 'status-pulse', startScale: 1.0, endScale: 4.0,
+  });
+
+  // Ring 2: slower, wider, dimmer secondary pulse
+  const ring2Geo = new THREE.RingGeometry(size * 0.6, size * 0.75, 24);
+  const ring2Mat = new THREE.MeshBasicMaterial({
+    color, transparent: true, opacity: 0.4, side: THREE.DoubleSide, depthWrite: false,
+  });
+  const ring2 = new THREE.Mesh(ring2Geo, ring2Mat);
+  ring2.position.set(node.x || 0, node.y || 0, node.z || 0);
+  ring2.lookAt(graph.camera().position);
+  graph.scene().add(ring2);
+
+  eventSprites.push({
+    mesh: ring2, node, birth: performance.now() / 1000 + 0.15, lifetime: 2.0,
+    type: 'status-pulse', startScale: 1.0, endScale: 5.0,
+  });
+
+  // Prune oldest
+  while (eventSprites.length > EVENT_SPRITE_MAX) {
+    const old = eventSprites.shift();
+    graph.scene().remove(old.mesh);
+    old.mesh.geometry.dispose();
+    old.mesh.material.dispose();
+  }
+}
+
+// Spawn sparks that travel along a new edge between two nodes (bd-9qeto)
+function spawnEdgeSpark(sourceNode, targetNode, color) {
+  if (!sourceNode || !targetNode || !graph) return;
+  const sparkColor = color || 0x4a9eff;
+
+  // Create 3 small sphere sparks that travel from source to target
+  for (let i = 0; i < 3; i++) {
+    const sparkGeo = new THREE.SphereGeometry(0.8, 6, 6);
+    const sparkMat = new THREE.MeshBasicMaterial({
+      color: sparkColor, transparent: true, opacity: 0.9, depthWrite: false,
+    });
+    const spark = new THREE.Mesh(sparkGeo, sparkMat);
+    spark.position.set(sourceNode.x || 0, sourceNode.y || 0, sourceNode.z || 0);
+    graph.scene().add(spark);
+
+    eventSprites.push({
+      mesh: spark, birth: performance.now() / 1000 + i * 0.2, lifetime: 1.2,
+      type: 'edge-spark',
+      sourceNode, targetNode,
+      jitter: { x: (Math.random() - 0.5) * 2, y: (Math.random() - 0.5) * 2, z: (Math.random() - 0.5) * 2 },
+    });
+  }
+
+  // Burst particles at connection point (midpoint)
+  const mx = ((sourceNode.x || 0) + (targetNode.x || 0)) / 2;
+  const my = ((sourceNode.y || 0) + (targetNode.y || 0)) / 2;
+  const mz = ((sourceNode.z || 0) + (targetNode.z || 0)) / 2;
+
+  for (let i = 0; i < 5; i++) {
+    const pGeo = new THREE.SphereGeometry(0.4, 4, 4);
+    const pMat = new THREE.MeshBasicMaterial({
+      color: sparkColor, transparent: true, opacity: 0.8, depthWrite: false,
+    });
+    const p = new THREE.Mesh(pGeo, pMat);
+    p.position.set(mx, my, mz);
+    graph.scene().add(p);
+
+    eventSprites.push({
+      mesh: p, birth: performance.now() / 1000 + 0.3, lifetime: 1.0,
+      type: 'burst',
+      velocity: {
+        x: (Math.random() - 0.5) * 15,
+        y: (Math.random() - 0.5) * 15,
+        z: (Math.random() - 0.5) * 15,
+      },
+    });
+  }
+
+  // Prune oldest
+  while (eventSprites.length > EVENT_SPRITE_MAX) {
+    const old = eventSprites.shift();
+    graph.scene().remove(old.mesh);
+    old.mesh.geometry.dispose();
+    old.mesh.material.dispose();
+  }
+}
+
+// Update event sprites each frame (bd-9qeto)
+function updateEventSprites(t) {
+  for (let i = eventSprites.length - 1; i >= 0; i--) {
+    const s = eventSprites[i];
+    const age = t - s.birth;
+
+    // Not born yet (staggered spawns)
+    if (age < 0) continue;
+
+    if (age > s.lifetime) {
+      graph.scene().remove(s.mesh);
+      s.mesh.geometry.dispose();
+      s.mesh.material.dispose();
+      eventSprites.splice(i, 1);
+      continue;
+    }
+
+    const progress = age / s.lifetime; // 0→1
+
+    if (s.type === 'status-pulse') {
+      // Expanding ring that fades out
+      const scale = s.startScale + (s.endScale - s.startScale) * progress;
+      s.mesh.scale.setScalar(scale);
+      s.mesh.material.opacity = (1 - progress) * 0.7;
+      // Follow node position
+      if (s.node) {
+        s.mesh.position.set(s.node.x || 0, s.node.y || 0, s.node.z || 0);
+        s.mesh.lookAt(graph.camera().position);
+      }
+    } else if (s.type === 'edge-spark') {
+      // Interpolate from source to target with slight jitter
+      const sx = s.sourceNode.x || 0, sy = s.sourceNode.y || 0, sz = s.sourceNode.z || 0;
+      const tx = s.targetNode.x || 0, ty = s.targetNode.y || 0, tz = s.targetNode.z || 0;
+      const wobble = Math.sin(progress * Math.PI * 3) * (1 - progress);
+      s.mesh.position.set(
+        sx + (tx - sx) * progress + s.jitter.x * wobble,
+        sy + (ty - sy) * progress + s.jitter.y * wobble,
+        sz + (tz - sz) * progress + s.jitter.z * wobble,
+      );
+      // Shrink and fade near the end
+      const sparkScale = 1 - progress * 0.7;
+      s.mesh.scale.setScalar(sparkScale);
+      s.mesh.material.opacity = (1 - progress * progress) * 0.9;
+    } else if (s.type === 'burst') {
+      // Outward burst particles with gravity-like deceleration
+      const decel = 1 - progress * 0.8; // slow down over time
+      s.mesh.position.x += s.velocity.x * 0.016 * decel;
+      s.mesh.position.y += s.velocity.y * 0.016 * decel;
+      s.mesh.position.z += s.velocity.z * 0.016 * decel;
+      s.mesh.material.opacity = (1 - progress) * 0.8;
+      s.mesh.scale.setScalar(1 - progress * 0.5);
+    }
+  }
+}
+
 // --- Minimap ---
 const minimapCanvas = document.getElementById('minimap');
 const minimapCtx = minimapCanvas.getContext('2d');
@@ -1149,6 +1319,9 @@ function startAnimation() {
 
     // Update live event doots (bd-c7723)
     updateDoots(t);
+
+    // Update event sprites — status pulses + edge sparks (bd-9qeto)
+    updateEventSprites(t);
 
     // Minimap: render every 3rd frame for perf
     if (!animate._frame) animate._frame = 0;
@@ -3553,10 +3726,28 @@ async function refresh() {
   const newLinkKeys = new Set(data.links.map(refreshLinkKey));
 
   let linksChanged = false;
+  // Detect genuinely new links for edge spark animations (bd-9qeto)
+  const brandNewLinks = data.links.filter(l => !existingLinkKeys.has(refreshLinkKey(l)));
   if (data.links.length !== currentLinks.length ||
-      data.links.some(l => !existingLinkKeys.has(refreshLinkKey(l))) ||
+      brandNewLinks.length > 0 ||
       currentLinks.some(l => !newLinkKeys.has(refreshLinkKey(l)))) {
     linksChanged = true;
+  }
+
+  // Spawn edge sparks for new associations (bd-9qeto)
+  // Only fire for non-assigned_to links (assigned_to already has glow tubes)
+  for (const nl of brandNewLinks) {
+    if (nl.dep_type === 'assigned_to') continue;
+    const srcId = typeof nl.source === 'object' ? nl.source.id : nl.source;
+    const tgtId = typeof nl.target === 'object' ? nl.target.id : nl.target;
+    const srcNode = mergedNodes.find(n => n.id === srcId);
+    const tgtNode = mergedNodes.find(n => n.id === tgtId);
+    if (srcNode && tgtNode && srcNode.x !== undefined && tgtNode.x !== undefined) {
+      const sparkColor = nl.dep_type === 'blocks' ? 0xd04040
+        : nl.dep_type === 'parent-child' ? 0x8b45a6
+        : 0x4a9eff;
+      spawnEdgeSpark(srcNode, tgtNode, sparkColor);
+    }
   }
 
   const structureChanged = nodesAdded > 0 || nodesRemoved > 0 || linksChanged;
@@ -3645,6 +3836,8 @@ function applyMutationOptimistic(evt) {
       // Rebuild THREE.js object if status changed (affects color, pulse ring, etc.)
       if (oldStatus !== node.status && graph) {
         graph.nodeThreeObject(graph.nodeThreeObject());
+        // Event sprite: status change pulse (bd-9qeto)
+        spawnStatusPulse(node, oldStatus, node.status);
       }
       return true;
     }
@@ -4209,6 +4402,16 @@ function connectBusStream() {
 
       spawnDoot(node, label, dootColor(evt));
 
+      // Event sprites: status change pulse + close burst (bd-9qeto)
+      const p = evt.payload || {};
+      if ((evt.type === 'MutationStatus' || evt.type === 'MutationClose') && p.issue_id && graphData) {
+        const issueNode = graphData.nodes.find(n => n.id === p.issue_id);
+        if (issueNode) {
+          const newStatus = p.new_status || (evt.type === 'MutationClose' ? 'closed' : '');
+          spawnStatusPulse(issueNode, p.old_status || '', newStatus);
+        }
+      }
+
       // Feed agent activity windows (bd-kau4k)
       const agentId = resolveAgentId(evt);
       if (agentId && agentWindows.has(agentId)) {
@@ -4257,6 +4460,13 @@ async function main() {
     window.__beads3d_closeAgentWindow = closeAgentWindow;
     window.__beads3d_appendAgentEvent = appendAgentEvent;
     window.__beads3d_agentWindows = () => agentWindows;
+    // Expose event sprite internals for testing (bd-9qeto)
+    window.__beads3d_spawnStatusPulse = spawnStatusPulse;
+    window.__beads3d_spawnEdgeSpark = spawnEdgeSpark;
+    window.__beads3d_eventSprites = () => eventSprites;
+    // Expose camera velocity system for testing (bd-zab4q)
+    window.__beads3d_keysDown = _keysDown;
+    window.__beads3d_camVelocity = _camVelocity;
 
     // Cleanup on page unload (bd-7n4g8): close SSE, clear intervals
     window.addEventListener('beforeunload', () => {
