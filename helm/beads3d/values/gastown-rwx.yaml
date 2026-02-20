@@ -1,0 +1,14 @@
+# gastown-rwx deployment values
+image:
+  tag: latest  # Override with CalVer tag at deploy time
+
+imagePullSecrets:
+  - name: ghcr-pull-secret
+
+ingress:
+  enabled: true
+  className: nginx
+  host: beads3d.app.e2e.dev.fics.ai
+
+daemon:
+  url: http://gastown-rwx-bd-daemon-daemon:9080
