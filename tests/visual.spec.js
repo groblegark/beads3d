@@ -461,7 +461,8 @@ test.describe('beads3d visual tests', () => {
       };
     });
     expect(edgeInfo).not.toBeNull();
-    expect(edgeInfo.count).toBe(4);
+    // 4 explicit + 2 synthesized (agent:alice→bd-epic1, agent:charlie→bd-task3)
+    expect(edgeInfo.count).toBe(6);
 
     await expect(page).toHaveScreenshot('assigned-to-edges.png', {
       animations: 'disabled',
@@ -612,7 +613,8 @@ test.describe('beads3d visual tests', () => {
       if (!b || !b.graph) return 0;
       return b.graph.graphData().nodes.filter(n => n.issue_type === 'agent' && !n._hidden).length;
     });
-    expect(agentCountBefore).toBe(2);
+    // 2 explicit agents (alice, bob) + 1 synthesized (charlie, from in_progress bd-task3)
+    expect(agentCountBefore).toBe(3);
 
     // Click the agent type filter button
     await page.click('button.filter-type[data-type="agent"]');
