@@ -33,11 +33,6 @@ tasks:
   # ── Build (vite production build) ─────────────────────────────────────
   - key: build
     use: deps
-    filter:
-      - src/**
-      - index.html
-      - vite.config.js
-      - package.json
     run: |
       echo "Building beads3d..."
       npm run build
@@ -55,11 +50,6 @@ tasks:
   # ── Tests (Playwright E2E with mock API) ──────────────────────────────
   - key: test
     use: [build, browsers]
-    filter:
-      - src/**
-      - tests/**
-      - playwright.config.js
-      - index.html
     run: |
       echo "Running Playwright tests..."
       npx playwright test --reporter=list 2>&1 | tee test-output.txt
