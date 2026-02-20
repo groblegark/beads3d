@@ -4,15 +4,10 @@
 on:
   github:
     push:
-      branches: [main]
+      if: ${{ event.git.branch == 'main' || starts-with(event.git.tag, '20') }}
       init:
         commit-sha: ${{ event.git.sha }}
-        ref-name: ${{ event.git.branch }}
-    tags:
-      if: ${{ starts-with(event.git.tag, '20') }}
-      init:
-        commit-sha: ${{ event.git.sha }}
-        ref-name: ${{ event.git.tag }}
+        ref-name: ${{ event.git.branch || event.git.tag }}
   cli:
     init:
       commit-sha: ${{ event.git.sha }}
