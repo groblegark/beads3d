@@ -48,23 +48,33 @@ tasks:
       npx playwright install --with-deps chromium
 
   # ── Update visual snapshots (run with --target update-snapshots) ──────
+  # Generates Linux baselines and pushes them to the repo.
   - key: update-snapshots
     use: [build, browsers]
     timeout: 30 minutes
     run: |
       echo "Generating/updating visual test snapshots..."
-      npx playwright test tests/visual.spec.js --update-snapshots --reporter=list 2>&1 | tee snapshot-output.txt || true
-      echo "Snapshot files:"
+      npx playwright test tests/visual.spec.js --update-snapshots --reporter=list 2>&1 || true
+      echo "Snapshot files generated:"
       ls -la tests/visual.spec.js-snapshots/*-linux.png 2>/dev/null || echo "No linux snapshots found"
-      # Package all snapshot files as artifact
-      tar cf /tmp/snapshots.tar tests/visual.spec.js-snapshots/
-      echo "Snapshots packaged."
-    outputs:
-      artifacts:
-        - key: snapshots
-          path: /tmp/snapshots.tar
-        - key: snapshot-output
-          path: snapshot-output.txt
+
+      # Commit and push snapshots back to repo
+      git config user.email "ci@beads3d.dev"
+      git config user.name "beads3d CI"
+      git checkout -b update-snapshots-ci
+      git add tests/visual.spec.js-snapshots/*-linux.png
+      if git diff --cached --quiet; then
+        echo "No new snapshots to commit."
+      else
+        SNAPSHOT_COUNT=$(git diff --cached --name-only | wc -l)
+        git commit -m "test: add ${SNAPSHOT_COUNT} Linux visual test baselines (CI-generated)"
+        git remote set-url origin "https://${GITHUB_USER}:${GHCR_TOKEN}@github.com/groblegark/beads3d.git"
+        git push origin update-snapshots-ci:main
+        echo "Pushed ${SNAPSHOT_COUNT} snapshots to main."
+      fi
+    env:
+      GHCR_TOKEN: ${{ secrets.GHCR_TOKEN }}
+      GITHUB_USER: ${{ secrets.GITHUB_USER }}
 
   # ── Tests (Playwright E2E with mock API) ──────────────────────────────
   - key: test
