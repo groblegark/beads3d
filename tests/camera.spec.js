@@ -174,6 +174,153 @@ test.describe('smooth camera movement (bd-zab4q)', () => {
     expect(dist3d(pos1, pos2)).toBeLessThan(15);
   });
 
+  // WASD camera controls (bd-pwaen)
+
+  test('W moves camera forward along look direction (XZ plane)', async ({ page }) => {
+    await mockAPI(page);
+    await page.goto('/');
+    await waitForGraph(page);
+
+    const before = await getCameraPos(page);
+
+    await holdKey(page, 'w');
+    await page.waitForTimeout(500);
+    await releaseKey(page, 'w');
+    await page.waitForTimeout(200);
+
+    const after = await getCameraPos(page);
+    // W moves in XZ plane (forward), Y should stay roughly the same
+    const xzDist = Math.sqrt((after.x - before.x) ** 2 + (after.z - before.z) ** 2);
+    expect(xzDist).toBeGreaterThan(2);
+    expect(Math.abs(after.y - before.y)).toBeLessThan(1);
+  });
+
+  test('S moves camera backward along look direction (XZ plane)', async ({ page }) => {
+    await mockAPI(page);
+    await page.goto('/');
+    await waitForGraph(page);
+
+    const before = await getCameraPos(page);
+
+    await holdKey(page, 's');
+    await page.waitForTimeout(500);
+    await releaseKey(page, 's');
+    await page.waitForTimeout(200);
+
+    const after = await getCameraPos(page);
+    // S moves backward in XZ plane
+    const xzDist = Math.sqrt((after.x - before.x) ** 2 + (after.z - before.z) ** 2);
+    expect(xzDist).toBeGreaterThan(2);
+    expect(Math.abs(after.y - before.y)).toBeLessThan(1);
+  });
+
+  test('W and S move in opposite directions', async ({ page }) => {
+    await mockAPI(page);
+    await page.goto('/');
+    await waitForGraph(page);
+
+    // Move forward with W
+    const start = await getCameraPos(page);
+    await holdKey(page, 'w');
+    await page.waitForTimeout(400);
+    await releaseKey(page, 'w');
+    await page.waitForTimeout(800);
+    const afterW = await getCameraPos(page);
+
+    // Move backward with S
+    await holdKey(page, 's');
+    await page.waitForTimeout(400);
+    await releaseKey(page, 's');
+    await page.waitForTimeout(800);
+    const afterS = await getCameraPos(page);
+
+    // After W then equal S, should be close to start position
+    const returnDist = dist3d(start, afterS);
+    const forwardDist = dist3d(start, afterW);
+    expect(returnDist).toBeLessThan(forwardDist);
+  });
+
+  test('A strafes camera left (same as ArrowLeft)', async ({ page }) => {
+    await mockAPI(page);
+    await page.goto('/');
+    await waitForGraph(page);
+
+    const before = await getCameraPos(page);
+
+    await holdKey(page, 'a');
+    await page.waitForTimeout(400);
+    await releaseKey(page, 'a');
+    await page.waitForTimeout(200);
+
+    const after = await getCameraPos(page);
+    expect(dist3d(before, after)).toBeGreaterThan(3);
+  });
+
+  test('D strafes camera right (same as ArrowRight)', async ({ page }) => {
+    await mockAPI(page);
+    await page.goto('/');
+    await waitForGraph(page);
+
+    const before = await getCameraPos(page);
+
+    await holdKey(page, 'd');
+    await page.waitForTimeout(400);
+    await releaseKey(page, 'd');
+    await page.waitForTimeout(200);
+
+    const after = await getCameraPos(page);
+    expect(dist3d(before, after)).toBeGreaterThan(3);
+  });
+
+  test('A and D match ArrowLeft and ArrowRight movement', async ({ page }) => {
+    await mockAPI(page);
+    await page.goto('/');
+    await waitForGraph(page);
+
+    // Strafe right with D
+    const b1 = await getCameraPos(page);
+    await holdKey(page, 'd');
+    await page.waitForTimeout(300);
+    await releaseKey(page, 'd');
+    await page.waitForTimeout(800);
+    const a1 = await getCameraPos(page);
+    const dDist = dist3d(b1, a1);
+
+    // Strafe right with ArrowRight
+    const b2 = await getCameraPos(page);
+    await holdKey(page, 'ArrowRight');
+    await page.waitForTimeout(300);
+    await releaseKey(page, 'ArrowRight');
+    await page.waitForTimeout(800);
+    const a2 = await getCameraPos(page);
+    const arrowDist = dist3d(b2, a2);
+
+    // Should be similar distances (both use same physics)
+    expect(Math.abs(dDist - arrowDist)).toBeLessThan(dDist * 0.5);
+  });
+
+  test('WASD keys inert when search input focused', async ({ page }) => {
+    await mockAPI(page);
+    await page.goto('/');
+    await waitForGraph(page);
+
+    // Focus search input
+    await page.keyboard.press('/');
+    await page.waitForTimeout(100);
+
+    const before = await getCameraPos(page);
+
+    // Press WASD via keyboard (not holdKey helper which bypasses focus check)
+    await page.keyboard.down('w');
+    await page.waitForTimeout(300);
+    await page.keyboard.up('w');
+    await page.waitForTimeout(200);
+
+    const after = await getCameraPos(page);
+    // Camera should not have moved
+    expect(dist3d(before, after)).toBeLessThan(1);
+  });
+
   test('speed is clamped at CAM_MAX_SPEED', async ({ page }) => {
     await mockAPI(page);
     await page.goto('/');

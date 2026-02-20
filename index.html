@@ -829,6 +829,27 @@
     .agent-entry.mail .agent-entry-icon { color: #d4a017; }
     .agent-entry.mail-received .agent-entry-text { color: #d4a017; }
     .agent-entry.mail-sent .agent-entry-text { color: #4a9eff; font-style: italic; }
+
+    /* Epic cycling HUD indicator (bd-pnngb) */
+    #epic-hud {
+      display: none;
+      position: fixed;
+      top: 16px;
+      left: 50%;
+      transform: translateX(-50%);
+      z-index: 300;
+      background: rgba(8, 8, 16, 0.88);
+      border: 1px solid #2a2a3a;
+      border-radius: 20px;
+      padding: 6px 18px;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 12px;
+      color: #ddd;
+      backdrop-filter: blur(8px);
+      pointer-events: none;
+      white-space: nowrap;
+      transition: opacity 0.4s ease;
+    }
   </style>
 </head>
 <body>

@@ -203,6 +203,10 @@ const dootPopups = new Map(); // nodeId → { el, timer, node, lastDoot }
 // Agent activity feed windows — rich session transcript popups (bd-kau4k)
 const agentWindows = new Map(); // agentId → { el, feedEl, node, entries, pendingTool, collapsed }
 
+// Epic cycling state — Shift+S/D navigation (bd-pnngb)
+let _epicNodes = [];       // sorted array of epic nodes, rebuilt on refresh
+let _epicCycleIndex = -1;  // current position in _epicNodes (-1 = none)
+
 // --- Event sprites: pop-up animations for status changes + new associations (bd-9qeto) ---
 const eventSprites = []; // { mesh, birth, lifetime, type, ... }
 const EVENT_SPRITE_MAX = 40;
@@ -1404,11 +1408,22 @@ function startAnimation() {
       camera.getWorldDirection(new THREE.Vector3());
       right.setFromMatrixColumn(camera.matrixWorld, 0).normalize();
 
+      // Forward vector for W/S: camera look direction projected onto XZ plane (bd-pwaen)
+      const forward = new THREE.Vector3();
+      camera.getWorldDirection(forward);
+      forward.y = 0; // project to XZ plane — no diving into ground
+      forward.normalize();
+
       // Accelerate in held directions
-      if (_keysDown.has('ArrowLeft'))  { _camVelocity.x -= right.x * CAM_ACCEL; _camVelocity.y -= right.y * CAM_ACCEL; _camVelocity.z -= right.z * CAM_ACCEL; }
-      if (_keysDown.has('ArrowRight')) { _camVelocity.x += right.x * CAM_ACCEL; _camVelocity.y += right.y * CAM_ACCEL; _camVelocity.z += right.z * CAM_ACCEL; }
+      // Strafe: ArrowLeft/A = left, ArrowRight/D = right
+      if (_keysDown.has('ArrowLeft') || _keysDown.has('a'))  { _camVelocity.x -= right.x * CAM_ACCEL; _camVelocity.y -= right.y * CAM_ACCEL; _camVelocity.z -= right.z * CAM_ACCEL; }
+      if (_keysDown.has('ArrowRight') || _keysDown.has('d')) { _camVelocity.x += right.x * CAM_ACCEL; _camVelocity.y += right.y * CAM_ACCEL; _camVelocity.z += right.z * CAM_ACCEL; }
+      // Vertical: ArrowUp/Down (unchanged — moves camera up/down in Y)
       if (_keysDown.has('ArrowUp'))    { _camVelocity.y += CAM_ACCEL; }
       if (_keysDown.has('ArrowDown'))  { _camVelocity.y -= CAM_ACCEL; }
+      // Forward/back: W/S move along camera look direction in XZ plane (bd-pwaen)
+      if (_keysDown.has('w')) { _camVelocity.x += forward.x * CAM_ACCEL; _camVelocity.z += forward.z * CAM_ACCEL; }
+      if (_keysDown.has('s')) { _camVelocity.x -= forward.x * CAM_ACCEL; _camVelocity.z -= forward.z * CAM_ACCEL; }
 
       // Clamp speed
       const speed = Math.sqrt(_camVelocity.x ** 2 + _camVelocity.y ** 2 + _camVelocity.z ** 2);
@@ -2848,6 +2863,110 @@ function prevSearchResult() {
   flyToSearchResult();
 }
 
+// --- Epic cycling: Shift+S/D navigation (bd-pnngb) ---
+
+function rebuildEpicIndex() {
+  const prev = _epicNodes.map(n => n.id).join(',');
+  _epicNodes = graphData.nodes
+    .filter(n => n.issue_type === 'epic' && !n._hidden)
+    .sort((a, b) => (a.title || a.id).localeCompare(b.title || b.id));
+  const curr = _epicNodes.map(n => n.id).join(',');
+  // Reset index if the set of epics changed
+  if (prev !== curr) _epicCycleIndex = -1;
+}
+
+function cycleEpic(delta) {
+  if (_epicNodes.length === 0) return;
+  if (_epicCycleIndex < 0) {
+    _epicCycleIndex = delta > 0 ? 0 : _epicNodes.length - 1;
+  } else {
+    _epicCycleIndex = (_epicCycleIndex + delta + _epicNodes.length) % _epicNodes.length;
+  }
+  highlightEpic(_epicNodes[_epicCycleIndex]);
+}
+
+function highlightEpic(epicNode) {
+  if (!epicNode) return;
+
+  // Select the epic and fly camera to it
+  selectNode(epicNode);
+  const distance = 100;
+  const dx = epicNode.x || 0, dy = epicNode.y || 0, dz = epicNode.z || 0;
+  const distRatio = 1 + distance / (Math.hypot(dx, dy, dz) || 1);
+  graph.cameraPosition(
+    { x: dx * distRatio, y: dy * distRatio, z: dz * distRatio },
+    epicNode, 800
+  );
+
+  // Find all child/descendant node IDs via parent-child edges
+  const childIds = new Set();
+  const queue = [epicNode.id];
+  while (queue.length > 0) {
+    const parentId = queue.shift();
+    for (const l of graphData.links) {
+      if (l.dep_type !== 'parent-child') continue;
+      const srcId = typeof l.source === 'object' ? l.source.id : l.source;
+      const tgtId = typeof l.target === 'object' ? l.target.id : l.target;
+      // parent-child: source=child, target=parent (child depends on parent epic)
+      if (tgtId === parentId && !childIds.has(srcId)) {
+        childIds.add(srcId);
+        queue.push(srcId);
+      }
+    }
+  }
+
+  // Dim non-descendant nodes, emphasize descendants
+  for (const n of graphData.nodes) {
+    const obj = n.__threeObj;
+    if (!obj) continue;
+    if (n.id === epicNode.id || childIds.has(n.id)) {
+      obj.traverse(c => { if (c.material) c.material.opacity = 1.0; });
+    } else {
+      obj.traverse(c => { if (c.material) c.material.opacity = 0.15; });
+    }
+  }
+
+  // Show detail panel
+  showDetail(epicNode);
+
+  // Show HUD indicator
+  showEpicHUD(_epicCycleIndex, _epicNodes.length, epicNode.title || epicNode.id);
+}
+
+function clearEpicHighlight() {
+  _epicCycleIndex = -1;
+  restoreAllNodeOpacity();
+  hideEpicHUD();
+}
+
+let _epicHUDEl = null;
+let _epicHUDTimer = null;
+
+function showEpicHUD(index, total, title) {
+  if (!_epicHUDEl) {
+    _epicHUDEl = document.createElement('div');
+    _epicHUDEl.id = 'epic-hud';
+    document.body.appendChild(_epicHUDEl);
+  }
+  _epicHUDEl.textContent = `Epic ${index + 1}/${total}: ${title}`;
+  _epicHUDEl.style.display = 'block';
+  _epicHUDEl.style.opacity = '1';
+
+  // Auto-fade after 3 seconds of no cycling
+  clearTimeout(_epicHUDTimer);
+  _epicHUDTimer = setTimeout(() => {
+    _epicHUDEl.style.opacity = '0';
+    setTimeout(() => { if (_epicHUDEl) _epicHUDEl.style.display = 'none'; }, 400);
+  }, 3000);
+}
+
+function hideEpicHUD() {
+  clearTimeout(_epicHUDTimer);
+  if (_epicHUDEl) {
+    _epicHUDEl.style.display = 'none';
+  }
+}
+
 function updateFilterCount() {
   const visible = graphData.nodes.filter(n => !n._hidden).length;
   const total = graphData.nodes.length;
@@ -3741,6 +3860,7 @@ function setupControls() {
         applyFilters();
       }
       clearSelection();
+      clearEpicHighlight();
       hideDetail();
       hideTooltip();
       // Dismiss all doot popups (beads-799l)
@@ -3772,15 +3892,26 @@ function setupControls() {
     if (e.key === 'x' && document.activeElement !== searchInput) {
       exportGraphJSON();
     }
+    // Shift+D / Shift+S for epic cycling (bd-pnngb)
+    if (e.shiftKey && e.key === 'D' && document.activeElement !== searchInput) {
+      e.preventDefault();
+      cycleEpic(1);
+      return;
+    }
+    if (e.shiftKey && e.key === 'S' && document.activeElement !== searchInput) {
+      e.preventDefault();
+      cycleEpic(-1);
+      return;
+    }
     // 1-5 for layout modes
     const layoutKeys = { '1': 'free', '2': 'dag', '3': 'timeline', '4': 'radial', '5': 'cluster' };
     if (layoutKeys[e.key] && document.activeElement !== searchInput) {
       setLayout(layoutKeys[e.key]);
     }
 
-    // Arrow keys: track held keys for Quake-style smooth camera (bd-zab4q)
-    if (['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(e.key) &&
-        document.activeElement !== searchInput) {
+    // Arrow + WASD keys: track held keys for Quake-style smooth camera (bd-zab4q, bd-pwaen)
+    if (['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'w', 'a', 's', 'd'].includes(e.key) &&
+        !e.shiftKey && document.activeElement !== searchInput) {
       e.preventDefault();
       _keysDown.add(e.key);
     }
@@ -3877,6 +4008,7 @@ async function refresh() {
 
   graphData = { nodes: mergedNodes, links: data.links };
   applyFilters();
+  rebuildEpicIndex();
 
   if (structureChanged) {
     // graph.graphData() reheats d3-force to alpha=1, which scatters positioned nodes.
