@@ -949,13 +949,18 @@ async function fetchGraphData() {
 }
 
 async function fetchViaGraph(statusEl) {
-  const result = await api.graph({
+  // Include closed issues so age filter can work; server-side max_age_days
+  // limits the query to recently-updated closed beads only (bd-uc0mw).
+  const graphArgs = {
     limit: MAX_NODES,
+    status: ['open', 'in_progress', 'closed'],
+    max_age_days: activeAgeDays || 0,
     include_deps: true,
     include_body: true,
     include_agents: true,
     exclude_types: ['message', 'config', 'gate', 'wisp', 'convoy', 'molecule'], // bd-04wet, bd-t25i1: filter noise types
-  });
+  };
+  const result = await api.graph(graphArgs);
 
   let nodes = (result.nodes || []).map(n => ({
     id: n.id,
@@ -2465,13 +2470,17 @@ function setupControls() {
     });
   });
 
-  // Age filter (bd-uc0mw): radio-style — only one active at a time
+  // Age filter (bd-uc0mw): radio-style — only one active at a time.
+  // Triggers a full re-fetch because the server uses max_age_days to limit
+  // which closed issues are returned (avoids pulling thousands of stale beads).
   document.querySelectorAll('.filter-age').forEach(btn => {
     btn.addEventListener('click', () => {
+      const newDays = parseInt(btn.dataset.days, 10);
+      if (newDays === activeAgeDays) return; // no change
       document.querySelectorAll('.filter-age').forEach(b => b.classList.remove('active'));
       btn.classList.add('active');
-      activeAgeDays = parseInt(btn.dataset.days, 10);
-      applyFilters();
+      activeAgeDays = newDays;
+      refresh(); // re-fetch with new age cutoff (bd-uc0mw)
     });
   });
 

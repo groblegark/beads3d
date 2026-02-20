@@ -1173,4 +1173,46 @@ test.describe('filter buttons', () => {
     }
     expect(visible.length).toBeGreaterThan(0);
   });
+
+  test('age filter hides old closed beads but rescues connected ones', async ({ page }) => {
+    const tracker = createAPITracker();
+    await mockAPI(page, tracker);
+    await page.goto('/');
+    await waitForGraph(page);
+
+    // Default age filter is 7d — old closed beads (bd-old1, bd-old2) should be handled
+    // bd-old1: disconnected old closed → should be hidden
+    // bd-old2: connected to bd-task3 (active) → should be rescued (visible)
+    await page.waitForTimeout(500);
+
+    const result = await page.evaluate(() => {
+      const b = window.__beads3d;
+      if (!b) return null;
+      const nodes = b.graphData().nodes;
+      const old1 = nodes.find(n => n.id === 'bd-old1');
+      const old2 = nodes.find(n => n.id === 'bd-old2');
+      return {
+        old1Hidden: old1 ? old1._hidden : null,
+        old2Hidden: old2 ? old2._hidden : null,
+      };
+    });
+
+    expect(result).not.toBeNull();
+    expect(result.old1Hidden).toBe(true);   // disconnected old closed = hidden
+    expect(result.old2Hidden).toBe(false);  // connected to active node = rescued
+
+    // Click "all" to show everything
+    await page.locator('.filter-age[data-days="0"]').click();
+    await page.waitForTimeout(300);
+
+    const afterAll = await page.evaluate(() => {
+      const b = window.__beads3d;
+      if (!b) return null;
+      const nodes = b.graphData().nodes;
+      const old1 = nodes.find(n => n.id === 'bd-old1');
+      return { old1Hidden: old1 ? old1._hidden : null };
+    });
+
+    expect(afterAll.old1Hidden).toBe(false);  // "all" shows everything
+  });
 });
