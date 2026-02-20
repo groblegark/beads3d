@@ -971,7 +971,7 @@ async function fetchViaGraph(statusEl) {
     include_deps: true,
     include_body: true,
     include_agents: true,
-    exclude_types: ['message', 'config', 'gate', 'wisp', 'convoy', 'molecule'], // bd-04wet, bd-t25i1: filter noise types
+    exclude_types: ['message', 'config', 'gate', 'wisp', 'convoy', 'molecule', 'formula', 'advice', 'role'], // bd-04wet, bd-t25i1, bd-uqkpq: filter noise types
   };
   const result = await api.graph(graphArgs);
 
@@ -982,17 +982,26 @@ async function fetchViaGraph(statusEl) {
   }));
 
   // Graph API edges: { source, target, type } → links: { source, target, dep_type }
-  // For parent-child edges, create ghost placeholder nodes when the parent is missing
-  // so DAG links remain visible even if the parent was filtered/closed. (bd-uqkpq)
+  // Promote "blocks" edges where target is an epic to "parent-child" so they render
+  // with the chain glyph instead of the shield. Most epics use "blocks" deps rather
+  // than explicit "parent-child" deps. (bd-uqkpq)
   const nodeIds = new Set(nodes.map(n => n.id));
+  const nodeMap = Object.fromEntries(nodes.map(n => [n.id, n]));
   const links = [];
   for (const e of (result.edges || [])) {
     const hasSrc = nodeIds.has(e.source);
     const hasTgt = nodeIds.has(e.target);
+    let depType = e.type || 'blocks';
+
+    // Promote blocks edges to parent-child when target is an epic (bd-uqkpq)
+    if (depType === 'blocks' && hasTgt && nodeMap[e.target]?.issue_type === 'epic') {
+      depType = 'parent-child';
+    }
+
     if (hasSrc && hasTgt) {
-      links.push({ source: e.source, target: e.target, dep_type: e.type || 'blocks' });
-    } else if (e.type === 'parent-child' && (hasSrc || hasTgt)) {
-      // Create ghost node for the missing endpoint
+      links.push({ source: e.source, target: e.target, dep_type: depType });
+    } else if (depType === 'parent-child' && (hasSrc || hasTgt)) {
+      // Create ghost node for the missing endpoint so DAG links remain visible
       const missingId = hasSrc ? e.target : e.source;
       if (!nodeIds.has(missingId)) {
         nodes.push({
@@ -1000,6 +1009,7 @@ async function fetchViaGraph(statusEl) {
           issue_type: 'epic', _placeholder: true, _blocked: false,
         });
         nodeIds.add(missingId);
+        nodeMap[missingId] = nodes[nodes.length - 1];
       }
       links.push({ source: e.source, target: e.target, dep_type: 'parent-child' });
     }
@@ -1020,7 +1030,7 @@ async function fetchViaGraph(statusEl) {
 }
 
 async function fetchViaList(statusEl) {
-  const SKIP_TYPES = new Set(['message', 'config', 'gate', 'wisp', 'convoy', 'decision', 'molecule']);
+  const SKIP_TYPES = new Set(['message', 'config', 'gate', 'wisp', 'convoy', 'decision', 'molecule', 'formula', 'advice', 'role']);
 
   // Parallel fetch: open/in_progress beads + blocked + stats
   const [openIssues, inProgress, blocked, stats] = await Promise.all([
@@ -1207,15 +1217,78 @@ function handleNodeClick(node) {
 
   selectNode(node);
 
-  // Fly camera to node
-  const distance = 80;
-  const distRatio = 1 + distance / Math.hypot(node.x, node.y, node.z);
-  graph.cameraPosition(
-    { x: node.x * distRatio, y: node.y * distRatio, z: node.z * distRatio },
-    node, 1000
-  );
+  // Find the connected DAG subgraph and zoom to fit it (bd-tr0en)
+  const component = getConnectedComponent(node.id);
+  zoomToNodes(component);
 
   showDetail(node);
+}
+
+// BFS to find the full connected component (both directions) for a node (bd-tr0en)
+function getConnectedComponent(startId) {
+  const visited = new Set();
+  const queue = [startId];
+  while (queue.length > 0) {
+    const current = queue.shift();
+    if (visited.has(current)) continue;
+    visited.add(current);
+    for (const l of graphData.links) {
+      const srcId = typeof l.source === 'object' ? l.source.id : l.source;
+      const tgtId = typeof l.target === 'object' ? l.target.id : l.target;
+      if (srcId === current && !visited.has(tgtId)) queue.push(tgtId);
+      if (tgtId === current && !visited.has(srcId)) queue.push(srcId);
+    }
+  }
+  return visited;
+}
+
+// Fly camera to fit a set of node IDs with padding (bd-tr0en)
+function zoomToNodes(nodeIds) {
+  let cx = 0, cy = 0, cz = 0, count = 0;
+  for (const node of graphData.nodes) {
+    if (!nodeIds.has(node.id)) continue;
+    cx += (node.x || 0);
+    cy += (node.y || 0);
+    cz += (node.z || 0);
+    count++;
+  }
+  if (count === 0) return;
+  cx /= count; cy /= count; cz /= count;
+
+  // For single-node components, use the original close-up zoom
+  if (count === 1) {
+    const distance = 80;
+    const distRatio = 1 + distance / Math.hypot(cx, cy, cz);
+    graph.cameraPosition(
+      { x: cx * distRatio, y: cy * distRatio, z: cz * distRatio },
+      { x: cx, y: cy, z: cz }, 1000
+    );
+    return;
+  }
+
+  // Calculate radius (max distance from center)
+  let maxDist = 0;
+  for (const node of graphData.nodes) {
+    if (!nodeIds.has(node.id)) continue;
+    const dx = (node.x || 0) - cx;
+    const dy = (node.y || 0) - cy;
+    const dz = (node.z || 0) - cz;
+    const d = Math.sqrt(dx * dx + dy * dy + dz * dz);
+    if (d > maxDist) maxDist = d;
+  }
+
+  const distance = Math.max(maxDist * 2.5, 80);
+  const lookAt = { x: cx, y: cy, z: cz };
+  const cam = graph.camera();
+  const dir = new THREE.Vector3(
+    cam.position.x - cx, cam.position.y - cy, cam.position.z - cz
+  ).normalize();
+  const camPos = {
+    x: cx + dir.x * distance,
+    y: cy + dir.y * distance,
+    z: cz + dir.z * distance,
+  };
+  graph.cameraPosition(camPos, lookAt, 1000);
 }
 
 async function showDetail(node) {
