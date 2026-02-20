@@ -19,9 +19,11 @@ tasks:
 
   # ── Node.js toolchain ─────────────────────────────────────────────────
   - key: node
-    call: node/install 1.1.0
-    with:
-      node-version: "22"
+    run: |
+      curl -fsSL https://deb.nodesource.com/setup_22.x | sudo bash -
+      sudo apt-get -y install --no-install-recommends nodejs
+      node --version
+      npm --version
 
   # ── Install dependencies (cached by lockfile) ─────────────────────────
   - key: deps
