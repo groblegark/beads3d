@@ -16,6 +16,9 @@ export const MOCK_GRAPH = {
     { id: 'bd-bug2', title: 'Memory leak in event bus', status: 'open', priority: 0, issue_type: 'bug', assignee: 'alice', created_at: '2026-02-18T20:00:00Z', updated_at: '2026-02-19T10:00:00Z', labels: ['critical'], dep_count: 0, dep_by_count: 0, blocked_by: [] },
     { id: 'bd-task5', title: 'Refactor config loader', status: 'open', priority: 3, issue_type: 'task', assignee: 'bob', created_at: '2026-02-16T12:00:00Z', updated_at: '2026-02-19T06:00:00Z', labels: [], dep_count: 0, dep_by_count: 0, blocked_by: [] },
     { id: 'bd-feat3', title: 'WebSocket event streaming', status: 'open', priority: 2, issue_type: 'feature', assignee: 'charlie', created_at: '2026-02-13T15:00:00Z', updated_at: '2026-02-19T11:00:00Z', labels: ['api', 'realtime'], dep_count: 0, dep_by_count: 0, blocked_by: [] },
+    // Agent nodes (synthetic — added by Graph API when include_agents=true)
+    { id: 'agent:alice', title: 'alice', status: 'open', priority: 2, issue_type: 'agent', assignee: '', created_at: '2026-02-19T00:00:00Z', updated_at: '2026-02-19T12:00:00Z', labels: [], dep_count: 0, dep_by_count: 0, blocked_by: [] },
+    { id: 'agent:bob', title: 'bob', status: 'open', priority: 2, issue_type: 'agent', assignee: '', created_at: '2026-02-19T00:00:00Z', updated_at: '2026-02-19T12:00:00Z', labels: [], dep_count: 0, dep_by_count: 0, blocked_by: [] },
   ],
   edges: [
     { source: 'bd-epic1', target: 'bd-feat1', type: 'parent-child' },
@@ -28,6 +31,11 @@ export const MOCK_GRAPH = {
     { source: 'bd-feat1', target: 'bd-bug1', type: 'relates-to' },
     { source: 'bd-epic1', target: 'bd-task2', type: 'parent-child' },
     { source: 'bd-feat3', target: 'bd-epic2', type: 'waits-for' },
+    // Agent assignment edges
+    { source: 'agent:alice', target: 'bd-feat1', type: 'assigned_to' },
+    { source: 'agent:alice', target: 'bd-bug2', type: 'assigned_to' },
+    { source: 'agent:bob', target: 'bd-task1', type: 'assigned_to' },
+    { source: 'agent:bob', target: 'bd-task2', type: 'assigned_to' },
   ],
   stats: {
     total_open: 8,
