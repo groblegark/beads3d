@@ -3357,6 +3357,8 @@ function setupControls() {
       clearSelection();
       hideDetail();
       hideTooltip();
+      // Dismiss all doot popups (beads-799l)
+      for (const [id] of dootPopups) dismissDootPopup(id);
     }
     // 'r' to refresh
     if (e.key === 'r' && document.activeElement !== searchInput) {
