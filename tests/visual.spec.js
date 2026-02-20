@@ -332,4 +332,136 @@ test.describe('beads3d visual tests', () => {
       animations: 'disabled',
     });
   });
+
+  test('click selection dims non-connected nodes but keeps them visible', async ({ page }) => {
+    await mockAPI(page);
+    await page.goto('/');
+    await waitForGraphReady(page);
+
+    // Click a known node by flying camera to it first, then clicking center
+    await page.evaluate(() => {
+      const b = window.__beads3d;
+      if (!b || !b.graph) return;
+      const nodes = b.graph.graphData().nodes;
+      const target = nodes.find(n => n.id === 'bd-feat1');
+      if (!target || target.x === undefined) return;
+      // Simulate node click via the graph's onNodeClick handler
+      b.graph.onNodeClick()(target, { preventDefault: () => {} });
+    });
+    await page.waitForTimeout(1500);
+    await forceRender(page);
+
+    // Verify that non-connected nodes are dimmed (opacity reduced) but NOT invisible
+    const opacityInfo = await page.evaluate(() => {
+      const b = window.__beads3d;
+      if (!b || !b.graph) return null;
+      const nodes = b.graph.graphData().nodes;
+      const results = {};
+      for (const node of nodes) {
+        const obj = node.__threeObj;
+        if (!obj) continue;
+        let minOpacity = 1;
+        obj.traverse(child => {
+          if (child.material && !child.userData.selectionRing && !child.userData.pulse) {
+            const op = child.material.uniforms?.opacity?.value ?? child.material.opacity;
+            if (op < minOpacity) minOpacity = op;
+          }
+        });
+        results[node.id] = { dimmed: node._wasDimmed || false, minOpacity: Math.round(minOpacity * 100) / 100 };
+      }
+      return results;
+    });
+
+    // bd-feat1 is selected, bd-task1 and bd-bug1 are connected — these should NOT be dimmed
+    // bd-task5, bd-feat3 etc are unconnected — they should be dimmed but > 0
+    expect(opacityInfo).not.toBeNull();
+    if (opacityInfo) {
+      // Selected/connected nodes should be at full opacity
+      expect(opacityInfo['bd-feat1']?.dimmed).toBeFalsy();
+      // At least one unconnected node should be dimmed but still visible (opacity > 0)
+      const dimmedNodes = Object.entries(opacityInfo).filter(([, v]) => v.dimmed);
+      expect(dimmedNodes.length).toBeGreaterThan(0);
+      for (const [, v] of dimmedNodes) {
+        expect(v.minOpacity).toBeGreaterThan(0);
+      }
+    }
+
+    await expect(page).toHaveScreenshot('selection-dimmed-nodes.png', {
+      animations: 'disabled',
+    });
+  });
+
+  test('clicking background restores all nodes to full opacity', async ({ page }) => {
+    await mockAPI(page);
+    await page.goto('/');
+    await waitForGraphReady(page);
+
+    // Take a "before" screenshot for baseline comparison
+    await forceRender(page);
+
+    // Select a node to dim others
+    await page.evaluate(() => {
+      const b = window.__beads3d;
+      if (!b || !b.graph) return;
+      const target = b.graph.graphData().nodes.find(n => n.id === 'bd-feat1');
+      if (target) b.graph.onNodeClick()(target, { preventDefault: () => {} });
+    });
+    await page.waitForTimeout(1000);
+    await forceRender(page);
+
+    // Verify some nodes are dimmed
+    const dimmedBefore = await page.evaluate(() => {
+      const b = window.__beads3d;
+      if (!b) return 0;
+      return b.graph.graphData().nodes.filter(n => n._wasDimmed).length;
+    });
+    expect(dimmedBefore).toBeGreaterThan(0);
+
+    // Click background to clear selection
+    await page.evaluate(() => {
+      const b = window.__beads3d;
+      if (!b || !b.graph) return;
+      // Trigger background click handler
+      b.graph.onBackgroundClick()();
+    });
+    await page.waitForTimeout(500);
+    await forceRender(page);
+
+    // Verify NO nodes are still dimmed
+    const dimmedAfter = await page.evaluate(() => {
+      const b = window.__beads3d;
+      if (!b) return -1;
+      return b.graph.graphData().nodes.filter(n => n._wasDimmed).length;
+    });
+    expect(dimmedAfter).toBe(0);
+
+    // Verify all non-special materials are back to their base opacity
+    const allRestored = await page.evaluate(() => {
+      const b = window.__beads3d;
+      if (!b) return false;
+      for (const node of b.graph.graphData().nodes) {
+        const obj = node.__threeObj;
+        if (!obj) continue;
+        let ok = true;
+        obj.traverse(child => {
+          if (!child.material || child.userData.selectionRing || child.userData.pulse) return;
+          const mat = child.material;
+          if (mat._baseOpacity !== undefined && Math.abs(mat.opacity - mat._baseOpacity) > 0.01) {
+            ok = false;
+          }
+          if (mat._baseUniformOpacity !== undefined && mat.uniforms?.opacity &&
+              Math.abs(mat.uniforms.opacity.value - mat._baseUniformOpacity) > 0.01) {
+            ok = false;
+          }
+        });
+        if (!ok) return false;
+      }
+      return true;
+    });
+    expect(allRestored).toBe(true);
+
+    await expect(page).toHaveScreenshot('selection-cleared-restored.png', {
+      animations: 'disabled',
+    });
+  });
 });

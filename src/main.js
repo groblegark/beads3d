@@ -513,8 +513,52 @@ function clearSelection() {
   selectedNode = null;
   highlightNodes.clear();
   highlightLinks.clear();
+  restoreAllNodeOpacity();
   // Force link width recalculation
   graph.linkWidth(graph.linkWidth());
+}
+
+// --- Node opacity helpers ---
+
+// Save the original opacity on a material (first time only)
+function saveBaseOpacity(mat) {
+  if (mat.uniforms && mat.uniforms.opacity) {
+    if (mat._baseUniformOpacity === undefined) mat._baseUniformOpacity = mat.uniforms.opacity.value;
+  } else if (!mat.uniforms) {
+    if (mat._baseOpacity === undefined) mat._baseOpacity = mat.opacity;
+  }
+}
+
+// Set material opacity to base * factor
+function setMaterialDim(mat, factor) {
+  if (mat.uniforms && mat.uniforms.opacity) {
+    mat.uniforms.opacity.value = (mat._baseUniformOpacity ?? 0.4) * factor;
+  } else if (!mat.uniforms) {
+    mat.opacity = (mat._baseOpacity ?? mat.opacity) * factor;
+  }
+}
+
+// Restore material to saved base opacity
+function restoreMaterialOpacity(mat) {
+  if (mat.uniforms && mat.uniforms.opacity && mat._baseUniformOpacity !== undefined) {
+    mat.uniforms.opacity.value = mat._baseUniformOpacity;
+  } else if (!mat.uniforms && mat._baseOpacity !== undefined) {
+    mat.opacity = mat._baseOpacity;
+  }
+}
+
+// Restore all nodes that were dimmed during selection
+function restoreAllNodeOpacity() {
+  for (const node of graphData.nodes) {
+    if (!node._wasDimmed) continue;
+    const threeObj = node.__threeObj;
+    if (!threeObj) continue;
+    threeObj.traverse(child => {
+      if (!child.material || child.userData.selectionRing || child.userData.pulse) return;
+      restoreMaterialOpacity(child.material);
+    });
+    node._wasDimmed = false;
+  }
 }
 
 // --- Animation loop: pulsing effects + selection dimming ---
@@ -547,16 +591,18 @@ function startAnimation() {
 
       const isHighlighted = !hasSelection || highlightNodes.has(node.id);
       const isSelected = hasSelection && node.id === selectedNode.id;
-      const dimFactor = isHighlighted ? 1.0 : 0.15;
+      const dimFactor = isHighlighted ? 1.0 : 0.35;
 
-      // Skip expensive traversal if no selection and not in_progress
+      // Skip traversal when nothing to update
       if (!hasSelection && node.status !== 'in_progress') continue;
+
+      // Track dimmed nodes for restoration in clearSelection()
+      if (hasSelection && !isHighlighted) node._wasDimmed = true;
 
       threeObj.traverse(child => {
         if (!child.material) return;
 
         if (child.userData.selectionRing) {
-          // Selection ring: toggle visibility via uniform, rotate when selected
           if (child.material.uniforms && child.material.uniforms.visible) {
             child.material.uniforms.visible.value = isSelected ? 1.0 : 0.0;
           } else {
@@ -567,20 +613,13 @@ function startAnimation() {
             child.rotation.y = t * 0.8;
           }
         } else if (child.userData.pulse) {
-          // Pulse ring: shader handles pulse via time uniform (set by updateShaderTime).
-          // Just drive rotation here. For non-shader fallback, animate opacity directly.
           child.rotation.z = t * 0.5;
           if (!child.material.uniforms) {
             child.material.opacity = (0.3 + Math.sin(t * 3) * 0.2) * dimFactor;
           }
         } else if (hasSelection) {
-          // Dim/undim non-highlighted nodes when selection is active
-          if (child.material.uniforms && child.material.uniforms.opacity) {
-            child.material.uniforms.opacity.value = 0.4 * dimFactor;
-          } else if (!child.material.uniforms) {
-            const baseOpacity = child.material.wireframe ? 0.15 : (child.material.opacity > 0.5 ? 0.85 : 0.12);
-            child.material.opacity = baseOpacity * dimFactor;
-          }
+          saveBaseOpacity(child.material);
+          setMaterialDim(child.material, dimFactor);
         }
       });
     }
