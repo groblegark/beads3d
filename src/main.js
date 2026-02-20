@@ -193,6 +193,9 @@ const doots = []; // { sprite, node, birth, lifetime, vx, vy, vz }
 // Doot-triggered issue popups — auto-dismissing cards when doots fire (beads-edy1)
 const dootPopups = new Map(); // nodeId → { el, timer, node, lastDoot }
 
+// Agent activity feed windows — rich session transcript popups (bd-kau4k)
+const agentWindows = new Map(); // agentId → { el, feedEl, node, entries, pendingTool, collapsed }
+
 // --- Minimap ---
 const minimapCanvas = document.getElementById('minimap');
 const minimapCtx = minimapCanvas.getContext('2d');
@@ -1587,23 +1590,12 @@ async function showDetail(node) {
   // Animate open
   requestAnimationFrame(() => panel.classList.add('open'));
 
-  // Lazy-load full details via Show (skip for synthetic agent nodes — beads-zq8a)
+  // Agent nodes: open activity feed window instead of detail panel (bd-kau4k)
   if (node.issue_type === 'agent' && node.id.startsWith('agent:')) {
-    const body = panel.querySelector('.detail-body');
-    if (body) {
-      body.classList.remove('loading');
-      const assigned = graphData.links
-        .filter(l => l.dep_type === 'assigned_to' &&
-          (typeof l.source === 'object' ? l.source.id : l.source) === node.id)
-        .map(l => {
-          const tgtId = typeof l.target === 'object' ? l.target.id : l.target;
-          const tgtNode = graphData.nodes.find(n => n.id === tgtId);
-          return tgtNode ? `<div class="dep-link">${escapeHtml(tgtId)}: ${escapeHtml(tgtNode.title || tgtId)}</div>` : '';
-        })
-        .filter(Boolean)
-        .join('');
-      body.innerHTML = assigned ? `<div class="section-label">Working on:</div>${assigned}` : '<em>No active assignments</em>';
-    }
+    // Remove the detail panel we just created — agent windows live in the bottom tray
+    closeDetailPanel(node.id);
+    showAgentWindow(node);
+    return;
   } else {
     try {
       const full = await api.show(node.id);
@@ -3384,6 +3376,8 @@ function setupControls() {
       hideTooltip();
       // Dismiss all doot popups (beads-799l)
       for (const [id] of dootPopups) dismissDootPopup(id);
+      // Close all agent windows (bd-kau4k)
+      for (const [id] of agentWindows) closeAgentWindow(id);
     }
     // 'r' to refresh
     if (e.key === 'r' && document.activeElement !== searchInput) {
@@ -3858,6 +3852,231 @@ function createDootPopupContainer() {
   return c;
 }
 
+// --- Agent activity feed windows (bd-kau4k) ---
+
+const TOOL_ICONS = {
+  Read: 'R', Edit: 'E', Bash: '$', Grep: '?', Write: 'W', Task: 'T',
+  Glob: 'G', WebFetch: 'F', WebSearch: 'S', NotebookEdit: 'N',
+};
+
+function showAgentWindow(node) {
+  if (!node || !node.id) return;
+
+  // Toggle: if already open, collapse/expand
+  const existing = agentWindows.get(node.id);
+  if (existing) {
+    existing.collapsed = !existing.collapsed;
+    existing.el.classList.toggle('collapsed', existing.collapsed);
+    return;
+  }
+
+  const container = document.getElementById('agent-windows');
+  if (!container) return;
+
+  const el = document.createElement('div');
+  el.className = 'agent-window';
+  el.dataset.agentId = node.id;
+
+  const agentName = node.title || node.id.replace('agent:', '');
+
+  // Find assigned beads
+  const assigned = graphData.links
+    .filter(l => l.dep_type === 'assigned_to' &&
+      (typeof l.source === 'object' ? l.source.id : l.source) === node.id)
+    .map(l => {
+      const tgtId = typeof l.target === 'object' ? l.target.id : l.target;
+      const tgtNode = graphData.nodes.find(n => n.id === tgtId);
+      return tgtNode ? { id: tgtId, title: tgtNode.title || tgtId } : null;
+    })
+    .filter(Boolean);
+
+  const beadsList = assigned
+    .map(b => `<div class="agent-window-bead" title="${escapeHtml(b.id)}: ${escapeHtml(b.title)}">${escapeHtml(b.id.replace(/^[a-z]+-/, ''))}: ${escapeHtml(b.title)}</div>`)
+    .join('');
+
+  el.innerHTML = `
+    <div class="agent-window-header">
+      <span class="agent-window-name">${escapeHtml(agentName)}</span>
+      <span class="agent-window-badge">${assigned.length}</span>
+      <button class="agent-window-close">&times;</button>
+    </div>
+    ${beadsList ? `<div class="agent-window-beads">${beadsList}</div>` : ''}
+    <div class="agent-feed"><div class="agent-window-empty">waiting for events...</div></div>
+  `;
+
+  const header = el.querySelector('.agent-window-header');
+  header.onclick = (e) => {
+    if (e.target.classList.contains('agent-window-close')) return;
+    const win = agentWindows.get(node.id);
+    if (win) {
+      win.collapsed = !win.collapsed;
+      el.classList.toggle('collapsed', win.collapsed);
+    }
+  };
+
+  el.querySelector('.agent-window-close').onclick = () => closeAgentWindow(node.id);
+
+  container.appendChild(el);
+
+  const feedEl = el.querySelector('.agent-feed');
+  agentWindows.set(node.id, {
+    el, feedEl, node,
+    entries: [],
+    pendingTool: null,
+    collapsed: false,
+  });
+}
+
+function closeAgentWindow(agentId) {
+  const win = agentWindows.get(agentId);
+  if (!win) return;
+  win.el.remove();
+  agentWindows.delete(agentId);
+}
+
+function appendAgentEvent(agentId, evt) {
+  const win = agentWindows.get(agentId);
+  if (!win) return;
+
+  // Clear the empty placeholder
+  const empty = win.feedEl.querySelector('.agent-window-empty');
+  if (empty) empty.remove();
+
+  const type = evt.type;
+  const p = evt.payload || {};
+  const ts = evt.ts ? new Date(evt.ts) : new Date();
+  const timeStr = ts.toTimeString().slice(0, 8); // HH:MM:SS
+
+  // Handle PreToolUse / PostToolUse pairing
+  if (type === 'PreToolUse') {
+    const toolName = p.tool_name || 'tool';
+    const icon = TOOL_ICONS[toolName] || '·';
+    const toolClass = `tool-${toolName.toLowerCase()}`;
+    const label = formatToolLabel(p);
+
+    const entry = createEntry(timeStr, icon, label, toolClass + ' running');
+    win.feedEl.appendChild(entry);
+    win.entries.push(entry);
+    win.pendingTool = { toolName, startTs: ts.getTime(), entry };
+    autoScroll(win);
+    return;
+  }
+
+  if (type === 'PostToolUse') {
+    if (win.pendingTool) {
+      const dur = (ts.getTime() - win.pendingTool.startTs) / 1000;
+      win.pendingTool.entry.classList.remove('running');
+      const durEl = win.pendingTool.entry.querySelector('.agent-entry-dur');
+      if (durEl && dur > 0.1) durEl.textContent = `${dur.toFixed(1)}s`;
+      const iconEl = win.pendingTool.entry.querySelector('.agent-entry-icon');
+      if (iconEl) iconEl.textContent = '✓';
+      win.pendingTool = null;
+    }
+    return; // Don't add a separate row
+  }
+
+  // Lifecycle events
+  if (type === 'AgentStarted') {
+    win.feedEl.appendChild(createEntry(timeStr, '●', 'started', 'lifecycle lifecycle-started'));
+  } else if (type === 'AgentIdle') {
+    win.feedEl.appendChild(createEntry(timeStr, '◌', 'idle', 'lifecycle lifecycle-idle'));
+  } else if (type === 'AgentCrashed') {
+    win.feedEl.appendChild(createEntry(timeStr, '✕', 'crashed!', 'lifecycle lifecycle-crashed'));
+  } else if (type === 'AgentStopped') {
+    win.feedEl.appendChild(createEntry(timeStr, '○', 'stopped', 'lifecycle lifecycle-stopped'));
+  } else if (type === 'SessionStart') {
+    win.feedEl.appendChild(createEntry(timeStr, '▸', 'session start', 'lifecycle'));
+  }
+  // Mutation events
+  else if (type === 'MutationCreate') {
+    const title = p.title || 'new bead';
+    win.feedEl.appendChild(createEntry(timeStr, '+', `new: ${title}`, 'mutation'));
+  } else if (type === 'MutationClose') {
+    const issueId = p.issue_id || '';
+    win.feedEl.appendChild(createEntry(timeStr, '✓', `closed ${issueId}`, 'mutation mutation-close'));
+  } else if (type === 'MutationStatus') {
+    const status = p.new_status || 'updated';
+    win.feedEl.appendChild(createEntry(timeStr, '~', status, 'mutation'));
+  } else if (type === 'MutationUpdate') {
+    // Skip most updates (too noisy), but show assignee claims
+    if (p.assignee) {
+      win.feedEl.appendChild(createEntry(timeStr, '→', `claimed by ${p.assignee}`, 'mutation'));
+    }
+    return;
+  }
+  // OJ events
+  else if (type === 'OjJobCreated') {
+    win.feedEl.appendChild(createEntry(timeStr, '⚙', 'job created', 'lifecycle'));
+  } else if (type === 'OjJobCompleted') {
+    win.feedEl.appendChild(createEntry(timeStr, '✓', 'job done', 'lifecycle lifecycle-started'));
+  } else if (type === 'OjJobFailed') {
+    win.feedEl.appendChild(createEntry(timeStr, '✕', 'job failed!', 'lifecycle lifecycle-crashed'));
+  }
+  // Skip other event types silently
+  else {
+    return;
+  }
+
+  autoScroll(win);
+}
+
+function formatToolLabel(payload) {
+  const toolName = payload.tool_name || 'tool';
+  const input = payload.tool_input || {};
+  if (toolName === 'Bash' && input.command) {
+    const cmd = input.command.length > 40 ? input.command.slice(0, 40) + '…' : input.command;
+    return cmd;
+  }
+  if (toolName === 'Read' && input.file_path) {
+    return `read ${input.file_path.split('/').pop()}`;
+  }
+  if (toolName === 'Edit' && input.file_path) {
+    return `edit ${input.file_path.split('/').pop()}`;
+  }
+  if (toolName === 'Write' && input.file_path) {
+    return `write ${input.file_path.split('/').pop()}`;
+  }
+  if (toolName === 'Grep' && input.pattern) {
+    return `grep ${input.pattern.length > 30 ? input.pattern.slice(0, 30) + '…' : input.pattern}`;
+  }
+  if (toolName === 'Task' && input.description) {
+    return `task: ${input.description.length > 30 ? input.description.slice(0, 30) + '…' : input.description}`;
+  }
+  return toolName.toLowerCase();
+}
+
+function createEntry(time, icon, text, classes) {
+  const el = document.createElement('div');
+  el.className = `agent-entry ${classes}`;
+  el.innerHTML = `
+    <span class="agent-entry-time">${escapeHtml(time)}</span>
+    <span class="agent-entry-icon">${escapeHtml(icon)}</span>
+    <span class="agent-entry-text">${escapeHtml(text)}</span>
+    <span class="agent-entry-dur"></span>
+  `;
+  return el;
+}
+
+function autoScroll(win) {
+  const feed = win.feedEl;
+  // Only auto-scroll if user hasn't scrolled up
+  const isNearBottom = feed.scrollTop + feed.clientHeight >= feed.scrollHeight - 30;
+  if (isNearBottom || win.entries.length <= 1) {
+    requestAnimationFrame(() => { feed.scrollTop = feed.scrollHeight; });
+  }
+}
+
+// Map a bus event to the agent window ID it belongs to (bd-kau4k)
+function resolveAgentId(evt) {
+  const p = evt.payload || {};
+  const actor = p.actor;
+  if (!actor) return null;
+  // Check for an agent node with this actor name
+  const agentNodeId = `agent:${actor}`;
+  if (agentWindows.has(agentNodeId)) return agentNodeId;
+  return null;
+}
+
 function connectBusStream() {
   try {
     let _dootDrops = 0;
@@ -3875,6 +4094,12 @@ function connectBusStream() {
       }
 
       spawnDoot(node, label, dootColor(evt));
+
+      // Feed agent activity windows (bd-kau4k)
+      const agentId = resolveAgentId(evt);
+      if (agentId && agentWindows.has(agentId)) {
+        appendAgentEvent(agentId, evt);
+      }
     });
   } catch { /* SSE not available — degrade gracefully */ }
 }
@@ -3913,6 +4138,11 @@ async function main() {
     window.__beads3d_showDootPopup = showDootPopup;
     window.__beads3d_dismissDootPopup = dismissDootPopup;
     window.__beads3d_dootPopups = () => dootPopups;
+    // Expose agent window internals for testing (bd-kau4k)
+    window.__beads3d_showAgentWindow = showAgentWindow;
+    window.__beads3d_closeAgentWindow = closeAgentWindow;
+    window.__beads3d_appendAgentEvent = appendAgentEvent;
+    window.__beads3d_agentWindows = () => agentWindows;
 
     // Cleanup on page unload (bd-7n4g8): close SSE, clear intervals
     window.addEventListener('beforeunload', () => {

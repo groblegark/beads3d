@@ -633,3 +633,279 @@ test.describe('Fixture validation: MOCK_MULTI_AGENT_GRAPH structure', () => {
   });
 
 });
+
+// --- Agent activity feed window tests (bd-kau4k) ---
+
+test.describe('Agent activity feed windows', () => {
+
+  // Helper: open an agent window by calling showAgentWindow
+  async function openWindow(page, agentTitle) {
+    return page.evaluate((title) => {
+      const showWin = window.__beads3d_showAgentWindow;
+      if (!showWin) return { ok: false, reason: 'not exposed' };
+      const nodes = window.__beads3d.graphData().nodes;
+      const agent = nodes.find(n => n.issue_type === 'agent' && n.title === title);
+      if (!agent) return { ok: false, reason: `no agent: ${title}` };
+      showWin(agent);
+      return { ok: true, id: agent.id };
+    }, agentTitle);
+  }
+
+  // Helper: get number of open agent windows
+  async function getWindowCount(page) {
+    return page.evaluate(() => {
+      const fn = window.__beads3d_agentWindows;
+      return fn ? fn().size : -1;
+    });
+  }
+
+  // Helper: get DOM window count
+  async function getDomWindowCount(page) {
+    return page.evaluate(() => {
+      const container = document.getElementById('agent-windows');
+      return container ? container.querySelectorAll('.agent-window').length : 0;
+    });
+  }
+
+  // Helper: get feed entry count for an agent window
+  async function getFeedEntryCount(page, agentTitle) {
+    return page.evaluate((title) => {
+      const container = document.getElementById('agent-windows');
+      if (!container) return -1;
+      const win = container.querySelector(`.agent-window[data-agent-id="agent:${title}"]`);
+      if (!win) return -1;
+      return win.querySelectorAll('.agent-entry').length;
+    }, agentTitle);
+  }
+
+  // Helper: inject an event into an agent's window
+  async function injectEvent(page, agentId, evt) {
+    return page.evaluate(({ agentId, evt }) => {
+      const fn = window.__beads3d_appendAgentEvent;
+      if (!fn) return false;
+      fn(agentId, evt);
+      return true;
+    }, { agentId, evt });
+  }
+
+  test('clicking agent node opens activity feed window', async ({ page }) => {
+    await mockAPI(page);
+    await page.goto('/');
+    await waitForGraph(page);
+
+    const result = await openWindow(page, 'swift-newt');
+    if (!result.ok) { test.skip(); return; }
+
+    expect(await getWindowCount(page)).toBe(1);
+    expect(await getDomWindowCount(page)).toBe(1);
+
+    // Window should show agent name
+    const name = await page.evaluate(() => {
+      const el = document.querySelector('.agent-window-name');
+      return el ? el.textContent : '';
+    });
+    expect(name).toBe('swift-newt');
+  });
+
+  test('clicking agent again toggles window collapse/expand', async ({ page }) => {
+    await mockAPI(page);
+    await page.goto('/');
+    await waitForGraph(page);
+
+    const result = await openWindow(page, 'swift-newt');
+    if (!result.ok) { test.skip(); return; }
+
+    // First open — not collapsed
+    const isCollapsed1 = await page.evaluate(() => {
+      const win = document.querySelector('.agent-window');
+      return win ? win.classList.contains('collapsed') : null;
+    });
+    expect(isCollapsed1).toBe(false);
+
+    // Click again — should collapse
+    await openWindow(page, 'swift-newt');
+    const isCollapsed2 = await page.evaluate(() => {
+      const win = document.querySelector('.agent-window');
+      return win ? win.classList.contains('collapsed') : null;
+    });
+    expect(isCollapsed2).toBe(true);
+
+    // Click again — should expand
+    await openWindow(page, 'swift-newt');
+    const isCollapsed3 = await page.evaluate(() => {
+      const win = document.querySelector('.agent-window');
+      return win ? win.classList.contains('collapsed') : null;
+    });
+    expect(isCollapsed3).toBe(false);
+  });
+
+  test('window shows assigned beads for the agent', async ({ page }) => {
+    await mockAPI(page);
+    await page.goto('/');
+    await waitForGraph(page);
+
+    const result = await openWindow(page, 'swift-newt');
+    if (!result.ok) { test.skip(); return; }
+
+    // swift-newt should have assigned beads listed
+    const beads = await page.evaluate(() => {
+      const els = document.querySelectorAll('.agent-window-bead');
+      return Array.from(els).map(el => el.textContent);
+    });
+    expect(beads.length).toBeGreaterThan(0);
+  });
+
+  test('appendAgentEvent adds entries to the feed', async ({ page }) => {
+    await mockAPI(page);
+    await page.goto('/');
+    await waitForGraph(page);
+
+    const result = await openWindow(page, 'swift-newt');
+    if (!result.ok) { test.skip(); return; }
+
+    // Inject swift-newt session events
+    for (const evt of SESSION_SWIFT_NEWT) {
+      await injectEvent(page, 'agent:swift-newt', evt);
+    }
+
+    // Should have entries (some events merge: PostToolUse doesn't add a row)
+    const count = await getFeedEntryCount(page, 'swift-newt');
+    expect(count).toBeGreaterThanOrEqual(8); // started + session start + 6 pre-tool + assignment + idle
+  });
+
+  test('PreToolUse/PostToolUse pairs show duration', async ({ page }) => {
+    await mockAPI(page);
+    await page.goto('/');
+    await waitForGraph(page);
+
+    const result = await openWindow(page, 'swift-newt');
+    if (!result.ok) { test.skip(); return; }
+
+    // Inject a PreToolUse + PostToolUse pair with known timestamps
+    await injectEvent(page, 'agent:swift-newt', {
+      stream: 'hooks', type: 'PreToolUse', subject: 'hooks.PreToolUse',
+      ts: '2026-02-20T11:00:00.000Z',
+      payload: { actor: 'swift-newt', tool_name: 'Bash', tool_input: { command: 'go test ./...' } },
+    });
+    await injectEvent(page, 'agent:swift-newt', {
+      stream: 'hooks', type: 'PostToolUse', subject: 'hooks.PostToolUse',
+      ts: '2026-02-20T11:00:03.500Z',
+      payload: { actor: 'swift-newt', tool_name: 'Bash' },
+    });
+
+    // The entry should show a checkmark icon and duration
+    const entries = await page.evaluate(() => {
+      return Array.from(document.querySelectorAll('.agent-entry')).map(el => ({
+        icon: el.querySelector('.agent-entry-icon')?.textContent || '',
+        text: el.querySelector('.agent-entry-text')?.textContent || '',
+        dur: el.querySelector('.agent-entry-dur')?.textContent || '',
+      }));
+    });
+
+    const bashEntry = entries.find(e => e.text.includes('go test'));
+    expect(bashEntry).toBeTruthy();
+    expect(bashEntry.icon).toBe('✓');
+    expect(bashEntry.dur).toBe('3.5s');
+  });
+
+  test('multiple agent windows can open simultaneously', async ({ page }) => {
+    await mockAPI(page);
+    await page.goto('/');
+    await waitForGraph(page);
+
+    const agents = ['swift-newt', 'keen-bird', 'vast-toad'];
+    for (const name of agents) {
+      const r = await openWindow(page, name);
+      if (!r.ok) { test.skip(); return; }
+    }
+
+    expect(await getWindowCount(page)).toBe(3);
+    expect(await getDomWindowCount(page)).toBe(3);
+  });
+
+  test('close button removes agent window', async ({ page }) => {
+    await mockAPI(page);
+    await page.goto('/');
+    await waitForGraph(page);
+
+    const result = await openWindow(page, 'swift-newt');
+    if (!result.ok) { test.skip(); return; }
+
+    expect(await getWindowCount(page)).toBe(1);
+
+    // Click close button
+    await page.click('.agent-window-close');
+
+    expect(await getWindowCount(page)).toBe(0);
+    expect(await getDomWindowCount(page)).toBe(0);
+  });
+
+  test('Escape key closes all agent windows', async ({ page }) => {
+    await mockAPI(page);
+    await page.goto('/');
+    await waitForGraph(page);
+
+    await openWindow(page, 'swift-newt');
+    await openWindow(page, 'keen-bird');
+    expect(await getWindowCount(page)).toBe(2);
+
+    await page.keyboard.press('Escape');
+
+    expect(await getWindowCount(page)).toBe(0);
+  });
+
+  test('lifecycle events render with correct styling', async ({ page }) => {
+    await mockAPI(page);
+    await page.goto('/');
+    await waitForGraph(page);
+
+    const result = await openWindow(page, 'swift-newt');
+    if (!result.ok) { test.skip(); return; }
+
+    await injectEvent(page, 'agent:swift-newt', {
+      stream: 'agents', type: 'AgentStarted', subject: 'agents.AgentStarted',
+      ts: new Date().toISOString(),
+      payload: { actor: 'swift-newt' },
+    });
+    await injectEvent(page, 'agent:swift-newt', {
+      stream: 'agents', type: 'AgentIdle', subject: 'agents.AgentIdle',
+      ts: new Date().toISOString(),
+      payload: { actor: 'swift-newt' },
+    });
+
+    const entries = await page.evaluate(() => {
+      return Array.from(document.querySelectorAll('.agent-entry')).map(el => ({
+        classes: el.className,
+        text: el.querySelector('.agent-entry-text')?.textContent || '',
+      }));
+    });
+
+    const started = entries.find(e => e.text === 'started');
+    expect(started).toBeTruthy();
+    expect(started.classes).toContain('lifecycle-started');
+
+    const idle = entries.find(e => e.text === 'idle');
+    expect(idle).toBeTruthy();
+    expect(idle.classes).toContain('lifecycle-idle');
+  });
+
+  test('full swift-newt session populates feed with correct entry count', async ({ page }) => {
+    await mockAPI(page);
+    await page.goto('/');
+    await waitForGraph(page);
+
+    const result = await openWindow(page, 'swift-newt');
+    if (!result.ok) { test.skip(); return; }
+
+    // Inject all swift-newt session events
+    for (const evt of SESSION_SWIFT_NEWT) {
+      await injectEvent(page, 'agent:swift-newt', evt);
+    }
+
+    // SESSION_SWIFT_NEWT has 16 events:
+    // AgentStarted (1 row) + SessionStart (1) + 6 PreToolUse/PostToolUse pairs (6 rows, Post merges in)
+    // + MutationUpdate with assignee (1 row) + AgentIdle (1 row) = 10 rows
+    const count = await getFeedEntryCount(page, 'swift-newt');
+    expect(count).toBe(10);
+  });
+});
