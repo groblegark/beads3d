@@ -2,23 +2,28 @@
 // Provides a small but representative graph with different node types,
 // statuses, priorities, and dependency types.
 
+// Fixed positions (fx/fy/fz) make force layout deterministic for screenshot tests.
+// Layout: Epic1 cluster on left, Epic2 cluster on right, isolates in between.
 export const MOCK_GRAPH = {
   nodes: [
-    { id: 'bd-epic1', title: 'Epic: Platform Overhaul', status: 'in_progress', priority: 0, issue_type: 'epic', assignee: 'alice', created_at: '2026-01-15T10:00:00Z', updated_at: '2026-02-10T12:00:00Z', labels: ['platform'], dep_count: 3, dep_by_count: 0, blocked_by: [] },
-    { id: 'bd-feat1', title: 'Add user authentication', status: 'in_progress', priority: 1, issue_type: 'feature', assignee: 'alice', created_at: '2026-01-20T09:00:00Z', updated_at: '2026-02-18T15:00:00Z', labels: ['auth'], dep_count: 1, dep_by_count: 1, blocked_by: [] },
-    { id: 'bd-task1', title: 'Write OAuth integration tests', status: 'open', priority: 2, issue_type: 'task', assignee: 'bob', created_at: '2026-02-01T08:00:00Z', updated_at: '2026-02-17T10:00:00Z', labels: ['testing'], dep_count: 0, dep_by_count: 1, blocked_by: ['bd-feat1'] },
-    { id: 'bd-bug1', title: 'Token refresh race condition', status: 'open', priority: 1, issue_type: 'bug', assignee: 'charlie', created_at: '2026-02-05T14:00:00Z', updated_at: '2026-02-19T09:00:00Z', labels: ['auth', 'critical'], dep_count: 0, dep_by_count: 0, blocked_by: [] },
-    { id: 'bd-task2', title: 'Database migration script', status: 'open', priority: 2, issue_type: 'task', assignee: 'bob', created_at: '2026-02-10T11:00:00Z', updated_at: '2026-02-19T08:00:00Z', labels: [], dep_count: 0, dep_by_count: 1, blocked_by: [] },
-    { id: 'bd-feat2', title: 'API rate limiting', status: 'open', priority: 2, issue_type: 'feature', assignee: '', created_at: '2026-02-12T16:00:00Z', updated_at: '2026-02-18T14:00:00Z', labels: ['api'], dep_count: 1, dep_by_count: 0, blocked_by: ['bd-task2'] },
-    { id: 'bd-epic2', title: 'Epic: Observability Stack', status: 'open', priority: 1, issue_type: 'epic', assignee: 'charlie', created_at: '2026-01-10T08:00:00Z', updated_at: '2026-02-15T11:00:00Z', labels: ['infra'], dep_count: 2, dep_by_count: 0, blocked_by: [] },
-    { id: 'bd-task3', title: 'Add structured logging', status: 'in_progress', priority: 2, issue_type: 'task', assignee: 'charlie', created_at: '2026-02-08T10:00:00Z', updated_at: '2026-02-19T07:00:00Z', labels: ['logging'], dep_count: 0, dep_by_count: 1, blocked_by: [] },
-    { id: 'bd-task4', title: 'Metrics dashboard Helm chart', status: 'open', priority: 3, issue_type: 'task', assignee: '', created_at: '2026-02-14T09:00:00Z', updated_at: '2026-02-18T16:00:00Z', labels: ['helm', 'infra'], dep_count: 0, dep_by_count: 1, blocked_by: ['bd-task3'] },
-    { id: 'bd-bug2', title: 'Memory leak in event bus', status: 'open', priority: 0, issue_type: 'bug', assignee: 'alice', created_at: '2026-02-18T20:00:00Z', updated_at: '2026-02-19T10:00:00Z', labels: ['critical'], dep_count: 0, dep_by_count: 0, blocked_by: [] },
-    { id: 'bd-task5', title: 'Refactor config loader', status: 'open', priority: 3, issue_type: 'task', assignee: 'bob', created_at: '2026-02-16T12:00:00Z', updated_at: '2026-02-19T06:00:00Z', labels: [], dep_count: 0, dep_by_count: 0, blocked_by: [] },
-    { id: 'bd-feat3', title: 'WebSocket event streaming', status: 'open', priority: 2, issue_type: 'feature', assignee: 'charlie', created_at: '2026-02-13T15:00:00Z', updated_at: '2026-02-19T11:00:00Z', labels: ['api', 'realtime'], dep_count: 0, dep_by_count: 0, blocked_by: [] },
+    // --- Epic 1 cluster (left) ---
+    { id: 'bd-epic1', title: 'Epic: Platform Overhaul', status: 'in_progress', priority: 0, issue_type: 'epic', assignee: 'alice', created_at: '2026-01-15T10:00:00Z', updated_at: '2026-02-10T12:00:00Z', labels: ['platform'], dep_count: 3, dep_by_count: 0, blocked_by: [], fx: -80, fy: 0, fz: 0 },
+    { id: 'bd-feat1', title: 'Add user authentication', status: 'in_progress', priority: 1, issue_type: 'feature', assignee: 'alice', created_at: '2026-01-20T09:00:00Z', updated_at: '2026-02-18T15:00:00Z', labels: ['auth'], dep_count: 1, dep_by_count: 1, blocked_by: [], fx: -120, fy: -50, fz: 0 },
+    { id: 'bd-task1', title: 'Write OAuth integration tests', status: 'open', priority: 2, issue_type: 'task', assignee: 'bob', created_at: '2026-02-01T08:00:00Z', updated_at: '2026-02-17T10:00:00Z', labels: ['testing'], dep_count: 0, dep_by_count: 1, blocked_by: ['bd-feat1'], fx: -160, fy: -90, fz: 0 },
+    { id: 'bd-bug1', title: 'Token refresh race condition', status: 'open', priority: 1, issue_type: 'bug', assignee: 'charlie', created_at: '2026-02-05T14:00:00Z', updated_at: '2026-02-19T09:00:00Z', labels: ['auth', 'critical'], dep_count: 0, dep_by_count: 0, blocked_by: [], fx: -70, fy: -80, fz: 0 },
+    { id: 'bd-task2', title: 'Database migration script', status: 'open', priority: 2, issue_type: 'task', assignee: 'bob', created_at: '2026-02-10T11:00:00Z', updated_at: '2026-02-19T08:00:00Z', labels: [], dep_count: 0, dep_by_count: 1, blocked_by: [], fx: -40, fy: -50, fz: 0 },
+    { id: 'bd-feat2', title: 'API rate limiting', status: 'open', priority: 2, issue_type: 'feature', assignee: '', created_at: '2026-02-12T16:00:00Z', updated_at: '2026-02-18T14:00:00Z', labels: ['api'], dep_count: 1, dep_by_count: 0, blocked_by: ['bd-task2'], fx: -40, fy: 50, fz: 0 },
+    // --- Epic 2 cluster (right) ---
+    { id: 'bd-epic2', title: 'Epic: Observability Stack', status: 'open', priority: 1, issue_type: 'epic', assignee: 'charlie', created_at: '2026-01-10T08:00:00Z', updated_at: '2026-02-15T11:00:00Z', labels: ['infra'], dep_count: 2, dep_by_count: 0, blocked_by: [], fx: 80, fy: 0, fz: 0 },
+    { id: 'bd-task3', title: 'Add structured logging', status: 'in_progress', priority: 2, issue_type: 'task', assignee: 'charlie', created_at: '2026-02-08T10:00:00Z', updated_at: '2026-02-19T07:00:00Z', labels: ['logging'], dep_count: 0, dep_by_count: 1, blocked_by: [], fx: 50, fy: -50, fz: 0 },
+    { id: 'bd-task4', title: 'Metrics dashboard Helm chart', status: 'open', priority: 3, issue_type: 'task', assignee: '', created_at: '2026-02-14T09:00:00Z', updated_at: '2026-02-18T16:00:00Z', labels: ['helm', 'infra'], dep_count: 0, dep_by_count: 1, blocked_by: ['bd-task3'], fx: 120, fy: -50, fz: 0 },
+    // --- Isolated nodes (center/bottom) ---
+    { id: 'bd-bug2', title: 'Memory leak in event bus', status: 'open', priority: 0, issue_type: 'bug', assignee: 'alice', created_at: '2026-02-18T20:00:00Z', updated_at: '2026-02-19T10:00:00Z', labels: ['critical'], dep_count: 0, dep_by_count: 0, blocked_by: [], fx: 0, fy: 80, fz: 0 },
+    { id: 'bd-task5', title: 'Refactor config loader', status: 'open', priority: 3, issue_type: 'task', assignee: 'bob', created_at: '2026-02-16T12:00:00Z', updated_at: '2026-02-19T06:00:00Z', labels: [], dep_count: 0, dep_by_count: 0, blocked_by: [], fx: 50, fy: 80, fz: 0 },
+    { id: 'bd-feat3', title: 'WebSocket event streaming', status: 'open', priority: 2, issue_type: 'feature', assignee: 'charlie', created_at: '2026-02-13T15:00:00Z', updated_at: '2026-02-19T11:00:00Z', labels: ['api', 'realtime'], dep_count: 0, dep_by_count: 0, blocked_by: [], fx: 130, fy: 60, fz: 0 },
     // Agent nodes (synthetic — added by Graph API when include_agents=true)
-    { id: 'agent:alice', title: 'alice', status: 'open', priority: 2, issue_type: 'agent', assignee: '', created_at: '2026-02-19T00:00:00Z', updated_at: '2026-02-19T12:00:00Z', labels: [], dep_count: 0, dep_by_count: 0, blocked_by: [] },
-    { id: 'agent:bob', title: 'bob', status: 'open', priority: 2, issue_type: 'agent', assignee: '', created_at: '2026-02-19T00:00:00Z', updated_at: '2026-02-19T12:00:00Z', labels: [], dep_count: 0, dep_by_count: 0, blocked_by: [] },
+    { id: 'agent:alice', title: 'alice', status: 'open', priority: 2, issue_type: 'agent', assignee: '', created_at: '2026-02-19T00:00:00Z', updated_at: '2026-02-19T12:00:00Z', labels: [], dep_count: 0, dep_by_count: 0, blocked_by: [], fx: -150, fy: 30, fz: 0 },
+    { id: 'agent:bob', title: 'bob', status: 'open', priority: 2, issue_type: 'agent', assignee: '', created_at: '2026-02-19T00:00:00Z', updated_at: '2026-02-19T12:00:00Z', labels: [], dep_count: 0, dep_by_count: 0, blocked_by: [], fx: -150, fy: -30, fz: 0 },
   ],
   edges: [
     { source: 'bd-epic1', target: 'bd-feat1', type: 'parent-child' },
