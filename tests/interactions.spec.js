@@ -306,6 +306,8 @@ test.describe('keyboard shortcuts', () => {
     await expect(btnLabels).toHaveClass(/active/);
 
     // Label sprites should be visible in the Three.js scene
+    // LOD system (beads-bu3r) may limit how many labels show based on zoom distance,
+    // so we check that at least some are visible (not necessarily all).
     const labelsOn = await page.evaluate(() => {
       const b = window.__beads3d;
       if (!b || !b.graph) return null;
@@ -320,7 +322,7 @@ test.describe('keyboard shortcuts', () => {
       return { visible, total };
     });
     expect(labelsOn.total).toBeGreaterThan(0);
-    expect(labelsOn.visible).toBe(labelsOn.total);
+    expect(labelsOn.visible).toBeGreaterThan(0);
 
     // Wait a moment to verify labels persist (not just a flash)
     await page.waitForTimeout(500);
@@ -337,7 +339,7 @@ test.describe('keyboard shortcuts', () => {
       });
       return { visible, total };
     });
-    expect(stillOn.visible).toBe(stillOn.total);
+    expect(stillOn.visible).toBeGreaterThan(0);
 
     // Press 'l' again to toggle labels off
     await page.keyboard.press('l');
