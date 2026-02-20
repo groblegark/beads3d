@@ -866,7 +866,7 @@ function initGraph() {
         group.add(shell);
       }
 
-      // Decision/gate: diamond shape with state-based pulsing glow (bd-zr374)
+      // Decision/gate: diamond shape with "?" marker, only pending visible (bd-zr374)
       if (n.issue_type === 'gate' || n.issue_type === 'decision') {
         // Replace sphere core with elongated octahedron (diamond)
         group.remove(core);
@@ -876,16 +876,23 @@ function initGraph() {
         diamond.scale.set(size * 0.8, size * 1.4, size * 0.8); // tall diamond
         group.add(diamond);
 
-        // Pending decisions get animated pulsing glow
-        const ds = n._decisionState || (n.status === 'closed' ? 'resolved' : 'pending');
-        if (ds === 'pending') {
-          const pulseGlow = new THREE.Mesh(GEO.octa, new THREE.MeshBasicMaterial({
-            color: 0xd4a017, transparent: true, opacity: 0.25 * ghostFade, wireframe: true,
-          }));
-          pulseGlow.scale.set(size * 1.2, size * 2.0, size * 1.2);
-          pulseGlow.userData.decisionPulse = true;
-          group.add(pulseGlow);
-        }
+        // "?" question mark above node — screen-space for readability
+        const qSprite = makeTextSprite('?', {
+          fontSize: 32, color: '#d4a017', opacity: 0.95 * ghostFade,
+          background: 'rgba(10, 10, 18, 0.85)',
+          sizeAttenuation: false, screenHeight: 0.04,
+        });
+        qSprite.position.y = size * 2.5;
+        qSprite.renderOrder = 998;
+        group.add(qSprite);
+
+        // Pulsing glow wireframe for pending decisions
+        const pulseGlow = new THREE.Mesh(GEO.octa, new THREE.MeshBasicMaterial({
+          color: 0xd4a017, transparent: true, opacity: 0.25 * ghostFade, wireframe: true,
+        }));
+        pulseGlow.scale.set(size * 1.2, size * 2.0, size * 1.2);
+        pulseGlow.userData.decisionPulse = true;
+        group.add(pulseGlow);
       }
 
       // Blocked: spiky octahedron
@@ -2138,9 +2145,10 @@ function renderDecisionDetail(node, resp) {
     sections.push(`<div class="detail-section"><h4>Context</h4><pre>${escapeHtml(dec.context)}</pre></div>`);
   }
 
-  // Options
-  if (dec.options && dec.options.length > 0) {
-    const optHtml = dec.options.map((opt, i) => {
+  // Options (DecisionPoint.Options is a JSON string in Go, must parse)
+  const opts = typeof dec.options === 'string' ? (() => { try { return JSON.parse(dec.options); } catch { return []; } })() : (dec.options || []);
+  if (opts.length > 0) {
+    const optHtml = opts.map((opt, i) => {
       const selected = dec.selected_option === opt.id;
       const cls = selected ? 'decision-opt selected' : 'decision-opt';
       const label = opt.label || opt.short || opt.id;
@@ -2152,7 +2160,13 @@ function renderDecisionDetail(node, resp) {
 
   // Resolution result
   if (dec.selected_option) {
-    sections.push(`<div class="detail-section"><h4>Selected</h4><div class="decision-selected">${escapeHtml(dec.selected_option)}</div></div>`);
+    const selectedOpt = opts.find(o => o.id === dec.selected_option);
+    const selectedLabel = selectedOpt ? (selectedOpt.label || selectedOpt.short || selectedOpt.id) : dec.selected_option;
+    let resolvedInfo = `<div class="decision-selected">${escapeHtml(selectedLabel)}</div>`;
+    if (dec.responded_by) resolvedInfo += `<div style="color:#888;font-size:11px">by ${escapeHtml(dec.responded_by)}`;
+    if (dec.responded_at) resolvedInfo += ` at ${new Date(dec.responded_at).toLocaleString()}`;
+    if (dec.responded_by) resolvedInfo += `</div>`;
+    sections.push(`<div class="detail-section"><h4>Selected</h4>${resolvedInfo}</div>`);
     if (dec.response_text) {
       sections.push(`<div class="detail-section"><h4>Response</h4><pre>${escapeHtml(dec.response_text)}</pre></div>`);
     }
@@ -2721,6 +2735,12 @@ function applyFilters() {
           n._ageFiltered = true;
         }
       }
+    }
+
+    // Hide resolved/expired/closed decisions — only show pending (bd-zr374)
+    if (!hidden && (n.issue_type === 'gate' || n.issue_type === 'decision')) {
+      const ds = n._decisionState || (n.status === 'closed' ? 'resolved' : 'pending');
+      if (ds !== 'pending') hidden = true;
     }
 
     n._hidden = hidden;
@@ -5496,6 +5516,8 @@ function connectBusStream() {
           if (evt.type === 'DecisionCreated') decNode._decisionState = 'pending';
           else if (evt.type === 'DecisionResponded') decNode._decisionState = 'resolved';
           else if (evt.type === 'DecisionExpired') decNode._decisionState = 'expired';
+          // Re-apply filters: resolved/expired decisions disappear from graph (bd-zr374)
+          applyFilters();
           // Rebuild node Three.js object to reflect new color/shape
           graph.nodeThreeObject(graph.nodeThreeObject());
 
