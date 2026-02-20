@@ -38,6 +38,7 @@ export class BeadsAPI {
     return this._rpc('Graph', {
       limit: 500,
       include_deps: true,
+      include_agents: true,
       ...opts,
     });
   }
