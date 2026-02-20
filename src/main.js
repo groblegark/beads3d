@@ -8,6 +8,7 @@ import { createFresnelMaterial, createPulseRingMaterial, createSelectionRingMate
 // --- Config ---
 const params = new URLSearchParams(window.location.search);
 const API_BASE = params.get('api') || '/api';
+const DEEP_LINK_BEAD = params.get('bead') || ''; // bd-he95o: URL deep-linking
 const POLL_INTERVAL = 10000;
 const MAX_NODES = 1000; // bd-04wet: raised from 500 to show more relevant beads
 
@@ -166,6 +167,7 @@ let minimapVisible = true;
 
 // Multi-selection state (rubber-band / shift+drag)
 let multiSelected = new Set(); // set of node IDs currently multi-selected
+let revealedNodes = new Set(); // node IDs force-shown by click-to-reveal (hq-vorf47)
 let isBoxSelecting = false;
 let boxSelectStart = null; // {x, y} screen coords
 let cameraFrozen = false; // true when multi-select has locked orbit controls (bd-casin)
@@ -442,19 +444,23 @@ function initGraph() {
     .nodeThreeObject(n => {
       if (n._hidden) return new THREE.Group();
 
+      // Revealed-but-filtered nodes render as ghosts — reduced opacity (hq-vorf47)
+      const isGhost = !!n._revealed;
+      const ghostFade = isGhost ? 0.4 : 1.0;
+
       const size = nodeSize(n);
       const hexColor = colorToHex(nodeColor(n));
       const group = new THREE.Group();
 
       // Inner sphere (solid core) — shared geometry, scaled
       const core = new THREE.Mesh(GEO.sphereHi, new THREE.MeshBasicMaterial({
-        color: hexColor, transparent: true, opacity: 0.85,
+        color: hexColor, transparent: true, opacity: 0.85 * ghostFade,
       }));
       core.scale.setScalar(size);
       group.add(core);
 
       // Outer glow shell — Fresnel rim-lighting shader (bright at edges, clear at center)
-      const glow = new THREE.Mesh(GEO.sphereLo, createFresnelMaterial(hexColor, { opacity: 0.4, power: 3.0 }));
+      const glow = new THREE.Mesh(GEO.sphereLo, createFresnelMaterial(hexColor, { opacity: 0.4 * ghostFade, power: 3.0 }));
       glow.scale.setScalar(size * 1.5);
       group.add(glow);
 
@@ -717,11 +723,53 @@ function clearSelection() {
   highlightNodes.clear();
   highlightLinks.clear();
   multiSelected.clear();
+  // Clear revealed subgraph and re-apply filters (hq-vorf47)
+  if (revealedNodes.size > 0) {
+    revealedNodes.clear();
+    graphData.nodes.forEach(n => { n._revealed = false; });
+    applyFilters();
+  }
   hideBulkMenu();
   unfreezeCamera(); // bd-casin: restore orbit controls
   restoreAllNodeOpacity();
   // Force link width recalculation
   graph.linkWidth(graph.linkWidth());
+}
+
+// --- URL deep-linking (bd-he95o) ---
+// Focus on a bead specified via ?bead=<id> URL parameter.
+// Selects the node, highlights its connected subgraph, flies camera to it,
+// and opens the detail panel.
+function focusDeepLinkBead(beadId) {
+  const node = graphData.nodes.find(n => n.id === beadId);
+  if (!node) {
+    console.warn(`[beads3d] Deep-link bead "${beadId}" not found in graph`);
+    return;
+  }
+
+  // Select and highlight the node + its neighbors
+  selectNode(node);
+
+  // Fly camera to the node
+  const x = node.x || 0, y = node.y || 0, z = node.z || 0;
+  const distance = 120; // close-up view
+  graph.cameraPosition(
+    { x: x, y: y, z: z + distance },
+    { x, y, z },
+    1500, // 1.5s fly animation
+  );
+
+  // Show detail panel after camera starts moving
+  setTimeout(() => showDetail(node), 500);
+
+  // Update URL hash for shareability without triggering reload
+  if (window.history.replaceState) {
+    const url = new URL(window.location.href);
+    url.searchParams.set('bead', beadId);
+    window.history.replaceState(null, '', url.toString());
+  }
+
+  console.log(`[beads3d] Deep-linked to bead: ${beadId}`);
 }
 
 // --- Camera freeze / center on multi-select (bd-casin) ---
@@ -1015,6 +1063,42 @@ async function fetchViaGraph(statusEl) {
     }
   }
 
+  // Client-side agent→bead linkage (beads-zq8a): synthesize agent nodes and
+  // assigned_to links from node assignee fields. The server Graph API should
+  // return these, but currently doesn't — so we build them client-side.
+  const agentNodes = new Map(); // assignee name → agent node
+  for (const n of nodes) {
+    if (n.assignee && n.status === 'in_progress') {
+      const agentId = `agent:${n.assignee}`;
+      if (!agentNodes.has(n.assignee)) {
+        agentNodes.set(n.assignee, {
+          id: agentId,
+          title: n.assignee,
+          status: 'active',
+          priority: 3,
+          issue_type: 'agent',
+          _blocked: false,
+        });
+      }
+      // Only add edge if not already present from server
+      const edgeExists = links.some(l =>
+        (l.source === agentId || l.source?.id === agentId) &&
+        (l.target === n.id || l.target?.id === n.id) &&
+        l.dep_type === 'assigned_to',
+      );
+      if (!edgeExists) {
+        links.push({ source: agentId, target: n.id, dep_type: 'assigned_to' });
+      }
+    }
+  }
+  for (const [, agentNode] of agentNodes) {
+    if (!nodeIds.has(agentNode.id)) {
+      nodes.push(agentNode);
+      nodeIds.add(agentNode.id);
+      nodeMap[agentNode.id] = agentNode;
+    }
+  }
+
   // Filter disconnected decisions and molecules: only show if they have at least
   // one edge connecting them to a visible bead (bd-t25i1)
   const LINKED_ONLY = new Set(['decision', 'molecule']);
@@ -1150,6 +1234,28 @@ function buildGraphData(issues) {
     }
   });
 
+  // Client-side agent→bead linkage (beads-zq8a): same as fetchViaGraph path
+  const agentMap = new Map();
+  for (const n of nodes) {
+    const assignee = n.assigned_to || n.assignee;
+    if (assignee && n.status === 'in_progress') {
+      const agentId = `agent:${assignee}`;
+      if (!agentMap.has(assignee)) {
+        agentMap.set(assignee, {
+          id: agentId, title: assignee, status: 'active',
+          priority: 3, issue_type: 'agent', _blocked: false,
+        });
+      }
+      links.push({ source: agentId, target: n.id, dep_type: 'assigned_to' });
+    }
+  }
+  for (const [, agentNode] of agentMap) {
+    if (!issueMap.has(agentNode.id)) {
+      nodes.push(agentNode);
+      issueMap.set(agentNode.id, agentNode);
+    }
+  }
+
   console.log(`[beads3d] ${nodes.length} nodes, ${links.length} links`);
   return { nodes, links };
 }
@@ -1213,15 +1319,39 @@ function hideTooltip() {
 
 // --- Detail panel (click to open) ---
 function handleNodeClick(node) {
-  if (!node || node._hidden) return;
+  if (!node) return;
+  // Allow clicking revealed nodes even when they'd normally be hidden (hq-vorf47)
+  if (node._hidden && !revealedNodes.has(node.id)) return;
 
   selectNode(node);
 
-  // Find the connected DAG subgraph and zoom to fit it (bd-tr0en)
+  // Reveal entire connected subgraph regardless of filters (hq-vorf47).
+  // BFS across ALL links (including hidden nodes) to find the full component,
+  // then force those nodes visible via applyFilters override.
+  revealedNodes.clear();
   const component = getConnectedComponent(node.id);
-  zoomToNodes(component);
+  for (const id of component) {
+    revealedNodes.add(id);
+  }
+  applyFilters(); // re-run filters to un-hide revealed nodes
 
+  zoomToNodes(component);
   showDetail(node);
+
+  // Update URL for deep-linking (bd-he95o) — enables copy/paste sharing
+  updateBeadURL(node.id);
+}
+
+// Update URL ?bead= parameter without page reload (bd-he95o)
+function updateBeadURL(beadId) {
+  if (!window.history.replaceState) return;
+  const url = new URL(window.location.href);
+  if (beadId) {
+    url.searchParams.set('bead', beadId);
+  } else {
+    url.searchParams.delete('bead');
+  }
+  window.history.replaceState(null, '', url.toString());
 }
 
 // BFS to find the full connected component (both directions) for a node (bd-tr0en)
@@ -1337,19 +1467,37 @@ async function showDetail(node) {
   // Animate open
   requestAnimationFrame(() => panel.classList.add('open'));
 
-  // Lazy-load full details via Show
-  try {
-    const full = await api.show(node.id);
+  // Lazy-load full details via Show (skip for synthetic agent nodes — beads-zq8a)
+  if (node.issue_type === 'agent' && node.id.startsWith('agent:')) {
     const body = panel.querySelector('.detail-body');
     if (body) {
       body.classList.remove('loading');
-      body.innerHTML = renderFullDetail(full);
+      const assigned = graphData.links
+        .filter(l => l.dep_type === 'assigned_to' &&
+          (typeof l.source === 'object' ? l.source.id : l.source) === node.id)
+        .map(l => {
+          const tgtId = typeof l.target === 'object' ? l.target.id : l.target;
+          const tgtNode = graphData.nodes.find(n => n.id === tgtId);
+          return tgtNode ? `<div class="dep-link">${escapeHtml(tgtId)}: ${escapeHtml(tgtNode.title || tgtId)}</div>` : '';
+        })
+        .filter(Boolean)
+        .join('');
+      body.innerHTML = assigned ? `<div class="section-label">Working on:</div>${assigned}` : '<em>No active assignments</em>';
     }
-  } catch (err) {
-    const body = panel.querySelector('.detail-body');
-    if (body) {
-      body.classList.remove('loading');
-      body.textContent = `Could not load: ${err.message}`;
+  } else {
+    try {
+      const full = await api.show(node.id);
+      const body = panel.querySelector('.detail-body');
+      if (body) {
+        body.classList.remove('loading');
+        body.innerHTML = renderFullDetail(full);
+      }
+    } catch (err) {
+      const body = panel.querySelector('.detail-body');
+      if (body) {
+        body.classList.remove('loading');
+        body.textContent = `Could not load: ${err.message}`;
+      }
     }
   }
 }
@@ -1809,6 +1957,7 @@ document.getElementById('graph').addEventListener('contextmenu', (e) => e.preven
 function applyFilters() {
   const q = searchFilter.toLowerCase();
   graphData.nodes.forEach(n => {
+    n._revealed = false; // reset before re-evaluating (hq-vorf47)
     let hidden = false;
 
     // Text search
@@ -1877,6 +2026,18 @@ function applyFilters() {
     }
   }
 
+  // Click-to-reveal: force-show nodes in the revealed subgraph (hq-vorf47).
+  // This overrides all filters for the connected component of the clicked node.
+  if (revealedNodes.size > 0) {
+    for (const nodeId of revealedNodes) {
+      const rn = graphData.nodes.find(nd => nd.id === nodeId);
+      if (rn) {
+        rn._hidden = false;
+        rn._revealed = true;
+      }
+    }
+  }
+
   // Build ordered search results for navigation
   if (q) {
     searchResults = graphData.nodes
@@ -1907,6 +2068,11 @@ function applyFilters() {
     const tgt = typeof l.target === 'object' ? l.target : graphData.nodes.find(n => n.id === l.target);
     return src && tgt && !src._hidden && !tgt._hidden;
   });
+
+  // Rebuild node objects when reveal state changes (ghost opacity) (hq-vorf47)
+  if (revealedNodes.size > 0 || graphData.nodes.some(n => n._revealed)) {
+    graph.nodeThreeObject(graph.nodeThreeObject());
+  }
 
   updateFilterCount();
   updateTimeline();
@@ -3199,34 +3365,43 @@ function dootColor(evt) {
   return '#ff6b35'; // agent orange default
 }
 
-// Find the agent node for a bus event (bd-5knqx).
-// Mutation events: actor="daemon" (useless), issue_id="bd-beads-refinery" matches node.id.
-// Hook events: actor="swift-newt" (short name) matches node.assignee.
-// Agent lifecycle events: agent_id="bd-beads-refinery" matches node.id directly.
+// Find a graph node to attach a doot to for a bus event (bd-5knqx).
+// Pass 1: Prefer dedicated agent nodes (issue_type=agent) — works with mock data.
+// Pass 2: Fall back to any visible node by issue_id or assignee — works in live
+// deployments where agents are transient sessions, not agent beads.
 function findAgentNode(evt) {
   const p = evt.payload || {};
-  // Collect all candidate identifiers — order matters (most specific first)
   const candidates = [
-    p.issue_id,   // mutation events: the bead being mutated (often an agent bead)
+    p.issue_id,   // mutation events: the bead being mutated
     p.agent_id,   // agent lifecycle events
     p.agentID,    // alternate casing
     p.assignee,   // mutation events: the agent assigned to the bead
     p.actor,      // hook events (short agent name) or mutations ("daemon")
-  ].filter(c => c && c !== 'daemon'); // "daemon" is never an agent node
+  ].filter(c => c && c !== 'daemon');
 
   if (candidates.length === 0) return null;
 
+  // Pass 1: Prefer dedicated agent nodes
   const agents = graphData.nodes.filter(n => n.issue_type === 'agent');
-
   for (const candidate of candidates) {
-    // Exact match on id, title, or assignee
     for (const node of agents) {
       if (node.id === candidate || node.title === candidate || node.assignee === candidate) return node;
     }
-    // Match "agent:<name>" prefix format
     for (const node of agents) {
       if (node.id === `agent:${candidate}`) return node;
     }
+  }
+
+  // Pass 2: Fall back to any visible node (bd-5knqx live doot fix)
+  const allVisible = graphData.nodes.filter(n => !n._hidden);
+  if (p.issue_id) {
+    const byId = allVisible.find(n => n.id === p.issue_id);
+    if (byId) return byId;
+  }
+  const actor = p.actor;
+  if (actor && actor !== 'daemon') {
+    const byAssignee = allVisible.find(n => n.assignee === actor && n.status === 'in_progress');
+    if (byAssignee) return byAssignee;
   }
   return null;
 }
@@ -3295,12 +3470,19 @@ function updateDoots(t) {
 
 function connectBusStream() {
   try {
+    let _dootDrops = 0;
     api.connectBusEvents('agents,hooks,oj,mutations', (evt) => {
       const label = dootLabel(evt);
-      if (!label) return; // skip noisy events
+      if (!label) return;
 
       const node = findAgentNode(evt);
-      if (!node) return; // no matching agent node in graph
+      if (!node) {
+        if (++_dootDrops <= 5) {
+          const p = evt.payload || {};
+          console.debug('[beads3d] doot drop %d: type=%s actor=%s issue=%s', _dootDrops, evt.type, p.actor, p.issue_id);
+        }
+        return;
+      }
 
       spawnDoot(node, label, dootColor(evt));
     });
@@ -3321,6 +3503,12 @@ async function main() {
     if (_pollIntervalId) clearInterval(_pollIntervalId);
     _pollIntervalId = setInterval(refresh, POLL_INTERVAL);
     graph.cameraPosition({ x: 0, y: 0, z: 400 });
+
+    // URL deep-linking (bd-he95o): ?bead=<id> highlights and focuses a specific bead.
+    // Delay to let force layout settle so camera can fly to stable positions.
+    if (DEEP_LINK_BEAD) {
+      setTimeout(() => focusDeepLinkBead(DEEP_LINK_BEAD), 2000);
+    }
     // Expose for Playwright tests
     window.__beads3d = { graph, graphData: () => graphData, multiSelected: () => multiSelected, showBulkMenu, showDetail, hideDetail, selectNode, highlightSubgraph, clearSelection };
     // Expose doot internals for testing (bd-pg7vy)

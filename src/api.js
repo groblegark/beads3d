@@ -111,8 +111,9 @@ export class BeadsAPI {
       } catch { /* skip malformed */ }
     };
 
+    es.onopen = () => console.log('[beads3d] mutation SSE connected');
     es.onerror = () => {
-      // EventSource auto-reconnects
+      if (es.readyState === EventSource.CLOSED) console.warn('[beads3d] mutation SSE closed:', url);
     };
 
     this._eventSources.push(es);
@@ -141,8 +142,9 @@ export class BeadsAPI {
       try { onEvent(JSON.parse(e.data)); } catch { /* skip */ }
     });
 
+    es.onopen = () => console.log('[beads3d] bus SSE connected:', streams);
     es.onerror = () => {
-      // EventSource auto-reconnects
+      if (es.readyState === EventSource.CLOSED) console.warn('[beads3d] bus SSE closed:', url);
     };
 
     this._eventSources.push(es);
