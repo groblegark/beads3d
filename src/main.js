@@ -386,12 +386,13 @@ function createNodeLabelSprite(node) {
     transparent: true,
     depthWrite: false,
     depthTest: false,
+    sizeAttenuation: false,  // flat screen-space labels — no perspective zoom
   });
   const sprite = new THREE.Sprite(material);
 
-  // Scale sprite so it's readable — size proportional to canvas aspect
+  // Scale in screen pixels (sizeAttenuation=false) — constant size regardless of zoom
   const aspect = canvas.width / canvas.height;
-  const spriteH = 12;
+  const spriteH = 0.06;  // fraction of viewport height (~60px on 1000px screen)
   sprite.scale.set(spriteH * aspect, spriteH, 1);
 
   // Position above the node
@@ -2479,6 +2480,7 @@ function setupControls() {
 // --- Refresh ---
 // Merge new data into the existing graph, preserving node positions to avoid layout jumps.
 // Only triggers a full graph.graphData() call when nodes are added or removed.
+// Uses a low alpha reheat to gently integrate new nodes without scattering the layout.
 async function refresh() {
   const data = await fetchGraphData();
   if (!data) return;
@@ -2491,7 +2493,8 @@ async function refresh() {
   // Position-related keys to preserve across refreshes
   const POSITION_KEYS = ['x', 'y', 'z', 'vx', 'vy', 'vz', 'fx', 'fy', 'fz', '__threeObj', '_wasDimmed'];
 
-  let structureChanged = false;
+  let nodesAdded = 0;
+  let nodesRemoved = 0;
 
   // Update existing nodes in-place, detect additions
   const mergedNodes = data.nodes.map(incoming => {
@@ -2506,33 +2509,54 @@ async function refresh() {
       existing._blocked = !!(incoming.blocked_by && incoming.blocked_by.length > 0);
       return existing;
     }
-    // New node — force layout will assign position
-    structureChanged = true;
-    return { ...incoming, _blocked: !!(incoming.blocked_by && incoming.blocked_by.length > 0) };
+    // New node — place near a connected neighbor if possible, else near origin
+    nodesAdded++;
+    const newNode = { ...incoming, _blocked: !!(incoming.blocked_by && incoming.blocked_by.length > 0) };
+    // Seed new nodes near a connected existing node to reduce layout shock
+    const neighborId = (incoming.blocked_by || [])[0] || (incoming.assignee_id);
+    const neighbor = neighborId && existingById.get(neighborId);
+    if (neighbor && neighbor.x !== undefined) {
+      newNode.x = neighbor.x + (Math.random() - 0.5) * 30;
+      newNode.y = neighbor.y + (Math.random() - 0.5) * 30;
+      newNode.z = neighbor.z + (Math.random() - 0.5) * 30;
+    }
+    return newNode;
   });
 
   // Detect removed nodes
-  if (currentNodes.length !== mergedNodes.length || currentNodes.some(n => !newIds.has(n.id))) {
-    structureChanged = true;
+  for (const n of currentNodes) {
+    if (!newIds.has(n.id)) nodesRemoved++;
   }
 
-  // Build link key for comparison (includes dep_type unlike the display linkKey)
+  // Build link key for comparison (includes dep_type)
   const refreshLinkKey = l => `${typeof l.source === 'object' ? l.source.id : l.source}→${typeof l.target === 'object' ? l.target.id : l.target}:${l.dep_type}`;
   const existingLinkKeys = new Set(currentLinks.map(refreshLinkKey));
   const newLinkKeys = new Set(data.links.map(refreshLinkKey));
 
+  let linksChanged = false;
   if (data.links.length !== currentLinks.length ||
       data.links.some(l => !existingLinkKeys.has(refreshLinkKey(l))) ||
       currentLinks.some(l => !newLinkKeys.has(refreshLinkKey(l)))) {
-    structureChanged = true;
+    linksChanged = true;
   }
+
+  const structureChanged = nodesAdded > 0 || nodesRemoved > 0 || linksChanged;
 
   graphData = { nodes: mergedNodes, links: data.links };
   applyFilters();
 
   if (structureChanged) {
-    // Structure changed — full update (will re-heat simulation briefly)
+    // graph.graphData() reheats d3-force to alpha=1, scattering all positioned nodes.
+    // Fix (bd-vacsl): temporarily crank d3VelocityDecay so existing nodes barely move
+    // during the initial high-alpha ticks, then restore for gentle settling.
+    const prevVelocityDecay = graph.d3VelocityDecay();
+    graph.d3VelocityDecay(0.9); // heavy friction: velocity *= 0.1 each tick
+
     graph.graphData(graphData);
+
+    // After 200ms (~12 frames at 60fps), alpha decays from 1→~0.76.
+    // Restore normal friction so new nodes can drift to their equilibrium.
+    setTimeout(() => graph.d3VelocityDecay(prevVelocityDecay), 200);
   }
   // If only properties changed (status, title, etc.), the existing three.js
   // objects pick up the changes via the animation tick — no layout reset needed.
@@ -2722,7 +2746,7 @@ async function main() {
     setInterval(refresh, POLL_INTERVAL);
     graph.cameraPosition({ x: 0, y: 0, z: 400 });
     // Expose for Playwright tests
-    window.__beads3d = { graph, graphData: () => graphData, multiSelected: () => multiSelected, showBulkMenu };
+    window.__beads3d = { graph, graphData: () => graphData, multiSelected: () => multiSelected, showBulkMenu, showDetail, hideDetail, selectNode, highlightSubgraph, clearSelection };
     // Expose doot internals for testing (bd-pg7vy)
     window.__beads3d_spawnDoot = spawnDoot;
     window.__beads3d_doots = () => doots;

@@ -85,12 +85,15 @@ export class BeadsAPI {
     return this._rpc('Close', { id });
   }
 
-  // Check if Graph endpoint is available (probe with empty body)
+  // Check if Graph endpoint is available (probe once, cache result)
   async hasGraph() {
+    if (this._hasGraphCached !== undefined) return this._hasGraphCached;
     try {
       await this._rpc('Graph', { limit: 1 });
+      this._hasGraphCached = true;
       return true;
     } catch {
+      this._hasGraphCached = false;
       return false;
     }
   }
