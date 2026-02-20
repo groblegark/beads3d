@@ -370,3 +370,262 @@ export const MOCK_SHOW = {
   ],
   blocked_by: [],
 };
+
+// --- Synthetic data generator (bd-sg24u) ---
+// Generates parameterized graph data for scalability and realism testing.
+// Uses a seeded PRNG for deterministic output across test runs.
+
+// Simple seeded PRNG (mulberry32) — deterministic from seed
+function mulberry32(seed) {
+  return function() {
+    seed |= 0; seed = seed + 0x6D2B79F5 | 0;
+    let t = Math.imul(seed ^ seed >>> 15, 1 | seed);
+    t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+    return ((t ^ t >>> 14) >>> 0) / 4294967296;
+  };
+}
+
+const AGENT_NAMES = [
+  'swift-newt', 'keen-bird', 'vast-toad', 'arch-seal', 'lush-mole',
+  'deft-fox', 'stout-mare', 'tall-seal', 'cool-trout', 'brave-rat',
+  'wise-rook', 'neat-crab', 'tame-yak', 'true-crab', 'bold-hawk',
+  'warm-dove', 'sharp-eel', 'dark-moth', 'quick-sole', 'avid-ant',
+];
+
+const ISSUE_TITLES = [
+  'Implement auth RPC layer', 'Fix token refresh race', 'Add rate limiting middleware',
+  'Dolt schema migration v3', 'NATS throughput benchmark', 'Redis cache TTL tuning',
+  'Helm chart memory limits', 'K8s deployment manifests', 'E2E fixture expansion',
+  'Graph API agent synthesis', 'Coverage collection pipeline', 'Label toggle key fix',
+  'Doot popup detection', 'OOMKilled job investigation', 'WebSocket event streaming',
+  'Structured logging pipeline', 'Metrics dashboard chart', 'Config loader refactor',
+  'API gateway routing', 'Session registry cleanup', 'Credential rotation flow',
+  'Slack bot reauth', 'Agent pod lifecycle', 'Coop broker merge',
+  'Docker image optimization', 'CI pipeline parallelization', 'Visual regression baselines',
+  'Accessibility audit', 'Mobile viewport support', 'Theme customization',
+  'Bulk edit performance', 'Search index rebuild', 'Dependency cycle detection',
+  'Epic progress tracking', 'Timeline scrubber polish', 'Camera smoothing',
+  'Node clustering algorithm', 'Edge bundling', 'Minimap interaction',
+  'Export format options', 'Import validation', 'Keyboard shortcut help',
+];
+
+const ISSUE_TYPES = ['task', 'task', 'task', 'feature', 'feature', 'bug', 'bug'];
+const STATUSES = ['open', 'open', 'in_progress', 'in_progress', 'blocked', 'closed'];
+const AGENT_STATUSES = ['active', 'active', 'active', 'idle', 'idle', 'crashed'];
+const LABELS = ['auth', 'rpc', 'testing', 'dolt', 'k8s', 'helm', 'ui', 'api', 'ops', 'perf', 'infra', 'critical'];
+const TOOL_NAMES = ['Read', 'Edit', 'Bash', 'Grep', 'Write', 'Glob', 'Task'];
+
+/**
+ * Generate a realistic graph dataset.
+ * @param {Object} opts
+ * @param {number} opts.seed - PRNG seed for determinism (default: 42)
+ * @param {number} opts.nodeCount - Total issue nodes (default: 50)
+ * @param {number} opts.agentCount - Number of agents (default: 8)
+ * @param {number} opts.epicCount - Number of epics (default: 3)
+ * @param {number} opts.closedRatio - Fraction of issues that are closed (default: 0.15)
+ * @param {boolean} opts.fixedPositions - Add fx/fy/fz for deterministic layout (default: true)
+ * @returns {{ nodes: Array, edges: Array, stats: Object }}
+ */
+export function generateGraph(opts = {}) {
+  const {
+    seed = 42,
+    nodeCount = 50,
+    agentCount = 8,
+    epicCount = 3,
+    closedRatio = 0.15,
+    fixedPositions = true,
+  } = opts;
+
+  const rng = mulberry32(seed);
+  const pick = (arr) => arr[Math.floor(rng() * arr.length)];
+
+  const nodes = [];
+  const edges = [];
+  const issueIds = [];
+  const baseDate = new Date('2026-02-01T08:00:00Z');
+
+  // Create epics
+  for (let i = 0; i < epicCount; i++) {
+    const id = `syn-epic-${i}`;
+    const angle = (i / epicCount) * 2 * Math.PI;
+    nodes.push({
+      id, title: `Epic: ${ISSUE_TITLES[i % ISSUE_TITLES.length]}`,
+      status: 'in_progress', priority: 0, issue_type: 'epic', assignee: '',
+      created_at: new Date(baseDate.getTime() - 30 * 86400000).toISOString(),
+      updated_at: new Date(baseDate.getTime() + i * 86400000).toISOString(),
+      labels: [pick(LABELS)], dep_count: 0, dep_by_count: 0, blocked_by: [],
+      ...(fixedPositions && { fx: Math.cos(angle) * 200, fy: Math.sin(angle) * 200, fz: 0 }),
+    });
+    issueIds.push(id);
+  }
+
+  // Create issues
+  for (let i = 0; i < nodeCount; i++) {
+    const id = `syn-${String(i).padStart(3, '0')}`;
+    const isClosed = rng() < closedRatio;
+    const status = isClosed ? 'closed' : pick(STATUSES.filter(s => s !== 'closed'));
+    const type = pick(ISSUE_TYPES);
+    const title = ISSUE_TITLES[i % ISSUE_TITLES.length];
+    const epicIdx = i % epicCount;
+    const angle = (i / nodeCount) * 2 * Math.PI;
+    const radius = 80 + rng() * 150;
+
+    nodes.push({
+      id, title, status, priority: Math.floor(rng() * 4),
+      issue_type: type, assignee: '',
+      created_at: new Date(baseDate.getTime() + i * 3600000).toISOString(),
+      updated_at: new Date(baseDate.getTime() + (i + nodeCount) * 3600000).toISOString(),
+      labels: rng() > 0.5 ? [pick(LABELS)] : [],
+      dep_count: 0, dep_by_count: 0, blocked_by: [],
+      ...(fixedPositions && { fx: Math.cos(angle) * radius, fy: Math.sin(angle) * radius, fz: (rng() - 0.5) * 40 }),
+    });
+    issueIds.push(id);
+
+    // Parent-child edge to epic
+    edges.push({ source: `syn-epic-${epicIdx}`, target: id, dep_type: 'parent-child' });
+  }
+
+  // Add dependency edges (~20% of issues block another)
+  for (let i = 0; i < nodeCount; i++) {
+    if (rng() < 0.2 && i + 1 < nodeCount) {
+      const src = `syn-${String(i).padStart(3, '0')}`;
+      const tgt = `syn-${String(i + 1 + Math.floor(rng() * 3)).padStart(3, '0')}`;
+      if (issueIds.includes(tgt) && src !== tgt) {
+        edges.push({ source: src, target: tgt, dep_type: 'blocks' });
+      }
+    }
+  }
+
+  // Create agents with mixed statuses
+  const agents = [];
+  for (let i = 0; i < agentCount; i++) {
+    const name = AGENT_NAMES[i % AGENT_NAMES.length];
+    const status = pick(AGENT_STATUSES);
+    const angle = (i / agentCount) * 2 * Math.PI;
+    nodes.push({
+      id: `agent:${name}`, title: name, status, priority: 3,
+      issue_type: 'agent', assignee: '',
+      created_at: baseDate.toISOString(),
+      updated_at: new Date(baseDate.getTime() + nodeCount * 3600000).toISOString(),
+      labels: [], dep_count: 0, dep_by_count: 0, blocked_by: [],
+      ...(fixedPositions && { fx: Math.cos(angle) * 350, fy: Math.sin(angle) * 350, fz: 0 }),
+    });
+    agents.push(name);
+  }
+
+  // Assign agents to in_progress issues
+  const inProgress = nodes.filter(n => n.status === 'in_progress' && n.issue_type !== 'agent' && n.issue_type !== 'epic');
+  for (const issue of inProgress) {
+    const agent = pick(agents);
+    issue.assignee = agent;
+    edges.push({ source: `agent:${agent}`, target: issue.id, dep_type: 'assigned_to' });
+  }
+
+  // Compute stats
+  const stats = { total_open: 0, total_in_progress: 0, total_blocked: 0, total_closed: 0 };
+  for (const n of nodes) {
+    if (n.issue_type === 'agent') continue;
+    if (n.status === 'open') stats.total_open++;
+    else if (n.status === 'in_progress') stats.total_in_progress++;
+    else if (n.status === 'blocked') stats.total_blocked++;
+    else if (n.status === 'closed') stats.total_closed++;
+  }
+
+  return { nodes, edges, stats };
+}
+
+/**
+ * Generate synthetic bus events for an agent session.
+ * @param {string} agentName
+ * @param {string} issueId - The bead the agent is working on
+ * @param {Object} opts
+ * @param {number} opts.seed - PRNG seed (default: hash of agentName)
+ * @param {number} opts.toolCount - Number of tool use pairs (default: 4-8 random)
+ * @param {boolean} opts.includeDecision - Add a decision event (default: false)
+ * @param {boolean} opts.includeMail - Add a mail event (default: false)
+ * @param {boolean} opts.crash - End with crash instead of idle (default: false)
+ * @returns {Array} Array of bus event objects
+ */
+export function generateSession(agentName, issueId, opts = {}) {
+  const nameSeed = agentName.split('').reduce((a, c) => a + c.charCodeAt(0), 0);
+  const {
+    seed = nameSeed,
+    includeDecision = false,
+    includeMail = false,
+    crash = false,
+  } = opts;
+
+  const rng = mulberry32(seed);
+  const pick = (arr) => arr[Math.floor(rng() * arr.length)];
+  const toolCount = opts.toolCount || (4 + Math.floor(rng() * 5));
+
+  const events = [];
+  let offset = 0;
+
+  // Agent started
+  events.push(busEvent('agents', 'AgentStarted', { actor: agentName, issue_id: issueId }, offset));
+  offset += 200 + Math.floor(rng() * 300);
+
+  events.push(busEvent('hooks', 'SessionStart', { actor: agentName, session_id: `sess-${agentName}-${seed}` }, offset));
+  offset += 300 + Math.floor(rng() * 500);
+
+  // Tool use pairs
+  const TOOL_INPUTS = {
+    Read: () => ({ file_path: `/beads/internal/rpc/server_${pick(['graph', 'auth', 'config', 'stats'])}.go` }),
+    Edit: () => ({ file_path: `/beads/internal/rpc/server_${pick(['graph', 'auth', 'config'])}.go` }),
+    Bash: () => ({ command: pick(['go test ./...', 'make build', 'git status', 'kubectl get pods', 'helm lint']) }),
+    Grep: () => ({ pattern: pick(['TODO', 'FIXME', 'func Test', 'import']), path: '/beads/internal' }),
+    Write: () => ({ file_path: `/beads/internal/rpc/server_${pick(['new', 'test'])}.go` }),
+    Glob: () => ({ pattern: pick(['**/*.go', '**/*.spec.js', 'tests/**']) }),
+    Task: () => ({ description: 'Research implementation approach' }),
+  };
+
+  for (let i = 0; i < toolCount; i++) {
+    const tool = pick(TOOL_NAMES);
+    const input = TOOL_INPUTS[tool]();
+
+    events.push(busEvent('hooks', 'PreToolUse', { actor: agentName, tool_name: tool, tool_input: input }, offset));
+    offset += 300 + Math.floor(rng() * 2000);
+
+    events.push(busEvent('hooks', 'PostToolUse', { actor: agentName, tool_name: tool }, offset));
+    offset += 200 + Math.floor(rng() * 500);
+  }
+
+  // Optional decision event
+  if (includeDecision) {
+    events.push(busEvent('decisions', 'DecisionCreated', {
+      actor: agentName, decision_id: `dec-${agentName}`, requested_by: agentName,
+      prompt: 'Deploy changes to staging?',
+      options: [{ id: 'y', label: 'Yes' }, { id: 'n', label: 'No' }],
+    }, offset));
+    offset += 1000;
+  }
+
+  // Optional mail event
+  if (includeMail) {
+    events.push(busEvent('mail', 'MailSent', {
+      actor: agentName, from: agentName, to: pick(AGENT_NAMES),
+      subject: 'Status update', body: 'Work is progressing well.',
+    }, offset));
+    offset += 500;
+  }
+
+  // Mutation update
+  events.push(busEvent('mutations', 'MutationUpdate', { actor: agentName, issue_id: issueId, type: 'update' }, offset));
+  offset += 500;
+
+  // End state
+  if (crash) {
+    events.push(busEvent('agents', 'AgentCrashed', { actor: agentName, issue_id: issueId, error: 'context deadline exceeded' }, offset));
+  } else {
+    events.push(busEvent('agents', 'AgentIdle', { actor: agentName, issue_id: issueId }, offset));
+  }
+
+  return events;
+}
+
+// Pre-built large graph for scalability tests (100 nodes, 12 agents)
+export const MOCK_LARGE_GRAPH = generateGraph({ seed: 99, nodeCount: 100, agentCount: 12, epicCount: 4 });
+
+// Pre-built medium graph with decisions and mail events
+export const MOCK_REALISTIC_GRAPH = generateGraph({ seed: 7, nodeCount: 40, agentCount: 6, epicCount: 2, closedRatio: 0.25 });
