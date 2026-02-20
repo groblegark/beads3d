@@ -364,12 +364,12 @@ test.describe('NATS event doot streaming', () => {
 
       // Wait a tick for first animate frame to set initial position
       await new Promise(r => setTimeout(r, 200));
-      const rel0 = doots[0].sprite.position.y - (agent.y || 0);
+      const rel0 = doots[0].css2d.position.y - (agent.y || 0);
 
       // Wait 2 seconds for the doot to rise
       await new Promise(r => setTimeout(r, 2000));
 
-      const rel1 = doots[0] ? doots[0].sprite.position.y - (agent.y || 0) : null;
+      const rel1 = doots[0] ? doots[0].css2d.position.y - (agent.y || 0) : null;
       return { rel0, rel1 };
     });
 
@@ -402,16 +402,16 @@ test.describe('NATS event doot streaming', () => {
       const doots = window.__beads3d_doots();
       if (doots.length === 0) return null;
 
-      // Sample opacity at start
-      const o0 = doots[0].sprite.material.opacity;
+      // Sample opacity at start (HTML element opacity set by updateDoots)
+      const o0 = parseFloat(doots[0].el.style.opacity) || 0.9;
 
       // Wait 1s — should still be bright (fade starts at 60% of 4s = 2.4s)
       await new Promise(r => setTimeout(r, 1000));
-      const o1 = doots[0] ? doots[0].sprite.material.opacity : null;
+      const o1 = doots[0] ? (parseFloat(doots[0].el.style.opacity) || 0.9) : null;
 
       // Wait until 3.5s total — well into the fade zone
       await new Promise(r => setTimeout(r, 2500));
-      const oLate = doots[0] ? doots[0].sprite.material.opacity : null;
+      const oLate = doots[0] ? (parseFloat(doots[0].el.style.opacity) || 0) : null;
 
       return { o0, o1, oLate };
     });
@@ -455,13 +455,13 @@ test.describe('NATS event doot streaming', () => {
 
 });
 
-// --- Doot rendering verification tests (bd-3xvj7) ---
-// Tests that focus on the Three.js sprite rendering, scene graph insertion,
-// text content, material cleanup, and multi-doot stacking behavior.
+// --- Doot rendering verification tests (bd-3xvj7, bd-bwkdk) ---
+// Tests that focus on CSS2DObject rendering, scene graph insertion,
+// text content, cleanup, and multi-doot stacking behavior.
 
 test.describe('doot rendering and cleanup', () => {
 
-  test('doot sprite is added to the Three.js scene', async ({ page }) => {
+  test('doot CSS2D object is added to the Three.js scene', async ({ page }) => {
     await mockAPI(page);
     await page.route('**/api/bus/events*', route =>
       route.fulfill({ status: 200, contentType: 'text/event-stream', body: ': keepalive\n\n' }));
@@ -485,23 +485,23 @@ test.describe('doot rendering and cleanup', () => {
 
       return {
         sceneChildrenAdded: sceneAfter - sceneBefore,
-        spriteInScene: doot && doot.sprite.parent === b.graph.scene(),
-        spriteType: doot?.sprite.type,
-        spriteVisible: doot?.sprite.visible,
-        renderOrder: doot?.sprite.renderOrder,
+        inScene: doot && doot.css2d.parent === b.graph.scene(),
+        isDoot: doot?.css2d.userData.isDoot,
+        hasElement: !!doot?.el,
+        elementClass: doot?.el?.className,
       };
     });
 
     if (!result || result.error) { test.skip(); return; }
 
     expect(result.sceneChildrenAdded).toBe(1);
-    expect(result.spriteInScene).toBe(true);
-    expect(result.spriteType).toBe('Sprite');
-    expect(result.spriteVisible).toBe(true);
-    expect(result.renderOrder).toBe(999);
+    expect(result.inScene).toBe(true);
+    expect(result.isDoot).toBe(true);
+    expect(result.hasElement).toBe(true);
+    expect(result.elementClass).toBe('doot-text');
   });
 
-  test('doot sprite material has correct color and opacity', async ({ page }) => {
+  test('doot HTML element has correct color and text', async ({ page }) => {
     await mockAPI(page);
     await page.route('**/api/bus/events*', route =>
       route.fulfill({ status: 200, contentType: 'text/event-stream', body: ': keepalive\n\n' }));
@@ -520,23 +520,24 @@ test.describe('doot rendering and cleanup', () => {
 
       const doots = window.__beads3d_doots();
       const doot = doots[doots.length - 1];
-      const mat = doot?.sprite?.material;
 
       return {
-        hasTexture: mat?.map !== null && mat?.map !== undefined,
-        transparent: mat?.transparent,
-        opacity: mat?.opacity,
+        text: doot?.el?.textContent,
+        color: doot?.el?.style.color,
+        dootColor: doot?.el?.style.getPropertyValue('--doot-color'),
+        className: doot?.el?.className,
       };
     });
 
     if (!result) { test.skip(); return; }
 
-    expect(result.hasTexture).toBe(true);
-    expect(result.transparent).toBe(true);
-    expect(result.opacity).toBeCloseTo(0.9, 1);
+    expect(result.text).toBe('material-test');
+    expect(result.color).toBe('#ff3333');
+    expect(result.dootColor).toBe('#ff3333');
+    expect(result.className).toBe('doot-text');
   });
 
-  test('doot sprite has non-zero scale (text is visible)', async ({ page }) => {
+  test('doot HTML element has text content (visible)', async ({ page }) => {
     await mockAPI(page);
     await page.route('**/api/bus/events*', route =>
       route.fulfill({ status: 200, contentType: 'text/event-stream', body: ': keepalive\n\n' }));
@@ -557,18 +558,17 @@ test.describe('doot rendering and cleanup', () => {
       const doot = doots[doots.length - 1];
 
       return {
-        scaleX: doot?.sprite.scale.x,
-        scaleY: doot?.sprite.scale.y,
-        scaleZ: doot?.sprite.scale.z,
+        text: doot?.el?.textContent,
+        hasEl: !!doot?.el,
+        hasCss2d: !!doot?.css2d,
       };
     });
 
     if (!result) { test.skip(); return; }
 
-    // Sprite scale is canvas.width/4 x canvas.height/4 — should be non-trivial
-    expect(result.scaleX).toBeGreaterThan(1);
-    expect(result.scaleY).toBeGreaterThan(1);
-    expect(result.scaleZ).toBe(1);
+    expect(result.text).toBe('scale-test');
+    expect(result.hasEl).toBe(true);
+    expect(result.hasCss2d).toBe(true);
   });
 
   test('doot spawns with jitter offset from agent node position', async ({ page }) => {
@@ -595,8 +595,8 @@ test.describe('doot rendering and cleanup', () => {
       const doots = window.__beads3d_doots();
       for (const d of doots) {
         positions.push({
-          relX: d.sprite.position.x - (agent.x || 0),
-          relZ: d.sprite.position.z - (agent.z || 0),
+          relX: d.css2d.position.x - (agent.x || 0),
+          relZ: d.css2d.position.z - (agent.z || 0),
           jx: d.jx,
           jz: d.jz,
         });
@@ -618,7 +618,7 @@ test.describe('doot rendering and cleanup', () => {
     expect(uniqueJx.size).toBeGreaterThan(1);
   });
 
-  test('expired doot material and texture are disposed', async ({ page }) => {
+  test('expired doot is removed from scene', async ({ page }) => {
     await mockAPI(page);
     await page.route('**/api/bus/events*', route =>
       route.fulfill({ status: 200, contentType: 'text/event-stream', body: ': keepalive\n\n' }));
@@ -680,7 +680,7 @@ test.describe('doot rendering and cleanup', () => {
       await new Promise(r => setTimeout(r, 500));
 
       const doots = window.__beads3d_doots();
-      const relativeYs = doots.map(d => d.sprite.position.y - (agent.y || 0));
+      const relativeYs = doots.map(d => d.css2d.position.y - (agent.y || 0));
 
       return { count: doots.length, relativeYs };
     });

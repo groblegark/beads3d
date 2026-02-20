@@ -544,6 +544,25 @@
     ::-webkit-scrollbar-thumb { background: #2a2a3a; border-radius: 2px; }
     ::-webkit-scrollbar-thumb:hover { background: #4a4a5a; }
 
+    /* CSS2D overlay — don't intercept mouse events (bd-bwkdk) */
+    #css2d-overlay { pointer-events: none; }
+    #css2d-overlay div { pointer-events: none; }
+
+    /* HTML doot text — crisp at any zoom via CSS2DRenderer (bd-bwkdk) */
+    .doot-text {
+      font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
+      font-size: 12px;
+      white-space: nowrap;
+      background: rgba(10, 10, 18, 0.82);
+      padding: 2px 6px;
+      border-radius: 3px;
+      border-left: 2px solid var(--doot-color, #ff6b35);
+      pointer-events: none;
+      user-select: none;
+      text-shadow: 0 0 4px var(--doot-color, #ff6b35);
+      transition: opacity 0.15s ease-out;
+    }
+
     /* Doot-triggered issue popups (beads-edy1) */
     #doot-popups {
       position: fixed;

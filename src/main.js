@@ -1,8 +1,9 @@
 import ForceGraph3D from '3d-force-graph';
 import * as THREE from 'three';
 import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
+import { CSS2DRenderer, CSS2DObject } from 'three/examples/jsm/renderers/CSS2DRenderer.js';
 import { BeadsAPI } from './api.js';
-import { nodeColor, nodeSize, linkColor, colorToHex } from './colors.js';
+import { nodeColor, nodeSize, linkColor, colorToHex, rigColor } from './colors.js';
 import { createFresnelMaterial, createPulseRingMaterial, createSelectionRingMaterial, createStarField, updateShaderTime } from './shaders.js';
 
 // --- Config ---
@@ -194,8 +195,9 @@ let timelineSelStart = 0; // selected range start (0..1 in log space)
 let timelineSelEnd = 1;   // selected range end (0..1 in log space)
 let timelineActive = false; // true when user has narrowed the range
 
-// Live event doots — floating text particles above agent nodes (bd-c7723)
-const doots = []; // { sprite, node, birth, lifetime, vx, vy, vz }
+// Live event doots — HTML overlay elements via CSS2DRenderer (bd-bwkdk)
+const doots = []; // { css2d, el, node, birth, lifetime, jx, jz }
+let css2dRenderer = null; // CSS2DRenderer instance
 
 // Doot-triggered issue popups — auto-dismissing cards when doots fire (beads-edy1)
 const dootPopups = new Map(); // nodeId → { el, timer, node, lastDoot }
@@ -855,6 +857,20 @@ function initGraph() {
         trail.userData.agentTrail = true;
         trail.userData.prevPos = { x: 0, y: 0, z: 0 };
         group.add(trail);
+
+        // Rig badge — colored label below landing pads (bd-90ikf)
+        if (n.rig) {
+          const rc = rigColor(n.rig);
+          const rigSprite = makeTextSprite(n.rig, {
+            fontSize: 18, color: rc,
+            background: 'rgba(8, 8, 16, 0.85)',
+            sizeAttenuation: false, screenHeight: 0.025,
+          });
+          rigSprite.position.y = -size * 2.2;
+          rigSprite.renderOrder = 999;
+          rigSprite.userData.rigBadge = true;
+          group.add(rigSprite);
+        }
       }
 
       // Epic: wireframe organelle membrane
@@ -1113,6 +1129,9 @@ function initGraph() {
   if (_bloomResizeHandler) window.removeEventListener('resize', _bloomResizeHandler);
   _bloomResizeHandler = () => bloomPass.resolution.set(window.innerWidth, window.innerHeight);
   window.addEventListener('resize', _bloomResizeHandler);
+
+  // CSS2D overlay renderer for HTML doots (bd-bwkdk)
+  initCSS2DRenderer();
 
   // Start animation loop for pulsing effects
   startAnimation();
@@ -1497,8 +1516,9 @@ function startAnimation() {
       if (speed < 0.01) { _camVelocity.x = 0; _camVelocity.y = 0; _camVelocity.z = 0; }
     }
 
-    // Update live event doots (bd-c7723)
+    // Update live event doots — HTML overlay via CSS2DRenderer (bd-bwkdk)
     updateDoots(t);
+    if (css2dRenderer) css2dRenderer.render(graph.scene(), graph.camera());
 
     // Update event sprites — status pulses + edge sparks (bd-9qeto)
     updateEventSprites(t);
@@ -4459,11 +4479,27 @@ function applyMutationOptimistic(evt) {
   }
 }
 
-// --- Live event doots (bd-c7723) ---
+// --- Live event doots — HTML overlay via CSS2DRenderer (bd-c7723, bd-bwkdk) ---
 
 const DOOT_LIFETIME = 4.0; // seconds before fully faded
 const DOOT_RISE_SPEED = 8; // units per second upward
 const DOOT_MAX = 30; // max active doots (oldest get pruned)
+
+// Initialize CSS2D overlay renderer for HTML doots (bd-bwkdk)
+function initCSS2DRenderer() {
+  css2dRenderer = new CSS2DRenderer();
+  css2dRenderer.setSize(window.innerWidth, window.innerHeight);
+  css2dRenderer.domElement.id = 'css2d-overlay';
+  css2dRenderer.domElement.style.position = 'absolute';
+  css2dRenderer.domElement.style.top = '0';
+  css2dRenderer.domElement.style.left = '0';
+  css2dRenderer.domElement.style.pointerEvents = 'none';
+  css2dRenderer.domElement.style.zIndex = '1';
+  document.getElementById('graph').appendChild(css2dRenderer.domElement);
+  window.addEventListener('resize', () => {
+    css2dRenderer.setSize(window.innerWidth, window.innerHeight);
+  });
+}
 
 // Short human-readable label for a bus event
 function dootLabel(evt) {
@@ -4641,35 +4677,37 @@ function findAgentNode(evt) {
   return null;
 }
 
+// Spawn an HTML doot via CSS2DObject — crisp text at any zoom (bd-bwkdk)
 function spawnDoot(node, text, color) {
   if (!node || !text || !graph) return;
 
   // Trigger doot popup for non-agent nodes (beads-edy1)
   showDootPopup(node);
 
-  // Screen-space doots with background for readability (bd-jy0yt)
-  const sprite = makeTextSprite(text, {
-    fontSize: 20,
-    color,
-    opacity: 0.9,
-    background: 'rgba(10, 10, 18, 0.8)',
-    sizeAttenuation: false,
-    screenHeight: 0.025,  // ~25px on 1000px viewport
-  });
-  sprite.userData.isDoot = true;
+  // Create HTML element for the doot
+  const el = document.createElement('div');
+  el.className = 'doot-text';
+  el.textContent = text;
+  el.style.color = color || '#ff6b35';
+  el.style.setProperty('--doot-color', color || '#ff6b35');
+
+  // Wrap in CSS2DObject for 3D positioning
+  const css2d = new CSS2DObject(el);
+  css2d.userData.isDoot = true;
+
   // Random horizontal jitter so overlapping doots spread out
   const jx = (Math.random() - 0.5) * 6;
   const jz = (Math.random() - 0.5) * 6;
-  sprite.position.set(
+  css2d.position.set(
     (node.x || 0) + jx,
     (node.y || 0) + 10, // start just above node
     (node.z || 0) + jz,
   );
-  sprite.renderOrder = 999;
-  graph.scene().add(sprite);
+  graph.scene().add(css2d);
 
   doots.push({
-    sprite,
+    css2d,
+    el,
     node,
     birth: performance.now() / 1000,
     lifetime: DOOT_LIFETIME,
@@ -4679,37 +4717,27 @@ function spawnDoot(node, text, color) {
   // Prune oldest if over limit
   while (doots.length > DOOT_MAX) {
     const old = doots.shift();
-    graph.scene().remove(old.sprite);
-    old.sprite.material.map?.dispose();
-    old.sprite.material.dispose();
+    graph.scene().remove(old.css2d);
   }
 }
 
-// Update doot positions, opacity, and anti-overlap in animate loop (bd-jy0yt)
+// Update doot positions and opacity in animate loop (bd-bwkdk)
+// CSS2DRenderer handles screen projection — we just update world Y for rising
 function updateDoots(t) {
-  const camera = graph ? graph.camera() : null;
-  const renderer = graph ? graph.renderer() : null;
-  const width = renderer ? renderer.domElement.clientWidth : 0;
-  const height = renderer ? renderer.domElement.clientHeight : 0;
-
-  // Phase 1: Update positions, fade, and collect screen rects for live doots
-  const live = [];
   for (let i = doots.length - 1; i >= 0; i--) {
     const d = doots[i];
     const age = t - d.birth;
 
     if (age > d.lifetime) {
       // Remove expired doot
-      graph.scene().remove(d.sprite);
-      d.sprite.material.map?.dispose();
-      d.sprite.material.dispose();
+      graph.scene().remove(d.css2d);
       doots.splice(i, 1);
       continue;
     }
 
     // Rise upward, follow node position (nodes can move during force layout)
     const rise = age * DOOT_RISE_SPEED;
-    d.sprite.position.set(
+    d.css2d.position.set(
       (d.node.x || 0) + d.jx,
       (d.node.y || 0) + 10 + rise,
       (d.node.z || 0) + d.jz,
@@ -4718,50 +4746,7 @@ function updateDoots(t) {
     // Fade out over last 40% of lifetime
     const fadeStart = d.lifetime * 0.6;
     const opacity = age < fadeStart ? 0.9 : 0.9 * (1 - (age - fadeStart) / (d.lifetime - fadeStart));
-    d.sprite.material.opacity = Math.max(0, opacity);
-
-    // Collect screen position for anti-overlap (only if camera available)
-    if (camera && width > 0 && height > 0) {
-      const worldPos = new THREE.Vector3();
-      d.sprite.getWorldPosition(worldPos);
-      const ndc = worldPos.clone().project(camera);
-      if (ndc.z <= 1) {
-        const sx = (ndc.x * 0.5 + 0.5) * width;
-        const sy = (-ndc.y * 0.5 + 0.5) * height;
-        const lw = d.sprite.scale.x * height;
-        const lh = d.sprite.scale.y * height;
-        live.push({ d, sx, sy, lw, lh, offsetY: 0, age });
-      }
-    }
-  }
-
-  // Phase 2: Anti-overlap — nudge doots so they don't stack on screen
-  if (live.length < 2) return;
-  // Sort by screen X for sweep-and-prune
-  live.sort((a, b) => a.sx - b.sx);
-  const PAD = 2;
-  for (let i = 0; i < live.length; i++) {
-    const a = live[i];
-    const aRight = a.sx + a.lw / 2;
-    const aTop = a.sy - a.lh / 2 + a.offsetY;
-    const aBot = a.sy + a.lh / 2 + a.offsetY;
-    for (let j = i + 1; j < live.length; j++) {
-      const b = live[j];
-      if (b.sx - b.lw / 2 > aRight + PAD) break;
-      const bTop = b.sy - b.lh / 2 + b.offsetY;
-      const bBot = b.sy + b.lh / 2 + b.offsetY;
-      if (aTop > bBot + PAD || bTop > aBot + PAD) continue;
-      // Push the newer (younger) doot upward
-      const pushTarget = a.age <= b.age ? a : b;
-      const overlapY = Math.min(aBot, bBot) - Math.max(aTop, bTop) + PAD;
-      pushTarget.offsetY -= Math.abs(overlapY);
-    }
-  }
-  // Apply Y offsets back to world positions
-  for (const l of live) {
-    if (l.offsetY === 0) continue;
-    const pixToLocal = l.d.sprite.scale.y / l.lh;
-    l.d.sprite.position.y += l.offsetY * pixToLocal;
+    d.el.style.opacity = Math.max(0, opacity).toFixed(2);
   }
 }
 
