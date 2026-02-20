@@ -20,6 +20,7 @@ const GEO = {
   torus:      new THREE.TorusGeometry(1, 0.15, 6, 20), // unit torus for rings
   icosa:      new THREE.IcosahedronGeometry(1, 1),     // epic shell
   octa:       new THREE.OctahedronGeometry(1, 0),      // blocked spikes
+  box:        new THREE.BoxGeometry(1, 1, 1),           // agent node (monitor/computer)
 };
 
 // --- Link icon textures (shared, one per dep type) ---
@@ -105,11 +106,40 @@ function drawDot(ctx, s, color) {
   ctx.stroke();
 }
 
+// Person glyph — for "assigned_to" deps (agent ↔ bead)
+function drawPerson(ctx, s, color) {
+  const cx = s / 2, cy = s / 2;
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 2.5;
+  // Head
+  ctx.beginPath();
+  ctx.arc(cx, cy - 12, 7, 0, Math.PI * 2);
+  ctx.stroke();
+  // Body
+  ctx.beginPath();
+  ctx.moveTo(cx, cy - 5);
+  ctx.lineTo(cx, cy + 8);
+  ctx.stroke();
+  // Arms
+  ctx.beginPath();
+  ctx.moveTo(cx - 10, cy);
+  ctx.lineTo(cx + 10, cy);
+  ctx.stroke();
+  // Legs
+  ctx.beginPath();
+  ctx.moveTo(cx, cy + 8);
+  ctx.lineTo(cx - 8, cy + 20);
+  ctx.moveTo(cx, cy + 8);
+  ctx.lineTo(cx + 8, cy + 20);
+  ctx.stroke();
+}
+
 const LINK_ICON_MATERIALS = {
   'blocks':       makeLinkIconTexture(drawShield, '#d04040'),
   'waits-for':    makeLinkIconTexture(drawClock,  '#d4a017'),
   'parent-child': makeLinkIconTexture(drawChain,  '#8b45a666'),
   'relates-to':   makeLinkIconTexture(drawDot,    '#4a9eff'),
+  'assigned_to':  makeLinkIconTexture(drawPerson, '#ff6b35'),
 };
 const LINK_ICON_DEFAULT = makeLinkIconTexture(drawDot, '#2a2a3a');
 
@@ -317,6 +347,55 @@ function initGraph() {
         group.add(ring);
       }
 
+      // Agent: monitor/computer-dude — box core with glowing screen face
+      if (n.issue_type === 'agent') {
+        // Replace sphere core with box
+        group.remove(core);
+        group.remove(glow);
+
+        // Monitor body — solid dark box
+        const body = new THREE.Mesh(GEO.box, new THREE.MeshBasicMaterial({
+          color: 0x2a2a3a, transparent: true, opacity: 0.9,
+        }));
+        body.scale.set(size * 1.6, size * 1.2, size * 0.6);
+        group.add(body);
+
+        // Screen face — bright orange glow on front
+        const screen = new THREE.Mesh(
+          new THREE.PlaneGeometry(1, 1),
+          new THREE.MeshBasicMaterial({
+            color: 0xff6b35, transparent: true, opacity: 0.7, side: THREE.DoubleSide,
+          }),
+        );
+        screen.scale.set(size * 1.3, size * 0.9, 1);
+        screen.position.z = size * 0.31;
+        group.add(screen);
+
+        // Scan lines overlay — horizontal stripes for retro-tech look
+        const scanCanvas = document.createElement('canvas');
+        scanCanvas.width = 64;
+        scanCanvas.height = 64;
+        const sCtx = scanCanvas.getContext('2d');
+        for (let y = 0; y < 64; y += 4) {
+          sCtx.fillStyle = 'rgba(0,0,0,0.3)';
+          sCtx.fillRect(0, y, 64, 2);
+        }
+        const scanTex = new THREE.CanvasTexture(scanCanvas);
+        scanTex.minFilter = THREE.LinearFilter;
+        const scanLines = new THREE.Mesh(
+          new THREE.PlaneGeometry(1, 1),
+          new THREE.MeshBasicMaterial({ map: scanTex, transparent: true, opacity: 0.5, side: THREE.DoubleSide }),
+        );
+        scanLines.scale.set(size * 1.3, size * 0.9, 1);
+        scanLines.position.z = size * 0.32;
+        group.add(scanLines);
+
+        // Outer glow — orange fresnel shell (slightly bigger than box)
+        const agentGlow = new THREE.Mesh(GEO.sphereLo, createFresnelMaterial(0xff6b35, { opacity: 0.25, power: 2.5 }));
+        agentGlow.scale.setScalar(size * 1.8);
+        group.add(agentGlow);
+      }
+
       // Epic: wireframe organelle membrane
       if (n.issue_type === 'epic') {
         const shell = new THREE.Mesh(GEO.icosa, new THREE.MeshBasicMaterial({
@@ -396,7 +475,7 @@ function initGraph() {
     })
 
     // Directional particles — only on blocking links (perf at scale)
-    .linkDirectionalParticles(l => l.dep_type === 'blocks' ? 2 : 0)
+    .linkDirectionalParticles(l => l.dep_type === 'blocks' ? 2 : l.dep_type === 'assigned_to' ? 1 : 0)
     .linkDirectionalParticleWidth(1.0)
     .linkDirectionalParticleSpeed(0.003)
     .linkDirectionalParticleColor(l => linkColor(l))
@@ -655,6 +734,7 @@ async function fetchViaGraph(statusEl) {
     limit: MAX_NODES,
     include_deps: true,
     include_body: true,
+    include_agents: true,
   });
 
   const nodes = (result.nodes || []).map(n => ({

@@ -36,6 +36,7 @@ export const DEP_TYPE_COLORS = {
   'waits-for':  '#d4a017',
   'relates-to': '#4a9eff88',
   'parent-child':'#8b45a688',
+  'assigned_to': '#ff6b35',
   default:      '#3a3a5a',
 };
 
