@@ -190,6 +190,9 @@ let timelineActive = false; // true when user has narrowed the range
 // Live event doots — floating text particles above agent nodes (bd-c7723)
 const doots = []; // { sprite, node, birth, lifetime, vx, vy, vz }
 
+// Doot-triggered issue popups — auto-dismissing cards when doots fire (beads-edy1)
+const dootPopups = new Map(); // nodeId → { el, timer, node, lastDoot }
+
 // --- Minimap ---
 const minimapCanvas = document.getElementById('minimap');
 const minimapCtx = minimapCanvas.getContext('2d');
@@ -3648,6 +3651,9 @@ function findAgentNode(evt) {
 function spawnDoot(node, text, color) {
   if (!node || !text || !graph) return;
 
+  // Trigger doot popup for non-agent nodes (beads-edy1)
+  showDootPopup(node);
+
   const sprite = makeTextSprite(text, { fontSize: 16, color, opacity: 0.9 });
   // Random horizontal jitter so overlapping doots spread out
   const jx = (Math.random() - 0.5) * 6;
@@ -3705,6 +3711,84 @@ function updateDoots(t) {
     const opacity = age < fadeStart ? 0.9 : 0.9 * (1 - (age - fadeStart) / (d.lifetime - fadeStart));
     d.sprite.material.opacity = Math.max(0, opacity);
   }
+}
+
+// --- Doot-triggered issue popup (beads-edy1) ---
+const DOOT_POPUP_DURATION = 30000; // 30s auto-dismiss
+const DOOT_POPUP_MAX = 3; // max simultaneous popups
+
+function showDootPopup(node) {
+  if (!node || !node.id || node.issue_type === 'agent') return;
+
+  const existing = dootPopups.get(node.id);
+  if (existing) {
+    // Reset timer — activity keeps it alive
+    clearTimeout(existing.timer);
+    existing.timer = setTimeout(() => dismissDootPopup(node.id), DOOT_POPUP_DURATION);
+    existing.lastDoot = Date.now();
+    // Pulse animation
+    existing.el.classList.remove('doot-pulse');
+    void existing.el.offsetWidth; // force reflow
+    existing.el.classList.add('doot-pulse');
+    return;
+  }
+
+  // Prune oldest if at max
+  if (dootPopups.size >= DOOT_POPUP_MAX) {
+    const oldest = [...dootPopups.entries()].sort((a, b) => a[1].lastDoot - b[1].lastDoot)[0];
+    if (oldest) dismissDootPopup(oldest[0]);
+  }
+
+  // Create popup element
+  const container = document.getElementById('doot-popups') || createDootPopupContainer();
+  const el = document.createElement('div');
+  el.className = 'doot-popup';
+  el.dataset.beadId = node.id;
+
+  const pLabel = ['P0', 'P1', 'P2', 'P3', 'P4'][node.priority] || '';
+  el.innerHTML = `
+    <div class="doot-popup-header">
+      <span class="doot-popup-id">${escapeHtml(node.id)}</span>
+      <span class="tag tag-${node.status}">${node.status}</span>
+      <span class="tag">${pLabel}</span>
+      <button class="doot-popup-close">&times;</button>
+    </div>
+    <div class="doot-popup-title">${escapeHtml(node.title || node.id)}</div>
+    ${node.assignee ? `<div class="doot-popup-assignee">@ ${escapeHtml(node.assignee)}</div>` : ''}
+    <div class="doot-popup-bar"></div>
+  `;
+
+  el.querySelector('.doot-popup-close').onclick = () => dismissDootPopup(node.id);
+  el.onclick = (e) => {
+    if (e.target.classList.contains('doot-popup-close')) return;
+    handleNodeClick(node);
+  };
+
+  container.appendChild(el);
+  requestAnimationFrame(() => el.classList.add('open'));
+
+  const timer = setTimeout(() => dismissDootPopup(node.id), DOOT_POPUP_DURATION);
+  dootPopups.set(node.id, { el, timer, node, lastDoot: Date.now() });
+
+  // Start countdown bar animation
+  const bar = el.querySelector('.doot-popup-bar');
+  if (bar) bar.style.animationDuration = `${DOOT_POPUP_DURATION}ms`;
+}
+
+function dismissDootPopup(nodeId) {
+  const popup = dootPopups.get(nodeId);
+  if (!popup) return;
+  clearTimeout(popup.timer);
+  popup.el.classList.remove('open');
+  dootPopups.delete(nodeId);
+  setTimeout(() => popup.el.remove(), 300);
+}
+
+function createDootPopupContainer() {
+  const c = document.createElement('div');
+  c.id = 'doot-popups';
+  document.body.appendChild(c);
+  return c;
 }
 
 function connectBusStream() {
