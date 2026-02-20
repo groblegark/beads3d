@@ -654,7 +654,33 @@ function initGraph() {
     .onNodeHover(handleNodeHover)
     .onNodeClick(handleNodeClick)
     .onNodeRightClick(handleNodeRightClick)
-    .onBackgroundClick(() => { clearSelection(); hideTooltip(); hideDetail(); hideContextMenu(); });
+    .onBackgroundClick(() => { clearSelection(); hideTooltip(); hideDetail(); hideContextMenu(); })
+    // DAG dragging: dragged node pulls its subtree with spring physics (beads-6253)
+    .onNodeDrag((node) => {
+      if (!node || node._hidden) return;
+      if (!node._dragSubtree) {
+        node._dragSubtree = getDragSubtree(node.id);
+      }
+      // Apply velocity impulses to subtree proportional to drag delta
+      const subtree = node._dragSubtree;
+      for (const { node: child, depth } of subtree) {
+        if (child === node || child.fx !== undefined) continue;
+        const strength = 0.3 * Math.pow(0.5, depth - 1);
+        const dx = node.x - child.x;
+        const dy = node.y - child.y;
+        const dz = (node.z || 0) - (child.z || 0);
+        const dist = Math.sqrt(dx * dx + dy * dy + dz * dz) || 1;
+        const restDist = 30 * depth;
+        if (dist > restDist) {
+          child.vx = (child.vx || 0) + dx * strength * 0.05;
+          child.vy = (child.vy || 0) + dy * strength * 0.05;
+          child.vz = (child.vz || 0) + dz * strength * 0.05;
+        }
+      }
+    })
+    .onNodeDragEnd((node) => {
+      if (node) delete node._dragSubtree;
+    });
 
   // Force tuning — applied by setLayout()
   const nodeCount = graphData.nodes.length || 100;
@@ -2736,6 +2762,56 @@ function setLayout(mode) {
 
   // Re-apply agent tether force (survives layout changes)
   setupAgentTether();
+}
+
+// --- DAG Dragging Subtree (beads-6253) ---
+// Returns array of {node, depth} for all nodes reachable from startId.
+// Agents: follow assigned_to edges downstream only.
+// Beads: follow all edge types bidirectionally (full connected component).
+function getDragSubtree(startId) {
+  const nodeById = new Map();
+  for (const n of graphData.nodes) {
+    if (!n._hidden) nodeById.set(n.id, n);
+  }
+
+  const result = [];
+  const visited = new Set();
+  const queue = [{ id: startId, depth: 0 }];
+  const startNode = nodeById.get(startId);
+  const isAgent = startNode && startNode.issue_type === 'agent';
+
+  while (queue.length > 0) {
+    const { id, depth } = queue.shift();
+    if (visited.has(id)) continue;
+    visited.add(id);
+    const node = nodeById.get(id);
+    if (!node) continue;
+    result.push({ node, depth });
+
+    // Max 4 hops to limit subtree size
+    if (depth >= 4) continue;
+
+    for (const l of graphData.links) {
+      const srcId = typeof l.source === 'object' ? l.source.id : l.source;
+      const tgtId = typeof l.target === 'object' ? l.target.id : l.target;
+
+      if (isAgent) {
+        // Agents: only follow outgoing assigned_to edges, then deps downstream
+        if (srcId === id && !visited.has(tgtId)) {
+          queue.push({ id: tgtId, depth: depth + 1 });
+        }
+      } else {
+        // Beads: follow edges bidirectionally
+        if (srcId === id && !visited.has(tgtId)) {
+          queue.push({ id: tgtId, depth: depth + 1 });
+        }
+        if (tgtId === id && !visited.has(srcId)) {
+          queue.push({ id: srcId, depth: depth + 1 });
+        }
+      }
+    }
+  }
+  return result;
 }
 
 // --- Agent DAG Tether (beads-1gx1) ---
