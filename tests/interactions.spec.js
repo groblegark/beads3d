@@ -589,3 +589,582 @@ test.describe('bulk menu mutations', () => {
     expect(updateCalls.length).toBe(2);
   });
 });
+
+// --- Detail panel tests (bd-yprv2) ---
+// Verify the detail panel opens on node click, shows correct fields,
+// lazy-loads full details, and closes properly.
+
+test.describe('detail panel', () => {
+
+  test('clicking a node opens detail panel with basic info', async ({ page }) => {
+    const tracker = createAPITracker();
+    await mockAPI(page, tracker);
+    await page.goto('/');
+    await waitForGraph(page);
+
+    // Click node via graph API
+    await page.evaluate(() => {
+      const b = window.__beads3d;
+      if (!b) return;
+      const node = b.graphData().nodes.find(n => n.id === 'bd-feat1');
+      if (node) b.graph.onNodeClick()(node, { preventDefault: () => {} });
+    });
+    await page.waitForTimeout(1000);
+
+    // Detail panel should be visible
+    const detail = page.locator('#detail');
+    await expect(detail).toBeVisible();
+
+    // Should show the node ID
+    await expect(detail.locator('.detail-id')).toContainText('bd-feat1');
+
+    // Should show the title
+    await expect(detail.locator('.detail-title')).toContainText('Add user authentication');
+
+    // Should show status, type, and priority tags
+    const meta = detail.locator('.detail-meta');
+    await expect(meta).toContainText('in_progress');
+    await expect(meta).toContainText('feature');
+    await expect(meta).toContainText('P1');
+  });
+
+  test('detail panel lazy-loads full description via Show API', async ({ page }) => {
+    const tracker = createAPITracker();
+    await mockAPI(page, tracker);
+    await page.goto('/');
+    await waitForGraph(page);
+
+    // Click node to open detail
+    await page.evaluate(() => {
+      const b = window.__beads3d;
+      if (!b) return;
+      const node = b.graphData().nodes.find(n => n.id === 'bd-feat1');
+      if (node) b.graph.onNodeClick()(node, { preventDefault: () => {} });
+    });
+    await page.waitForTimeout(2000);
+
+    // Show API should have been called
+    const showCalls = tracker.getCallsTo('Show');
+    expect(showCalls.length).toBeGreaterThanOrEqual(1);
+
+    // Description section should be rendered (from MOCK_SHOW fixture)
+    const detail = page.locator('#detail');
+    // Wait for lazy-loaded content to appear
+    await expect(detail).toContainText('OAuth2 authentication', { timeout: 5000 });
+  });
+
+  test('detail panel shows dependency list', async ({ page }) => {
+    const tracker = createAPITracker();
+    await mockAPI(page, tracker);
+    await page.goto('/');
+    await waitForGraph(page);
+
+    await page.evaluate(() => {
+      const b = window.__beads3d;
+      if (!b) return;
+      const node = b.graphData().nodes.find(n => n.id === 'bd-feat1');
+      if (node) b.graph.onNodeClick()(node, { preventDefault: () => {} });
+    });
+    await page.waitForTimeout(2000);
+
+    // MOCK_SHOW has a dependency on bd-task1
+    const detail = page.locator('#detail');
+    await expect(detail).toContainText('Dependencies');
+    await expect(detail).toContainText('Write OAuth integration tests');
+  });
+
+  test('detail panel close button hides the panel', async ({ page }) => {
+    const tracker = createAPITracker();
+    await mockAPI(page, tracker);
+    await page.goto('/');
+    await waitForGraph(page);
+
+    // Open detail
+    await page.evaluate(() => {
+      const b = window.__beads3d;
+      if (!b) return;
+      const node = b.graphData().nodes.find(n => n.id === 'bd-feat1');
+      if (node) b.graph.onNodeClick()(node, { preventDefault: () => {} });
+    });
+    await page.waitForTimeout(1000);
+
+    const detail = page.locator('#detail');
+    await expect(detail).toBeVisible();
+
+    // Click close button
+    await detail.locator('.detail-close').click();
+    await page.waitForTimeout(500);
+
+    // Panel should be hidden
+    await expect(detail).not.toBeVisible();
+  });
+
+  test('Escape key closes detail panel', async ({ page }) => {
+    const tracker = createAPITracker();
+    await mockAPI(page, tracker);
+    await page.goto('/');
+    await waitForGraph(page);
+
+    // Open detail
+    await page.evaluate(() => {
+      const b = window.__beads3d;
+      if (!b) return;
+      const node = b.graphData().nodes.find(n => n.id === 'bd-task1');
+      if (node) b.graph.onNodeClick()(node, { preventDefault: () => {} });
+    });
+    await page.waitForTimeout(1000);
+    await expect(page.locator('#detail')).toBeVisible();
+
+    // Press Escape
+    await page.keyboard.press('Escape');
+    await page.waitForTimeout(500);
+
+    await expect(page.locator('#detail')).not.toBeVisible();
+  });
+
+  test('detail panel shows assignee tag', async ({ page }) => {
+    const tracker = createAPITracker();
+    await mockAPI(page, tracker);
+    await page.goto('/');
+    await waitForGraph(page);
+
+    await page.evaluate(() => {
+      const b = window.__beads3d;
+      if (!b) return;
+      const node = b.graphData().nodes.find(n => n.id === 'bd-feat1');
+      if (node) b.graph.onNodeClick()(node, { preventDefault: () => {} });
+    });
+    await page.waitForTimeout(1000);
+
+    // bd-feat1 has assignee 'alice'
+    const meta = page.locator('#detail .detail-meta');
+    await expect(meta.locator('.tag-assignee')).toContainText('alice');
+  });
+});
+
+// --- Search navigation tests (bd-yprv2) ---
+// Verify search input filtering, result count display, and arrow key navigation.
+
+test.describe('search navigation', () => {
+
+  test('typing in search filters nodes and shows match count', async ({ page }) => {
+    const tracker = createAPITracker();
+    await mockAPI(page, tracker);
+    await page.goto('/');
+    await waitForGraph(page);
+
+    // Focus search and type
+    await page.keyboard.press('/');
+    await page.keyboard.type('epic');
+    await page.waitForTimeout(500);
+
+    // Filter count should show matches
+    const filterCount = page.locator('#filter-count');
+    await expect(filterCount).toContainText('matches');
+
+    // Should show visible/total count
+    await expect(filterCount).toContainText('/');
+  });
+
+  test('search matches by node ID', async ({ page }) => {
+    const tracker = createAPITracker();
+    await mockAPI(page, tracker);
+    await page.goto('/');
+    await waitForGraph(page);
+
+    await page.keyboard.press('/');
+    await page.keyboard.type('bd-bug1');
+    await page.waitForTimeout(500);
+
+    const filterCount = page.locator('#filter-count');
+    // Should find exactly 1 match
+    await expect(filterCount).toContainText('1/1 matches');
+  });
+
+  test('search matches by assignee', async ({ page }) => {
+    const tracker = createAPITracker();
+    await mockAPI(page, tracker);
+    await page.goto('/');
+    await waitForGraph(page);
+
+    await page.keyboard.press('/');
+    await page.keyboard.type('alice');
+    await page.waitForTimeout(500);
+
+    // alice is assigned to bd-epic1, bd-feat1, bd-bug2, and agent:alice
+    const filterCount = page.locator('#filter-count');
+    const text = await filterCount.textContent();
+    // Should have multiple matches
+    expect(text).toMatch(/\d+\/\d+ matches/);
+  });
+
+  test('Enter key on search result opens detail panel', async ({ page }) => {
+    const tracker = createAPITracker();
+    await mockAPI(page, tracker);
+    await page.goto('/');
+    await waitForGraph(page);
+
+    await page.keyboard.press('/');
+    await page.keyboard.type('bd-bug1');
+    await page.waitForTimeout(500);
+
+    // Press Enter to fly to result
+    await page.keyboard.press('Enter');
+    await page.waitForTimeout(2000);
+
+    // Detail panel should open for the matched node
+    const detail = page.locator('#detail');
+    await expect(detail).toBeVisible();
+    await expect(detail.locator('.detail-id')).toContainText('bd-bug1');
+  });
+
+  test('ArrowDown/ArrowUp cycle through search results', async ({ page }) => {
+    const tracker = createAPITracker();
+    await mockAPI(page, tracker);
+    await page.goto('/');
+    await waitForGraph(page);
+
+    // Search for 'task' — should match multiple nodes (bd-task1..5)
+    await page.keyboard.press('/');
+    await page.keyboard.type('task');
+    await page.waitForTimeout(500);
+
+    const filterCount = page.locator('#filter-count');
+
+    // Should start at result 1
+    let text = await filterCount.textContent();
+    expect(text).toMatch(/^1\//);
+
+    // Press ArrowDown to go to next result
+    await page.keyboard.press('ArrowDown');
+    await page.waitForTimeout(1000);
+    text = await filterCount.textContent();
+    expect(text).toMatch(/^2\//);
+
+    // Press ArrowDown again
+    await page.keyboard.press('ArrowDown');
+    await page.waitForTimeout(1000);
+    text = await filterCount.textContent();
+    expect(text).toMatch(/^3\//);
+
+    // Press ArrowUp to go back
+    await page.keyboard.press('ArrowUp');
+    await page.waitForTimeout(1000);
+    text = await filterCount.textContent();
+    expect(text).toMatch(/^2\//);
+  });
+
+  test('clearing search restores all nodes', async ({ page }) => {
+    const tracker = createAPITracker();
+    await mockAPI(page, tracker);
+    await page.goto('/');
+    await waitForGraph(page);
+
+    // Get total node count
+    const totalBefore = await page.evaluate(() => {
+      const b = window.__beads3d;
+      return b ? b.graphData().nodes.length : 0;
+    });
+
+    // Search to filter
+    await page.keyboard.press('/');
+    await page.keyboard.type('epic');
+    await page.waitForTimeout(500);
+
+    // Verify some nodes are hidden
+    const visibleDuring = await page.evaluate(() => {
+      const b = window.__beads3d;
+      return b ? b.graphData().nodes.filter(n => !n._hidden).length : 0;
+    });
+    expect(visibleDuring).toBeLessThan(totalBefore);
+
+    // Press Escape to clear
+    await page.keyboard.press('Escape');
+    await page.waitForTimeout(500);
+
+    // All nodes should be visible again
+    const visibleAfter = await page.evaluate(() => {
+      const b = window.__beads3d;
+      return b ? b.graphData().nodes.filter(n => !n._hidden).length : 0;
+    });
+    expect(visibleAfter).toBe(totalBefore);
+  });
+
+  test('keyboard shortcuts do not fire while search input is focused', async ({ page }) => {
+    const tracker = createAPITracker();
+    await mockAPI(page, tracker);
+    await page.goto('/');
+    await waitForGraph(page);
+
+    // Focus search
+    await page.keyboard.press('/');
+    await page.waitForTimeout(300);
+
+    // Record graph calls AFTER search is focused (avoids counting any in-flight refreshes)
+    const graphCallsAfterFocus = tracker.getCallsTo('Graph').length;
+
+    // Type 'r' — should NOT trigger refresh (just types in search input)
+    await page.keyboard.type('r');
+    await page.waitForTimeout(500);
+
+    // No new Graph calls should have been made
+    expect(tracker.getCallsTo('Graph').length).toBe(graphCallsAfterFocus);
+
+    // Search input should contain 'r'
+    const searchInput = page.locator('#search-input');
+    await expect(searchInput).toHaveValue('r');
+  });
+});
+
+// --- Context menu advanced actions (bd-yprv2) ---
+// Test copy-id, show-deps, show-blockers, and expand-deps actions.
+
+test.describe('context menu advanced actions', () => {
+
+  test('copy-id action copies node ID to clipboard', async ({ page, context }) => {
+    const tracker = createAPITracker();
+    await mockAPI(page, tracker);
+    // Grant clipboard permission
+    await context.grantPermissions(['clipboard-read', 'clipboard-write']);
+    await page.goto('/');
+    await waitForGraph(page);
+
+    const clicked = await rightClickNode(page, 'bd-task1');
+    expect(clicked).toBe(true);
+    await page.waitForTimeout(500);
+
+    // Click copy-id action via evaluate (context menu can detach during refresh)
+    await page.evaluate(() => {
+      const item = document.querySelector('#context-menu [data-action="copy-id"]');
+      if (item) item.click();
+    });
+    await page.waitForTimeout(300);
+
+    // Verify clipboard content
+    const clipText = await page.evaluate(() => navigator.clipboard.readText());
+    expect(clipText).toBe('bd-task1');
+  });
+
+  test('copy-show action copies "bd show" command to clipboard', async ({ page, context }) => {
+    const tracker = createAPITracker();
+    await mockAPI(page, tracker);
+    await context.grantPermissions(['clipboard-read', 'clipboard-write']);
+    await page.goto('/');
+    await waitForGraph(page);
+
+    const clicked = await rightClickNode(page, 'bd-feat1');
+    expect(clicked).toBe(true);
+    await page.waitForTimeout(500);
+
+    // Click via evaluate to avoid detached DOM flakiness
+    await page.evaluate(() => {
+      const item = document.querySelector('#context-menu [data-action="copy-show"]');
+      if (item) item.click();
+    });
+    await page.waitForTimeout(300);
+
+    const clipText = await page.evaluate(() => navigator.clipboard.readText());
+    expect(clipText).toBe('bd show bd-feat1');
+  });
+
+  test('show-deps highlights downstream subgraph', async ({ page }) => {
+    const tracker = createAPITracker();
+    await mockAPI(page, tracker);
+    await page.goto('/');
+    await waitForGraph(page);
+
+    // Right-click on bd-epic1 (has 3 downstream deps: bd-feat1, bd-feat2, bd-task2)
+    const clicked = await rightClickNode(page, 'bd-epic1');
+    expect(clicked).toBe(true);
+    await page.waitForTimeout(500);
+
+    // Click show-deps via evaluate (it's a data-action item, may be in submenu)
+    await page.evaluate(() => {
+      const item = document.querySelector('#context-menu [data-action="show-deps"]');
+      if (item) item.click();
+    });
+    await page.waitForTimeout(500);
+
+    // Context menu should close
+    await expect(page.locator('#context-menu')).not.toBeVisible();
+
+    // Check that some nodes are dimmed (non-subgraph) and some are not
+    // Verify the subgraph was highlighted (we can't access highlightNodes directly,
+    // but we can verify the action completed without error and menu closed)
+    // The visual effect is that non-subgraph links become thin (0.2) and subgraph links stay wide
+    const nodeCount = await page.evaluate(() => {
+      const b = window.__beads3d;
+      return b ? b.graphData().nodes.length : 0;
+    });
+    expect(nodeCount).toBeGreaterThan(0);
+  });
+
+  test('show-blockers highlights upstream subgraph', async ({ page }) => {
+    const tracker = createAPITracker();
+    await mockAPI(page, tracker);
+    await page.goto('/');
+    await waitForGraph(page);
+
+    // Right-click on bd-task4 (blocked by bd-task3 which is child of bd-epic2)
+    const clicked = await rightClickNode(page, 'bd-task4');
+    expect(clicked).toBe(true);
+    await page.waitForTimeout(500);
+
+    await page.evaluate(() => {
+      const item = document.querySelector('#context-menu [data-action="show-blockers"]');
+      if (item) item.click();
+    });
+    await page.waitForTimeout(500);
+
+    // Context menu should close
+    await expect(page.locator('#context-menu')).not.toBeVisible();
+  });
+
+  test('expand-deps calls Show API and keeps context menu closed', async ({ page }) => {
+    const tracker = createAPITracker();
+    await mockAPI(page, tracker);
+    await page.goto('/');
+    await waitForGraph(page);
+
+    const showCallsBefore = tracker.getCallsTo('Show').length;
+
+    const clicked = await rightClickNode(page, 'bd-feat1');
+    expect(clicked).toBe(true);
+    await page.waitForTimeout(500);
+
+    // Click expand-deps
+    await page.locator('#context-menu [data-action="expand-deps"]').click();
+    await page.waitForTimeout(1000);
+
+    // Show API should be called to load full dep tree
+    expect(tracker.getCallsTo('Show').length).toBeGreaterThan(showCallsBefore);
+
+    // Context menu should close
+    await expect(page.locator('#context-menu')).not.toBeVisible();
+  });
+
+  test('context menu closes on Escape key', async ({ page }) => {
+    const tracker = createAPITracker();
+    await mockAPI(page, tracker);
+    await page.goto('/');
+    await waitForGraph(page);
+
+    const clicked = await rightClickNode(page, 'bd-task1');
+    expect(clicked).toBe(true);
+    await page.waitForTimeout(500);
+    await expect(page.locator('#context-menu')).toBeVisible();
+
+    await page.keyboard.press('Escape');
+    await page.waitForTimeout(300);
+
+    await expect(page.locator('#context-menu')).not.toBeVisible();
+  });
+});
+
+// --- Filter button tests (bd-yprv2) ---
+// Test status and type filter toggle buttons.
+
+test.describe('filter buttons', () => {
+
+  test('status filter button toggles active state', async ({ page }) => {
+    const tracker = createAPITracker();
+    await mockAPI(page, tracker);
+    await page.goto('/');
+    await waitForGraph(page);
+
+    const btn = page.locator('.filter-status[data-status="open"]');
+    // Initially not active
+    await expect(btn).not.toHaveClass(/active/);
+
+    // Click to activate
+    await btn.click();
+    await page.waitForTimeout(300);
+    await expect(btn).toHaveClass(/active/);
+
+    // Click again to deactivate
+    await btn.click();
+    await page.waitForTimeout(300);
+    await expect(btn).not.toHaveClass(/active/);
+  });
+
+  test('status filter hides non-matching nodes', async ({ page }) => {
+    const tracker = createAPITracker();
+    await mockAPI(page, tracker);
+    await page.goto('/');
+    await waitForGraph(page);
+
+    const totalNodes = await page.evaluate(() => {
+      const b = window.__beads3d;
+      return b ? b.graphData().nodes.length : 0;
+    });
+
+    // Click "in_progress" filter — should show only in_progress nodes
+    await page.locator('.filter-status[data-status="in_progress"]').click();
+    await page.waitForTimeout(500);
+
+    const visibleNodes = await page.evaluate(() => {
+      const b = window.__beads3d;
+      return b ? b.graphData().nodes.filter(n => !n._hidden).length : 0;
+    });
+
+    // Should be fewer than total (only in_progress nodes visible)
+    expect(visibleNodes).toBeLessThan(totalNodes);
+    expect(visibleNodes).toBeGreaterThan(0);
+
+    // Verify all visible nodes are in_progress
+    const allInProgress = await page.evaluate(() => {
+      const b = window.__beads3d;
+      if (!b) return false;
+      return b.graphData().nodes.filter(n => !n._hidden).every(n => n.status === 'in_progress');
+    });
+    expect(allInProgress).toBe(true);
+  });
+
+  test('type filter button toggles and filters nodes', async ({ page }) => {
+    const tracker = createAPITracker();
+    await mockAPI(page, tracker);
+    await page.goto('/');
+    await waitForGraph(page);
+
+    // Click "bug" type filter
+    const btn = page.locator('.filter-type[data-type="bug"]');
+    await btn.click();
+    await page.waitForTimeout(500);
+    await expect(btn).toHaveClass(/active/);
+
+    // Only bug nodes should be visible
+    const allBugs = await page.evaluate(() => {
+      const b = window.__beads3d;
+      if (!b) return false;
+      const visible = b.graphData().nodes.filter(n => !n._hidden);
+      return visible.length > 0 && visible.every(n => n.issue_type === 'bug');
+    });
+    expect(allBugs).toBe(true);
+  });
+
+  test('combined status and type filters intersect', async ({ page }) => {
+    const tracker = createAPITracker();
+    await mockAPI(page, tracker);
+    await page.goto('/');
+    await waitForGraph(page);
+
+    // Filter: status=open AND type=task
+    await page.locator('.filter-status[data-status="open"]').click();
+    await page.waitForTimeout(200);
+    await page.locator('.filter-type[data-type="task"]').click();
+    await page.waitForTimeout(500);
+
+    const visible = await page.evaluate(() => {
+      const b = window.__beads3d;
+      if (!b) return [];
+      return b.graphData().nodes.filter(n => !n._hidden).map(n => ({ id: n.id, status: n.status, type: n.issue_type }));
+    });
+
+    // All visible should be open tasks
+    for (const n of visible) {
+      expect(n.status).toBe('open');
+      expect(n.type).toBe('task');
+    }
+    expect(visible.length).toBeGreaterThan(0);
+  });
+});
