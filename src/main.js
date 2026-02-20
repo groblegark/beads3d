@@ -2149,7 +2149,7 @@ function applyFilters() {
 // today vs yesterday), while older time is compressed (months ago squish together).
 // Log transform: pos = log(1 + t/scale) / log(1 + range/scale)
 
-const TIMELINE_LOG_SCALE = 86400000; // 1 day in ms — controls curvature
+const TIMELINE_LOG_SCALE = 3600000; // 1 hour in ms — aggressive log curvature for fine-grained recent time
 
 function timeToLogPos(timeMs, minMs, maxMs) {
   const range = maxMs - minMs || 1;
@@ -2166,8 +2166,11 @@ function logPosToTime(pos, minMs, maxMs) {
 function formatTimelineDate(ms) {
   const d = new Date(ms);
   const now = new Date();
-  const diffDays = (now - d) / 86400000;
-  if (diffDays < 1) return 'today';
+  const diffMs = now - d;
+  const diffHours = diffMs / 3600000;
+  const diffDays = diffMs / 86400000;
+  if (diffHours < 1) return `${Math.floor(diffMs / 60000)}m ago`;
+  if (diffHours < 24) return `${Math.floor(diffHours)}h ago`;
   if (diffDays < 2) return 'yesterday';
   if (diffDays < 7) return `${Math.floor(diffDays)}d ago`;
   if (diffDays < 30) return `${Math.floor(diffDays / 7)}w ago`;
