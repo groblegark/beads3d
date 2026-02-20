@@ -2489,10 +2489,10 @@ function dootLabel(evt) {
 function dootColor(evt) {
   const type = evt.type || '';
   if (type.includes('Crash') || type.includes('Failed')) return '#ff3333';
+  if (type.includes('Decision')) return '#d4a017'; // before Created check — DecisionCreated is yellow
   if (type.includes('Stop') || type.includes('End')) return '#888888';
   if (type.includes('Started') || type.includes('Spawned') || type.includes('Created')) return '#2d8a4e';
   if (type.includes('Tool')) return '#4a9eff';
-  if (type.includes('Decision')) return '#d4a017';
   if (type.includes('Idle')) return '#666666';
   return '#ff6b35'; // agent orange default
 }
@@ -2607,6 +2607,12 @@ async function main() {
     graph.cameraPosition({ x: 0, y: 0, z: 400 });
     // Expose for Playwright tests
     window.__beads3d = { graph, graphData: () => graphData, multiSelected: () => multiSelected, showBulkMenu };
+    // Expose doot internals for testing (bd-pg7vy)
+    window.__beads3d_spawnDoot = spawnDoot;
+    window.__beads3d_doots = () => doots;
+    window.__beads3d_dootLabel = dootLabel;
+    window.__beads3d_dootColor = dootColor;
+    window.__beads3d_findAgentNode = findAgentNode;
   } catch (err) {
     console.error('Init failed:', err);
     document.getElementById('status').textContent = `init error: ${err.message}`;
