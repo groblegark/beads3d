@@ -4626,6 +4626,31 @@ function connectBusStream() {
         }
       }
 
+      // Edge pulse: spark along assigned_to edge from agent to task (bd-kc7r1)
+      // Rate-limited to 1 spark per agent per 500ms to avoid overwhelming the scene.
+      if (node && node.issue_type === 'agent' && graphData) {
+        if (!connectBusStream._lastSpark) connectBusStream._lastSpark = {};
+        const now = Date.now();
+        const lastSpark = connectBusStream._lastSpark[node.id] || 0;
+        if (now - lastSpark > 500) {
+          connectBusStream._lastSpark[node.id] = now;
+          const agentNodeId = node.id;
+          const assignedLinks = graphData.links.filter(l =>
+            l.dep_type === 'assigned_to' &&
+            (typeof l.source === 'object' ? l.source.id : l.source) === agentNodeId
+          );
+          for (const link of assignedLinks) {
+            const tgtId = typeof link.target === 'object' ? link.target.id : link.target;
+            const taskNode = graphData.nodes.find(n => n.id === tgtId);
+            if (taskNode && !taskNode._hidden) {
+              const sparkHex = parseInt((dootColor(evt) || '#ff6b35').replace('#', ''), 16);
+              spawnEdgeSpark(node, taskNode, sparkHex);
+              break; // one pulse per event
+            }
+          }
+        }
+      }
+
       // Feed agent activity windows (bd-kau4k)
       const agentId = resolveAgentId(evt);
       if (agentId && agentWindows.has(agentId)) {
