@@ -909,6 +909,30 @@
     .agents-view-grid .agent-window:not(.collapsed) { height: 300px; }
     .agents-view-grid .agent-window.collapsed { height: 28px; }
 
+    /* Flash animation for scroll-to-agent (bd-jgvas Phase 2) */
+    .agent-window-flash {
+      animation: agent-flash 0.6s ease-out;
+    }
+    @keyframes agent-flash {
+      0% { border-color: #ff6b35; box-shadow: 0 0 12px rgba(255, 107, 53, 0.4); }
+      100% { border-color: #2a2a3a; box-shadow: none; }
+    }
+
+    /* Search input in agents view header (bd-jgvas Phase 2) */
+    .agents-view-search {
+      background: rgba(20, 20, 35, 0.8);
+      border: 1px solid #2a2a3a;
+      border-radius: 3px;
+      color: #ccc;
+      font-size: 11px;
+      font-family: 'JetBrains Mono', monospace;
+      padding: 3px 8px;
+      width: 180px;
+      outline: none;
+    }
+    .agents-view-search:focus { border-color: #ff6b35; }
+    .agents-view-search::placeholder { color: #444; }
+
     /* Decision detail panel (bd-1xskh, bd-9gxt1) */
     .decision-prompt { white-space: pre-wrap; color: #d4a017; }
     .decision-options { display: flex; flex-direction: column; gap: 4px; }
