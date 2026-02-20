@@ -5755,6 +5755,7 @@ function showAgentWindow(node) {
       <span class="agent-window-name" style="cursor:pointer" title="Click to zoom to agent">${escapeHtml(agentName)}</span>
       ${rigBadge}
       <span class="agent-window-badge">${assigned.length}</span>
+      <button class="agent-window-popout" title="Pop out to floating window">&#x2197;</button>
       <button class="agent-window-close">&times;</button>
     </div>
     ${beadsList ? `<div class="agent-window-beads">${beadsList}</div>` : ''}
@@ -5798,6 +5799,12 @@ function showAgentWindow(node) {
   };
 
   el.querySelector('.agent-window-close').onclick = () => closeAgentWindow(node.id);
+
+  // bd-dqe6k: Pop-out / dock-back
+  el.querySelector('.agent-window-popout').onclick = (e) => {
+    e.stopPropagation();
+    togglePopout(node.id);
+  };
 
   // Mail compose (bd-t76aw): send message on Enter or click
   const mailInput = el.querySelector('.agent-mail-input');
@@ -5847,8 +5854,88 @@ function showAgentWindow(node) {
 function closeAgentWindow(agentId) {
   const win = agentWindows.get(agentId);
   if (!win) return;
+  if (win._dragCleanup) { win._dragCleanup(); win._dragCleanup = null; }
   win.el.remove();
   agentWindows.delete(agentId);
+}
+
+// bd-dqe6k: Pop-out / dock-back agent windows
+function togglePopout(agentId) {
+  const win = agentWindows.get(agentId);
+  if (!win) return;
+  const el = win.el;
+  const btn = el.querySelector('.agent-window-popout');
+
+  if (el.classList.contains('popped-out')) {
+    // Dock back: return to tray or grid
+    el.classList.remove('popped-out');
+    el.style.left = '';
+    el.style.top = '';
+    el.style.width = '';
+    el.style.height = '';
+    btn.innerHTML = '&#x2197;';
+    btn.title = 'Pop out to floating window';
+    // Move back to original container
+    const tray = document.getElementById('agent-windows');
+    const grid = document.querySelector('.agents-view-grid');
+    if (grid && document.getElementById('agents-view')?.style.display !== 'none') {
+      grid.appendChild(el);
+    } else if (tray) {
+      tray.appendChild(el);
+    }
+    // Remove drag listeners
+    if (win._dragCleanup) { win._dragCleanup(); win._dragCleanup = null; }
+  } else {
+    // Pop out: detach to fixed floating window
+    const rect = el.getBoundingClientRect();
+    el.classList.add('popped-out');
+    // Position where it was, clamped to viewport
+    el.style.left = Math.min(rect.left, window.innerWidth - 440) + 'px';
+    el.style.top = Math.max(20, rect.top - 60) + 'px';
+    btn.innerHTML = '&#x2199;';
+    btn.title = 'Dock back to tray';
+    // Move to body so it floats above everything
+    document.body.appendChild(el);
+    // Enable drag on header
+    win._dragCleanup = enableHeaderDrag(el);
+  }
+}
+
+function enableHeaderDrag(el) {
+  const header = el.querySelector('.agent-window-header');
+  let dragging = false, startX = 0, startY = 0, origLeft = 0, origTop = 0;
+
+  function onMouseDown(e) {
+    // Don't drag if clicking buttons or name
+    if (e.target.closest('button') || e.target.closest('.agent-window-name')) return;
+    dragging = true;
+    startX = e.clientX;
+    startY = e.clientY;
+    origLeft = parseInt(el.style.left) || 0;
+    origTop = parseInt(el.style.top) || 0;
+    e.preventDefault();
+  }
+  function onMouseMove(e) {
+    if (!dragging) return;
+    const dx = e.clientX - startX;
+    const dy = e.clientY - startY;
+    el.style.left = (origLeft + dx) + 'px';
+    el.style.top = (origTop + dy) + 'px';
+  }
+  function onMouseUp() {
+    dragging = false;
+  }
+
+  header.addEventListener('mousedown', onMouseDown);
+  document.addEventListener('mousemove', onMouseMove);
+  document.addEventListener('mouseup', onMouseUp);
+
+  // Return cleanup function
+  return () => {
+    header.removeEventListener('mousedown', onMouseDown);
+    document.removeEventListener('mousemove', onMouseMove);
+    document.removeEventListener('mouseup', onMouseUp);
+  };
 }
 
 // --- Agents View overlay — Shift+A (bd-jgvas) ---
@@ -5964,6 +6051,7 @@ function openAgentsView() {
         ${avRigBadge}
         <span class="agent-window-badge" style="color:${statusColor}">${agentStatus || '?'}</span>
         <span class="agent-window-badge">${assigned.length}</span>
+        <button class="agent-window-popout" title="Pop out to floating window">&#x2197;</button>
         <button class="agent-window-close">&times;</button>
       </div>
       ${beadsList ? `<div class="agent-window-beads">${beadsList}</div>` : ''}
@@ -6007,6 +6095,12 @@ function openAgentsView() {
     };
 
     el.querySelector('.agent-window-close').onclick = () => closeAgentWindow(node.id);
+
+    // bd-dqe6k: Pop-out / dock-back
+    el.querySelector('.agent-window-popout').onclick = (e) => {
+      e.stopPropagation();
+      togglePopout(node.id);
+    };
 
     // Mail compose
     const mailInput = el.querySelector('.agent-mail-input');
@@ -6114,6 +6208,7 @@ function createAgentWindowInGrid(node) {
       <span class="agent-window-name" style="cursor:pointer" title="Click to zoom to agent">${escapeHtml(agentName)}</span>
       <span class="agent-window-badge" style="color:${statusColor}">${agentStatus || '?'}</span>
       <span class="agent-window-badge">${assigned.length}</span>
+      <button class="agent-window-popout" title="Pop out to floating window">&#x2197;</button>
       <button class="agent-window-close">&times;</button>
     </div>
     ${beadsList ? `<div class="agent-window-beads">${beadsList}</div>` : ''}
@@ -6157,6 +6252,12 @@ function createAgentWindowInGrid(node) {
   };
 
   el.querySelector('.agent-window-close').onclick = () => closeAgentWindow(node.id);
+
+  // bd-dqe6k: Pop-out / dock-back
+  el.querySelector('.agent-window-popout').onclick = (e) => {
+    e.stopPropagation();
+    togglePopout(node.id);
+  };
 
   // Mail compose
   const mailInput = el.querySelector('.agent-mail-input');

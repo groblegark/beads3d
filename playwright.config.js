@@ -47,5 +47,13 @@ export default defineConfig({
       name: 'chromium',
       use: { browserName: 'chromium' },
     },
+    {
+      name: 'camera-mouse',
+      testMatch: /camera|interactions|mouse-controls/,
+      use: {
+        browserName: 'chromium',
+        screenshot: 'on',  // capture before/after screenshots for all camera & mouse tests
+      },
+    },
   ],
 });
