@@ -170,6 +170,7 @@ let isBoxSelecting = false;
 let boxSelectStart = null; // {x, y} screen coords
 let cameraFrozen = false; // true when multi-select has locked orbit controls (bd-casin)
 let labelsVisible = false; // true when persistent info labels are shown on all nodes (bd-1o2f7)
+let activeAgeDays = 7; // age filter: show beads updated within N days (0 = all) (bd-uc0mw)
 
 // Live event doots — floating text particles above agent nodes (bd-c7723)
 const doots = []; // { sprite, node, birth, lifetime, vx, vy, vz }
@@ -1661,9 +1662,41 @@ function applyFilters() {
       hidden = true;
     }
 
+    // Age filter (bd-uc0mw): hide old closed beads, always show active/open/blocked/agent
+    if (!hidden && activeAgeDays > 0 && n.status === 'closed') {
+      const updatedAt = n.updated_at ? new Date(n.updated_at) : null;
+      if (updatedAt) {
+        const cutoff = Date.now() - activeAgeDays * 86400000;
+        if (updatedAt.getTime() < cutoff) {
+          hidden = true;
+          n._ageFiltered = true;  // mark so we can rescue connected nodes below
+        }
+      }
+    }
+
     n._hidden = hidden;
     n._searchMatch = !hidden && !!q;
   });
+
+  // Rescue age-filtered nodes that are directly connected to visible nodes (bd-uc0mw).
+  // This ensures dependency chains remain visible even when old closed beads are culled.
+  if (activeAgeDays > 0) {
+    const visibleIds = new Set(graphData.nodes.filter(n => !n._hidden).map(n => n.id));
+    for (const n of graphData.nodes) {
+      if (!n._ageFiltered) continue;
+      // Check if this age-filtered node has an edge to/from any visible node
+      const connected = graphData.links.some(l => {
+        const srcId = typeof l.source === 'object' ? l.source.id : l.source;
+        const tgtId = typeof l.target === 'object' ? l.target.id : l.target;
+        return (srcId === n.id && visibleIds.has(tgtId)) ||
+               (tgtId === n.id && visibleIds.has(srcId));
+      });
+      if (connected) {
+        n._hidden = false;
+        n._ageFiltered = false;
+      }
+    }
+  }
 
   // Build ordered search results for navigation
   if (q) {
@@ -2432,6 +2465,16 @@ function setupControls() {
     });
   });
 
+  // Age filter (bd-uc0mw): radio-style — only one active at a time
+  document.querySelectorAll('.filter-age').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.filter-age').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      activeAgeDays = parseInt(btn.dataset.days, 10);
+      applyFilters();
+    });
+  });
+
   // Keyboard shortcuts
   document.addEventListener('keydown', (e) => {
     // '/' to focus search
@@ -2580,15 +2623,68 @@ async function refresh() {
   // objects pick up the changes via the animation tick — no layout reset needed.
 }
 
-// --- SSE live updates ---
+// --- SSE live updates (bd-03b5v) ---
+// Handle incoming mutation events: optimistic property updates for instant feedback,
+// debounced full refresh for structural changes (new/deleted beads).
+let _refreshTimer;
 function connectLiveUpdates() {
   try {
-    let timer;
-    api.connectEvents(() => {
-      clearTimeout(timer);
-      timer = setTimeout(refresh, 2000);
+    api.connectEvents((evt) => {
+      const applied = applyMutationOptimistic(evt);
+      // Always schedule a background refresh for consistency, but with longer
+      // delay if we already applied the change visually.
+      clearTimeout(_refreshTimer);
+      _refreshTimer = setTimeout(refresh, applied ? 5000 : 1500);
     });
   } catch { /* polling fallback */ }
+}
+
+// Apply a mutation event optimistically to the in-memory graph data.
+// Returns true if a visual update was applied (no urgent refresh needed).
+function applyMutationOptimistic(evt) {
+  if (!graphData || !graphData.nodes) return false;
+
+  const id = evt.issue_id;
+  if (!id) return false;
+
+  // Find the node in the current graph
+  const node = graphData.nodes.find(n => n.id === id);
+
+  switch (evt.type) {
+    case 'status': {
+      if (!node) return false;
+      const oldStatus = node.status;
+      node.status = evt.new_status || node.status;
+      // Rebuild THREE.js object if status changed (affects color, pulse ring, etc.)
+      if (oldStatus !== node.status && graph) {
+        graph.nodeThreeObject(graph.nodeThreeObject());
+      }
+      return true;
+    }
+
+    case 'update': {
+      if (!node) return false;
+      // Update assignee if present in the event
+      if (evt.assignee !== undefined) {
+        node.assignee = evt.assignee;
+      }
+      if (evt.title) {
+        node.title = evt.title;
+      }
+      return true;
+    }
+
+    case 'create':
+      // New bead — can't render without full data, need refresh
+      return false;
+
+    case 'delete':
+      // Deleted bead — could remove from graph, but safer to let refresh handle it
+      return false;
+
+    default:
+      return false;
+  }
 }
 
 // --- Live event doots (bd-c7723) ---
@@ -2771,6 +2867,8 @@ async function main() {
     window.__beads3d_dootLabel = dootLabel;
     window.__beads3d_dootColor = dootColor;
     window.__beads3d_findAgentNode = findAgentNode;
+    // Expose mutation handler for testing (bd-03b5v)
+    window.__beads3d_applyMutation = applyMutationOptimistic;
   } catch (err) {
     console.error('Init failed:', err);
     document.getElementById('status').textContent = `init error: ${err.message}`;
