@@ -830,6 +830,57 @@
     .agent-entry.mail-received .agent-entry-text { color: #d4a017; }
     .agent-entry.mail-sent .agent-entry-text { color: #4a9eff; font-style: italic; }
 
+    /* Decision events in agent feed (bd-0j7hr) */
+    .agent-entry.decision .agent-entry-icon { color: #d4a017; font-weight: bold; }
+    .agent-entry.decision-pending .agent-entry-text { color: #d4a017; }
+    .agent-entry.decision-resolved .agent-entry-text { color: #2d8a4e; }
+    .agent-entry.decision-expired .agent-entry-text { color: #d04040; }
+    .agent-entry.decision-escalated .agent-entry-text { color: #ff6b35; }
+
+    /* Decision detail panel (bd-1xskh, bd-9gxt1) */
+    .decision-prompt { white-space: pre-wrap; color: #d4a017; }
+    .decision-options { display: flex; flex-direction: column; gap: 4px; }
+    .decision-opt {
+      background: #2a2a3a; border: 1px solid #3a3a5a; color: #ccc;
+      padding: 6px 10px; border-radius: 4px; cursor: pointer;
+      text-align: left; font-size: 12px; transition: all 0.15s;
+    }
+    .decision-opt:hover { background: #3a3a5a; border-color: #d4a017; color: #fff; }
+    .decision-opt.selected { background: #2d4a2d; border-color: #2d8a4e; color: #2d8a4e; }
+    .decision-opt:disabled { opacity: 0.5; cursor: default; }
+    .decision-opt-bead { font-size: 10px; color: #666; }
+    .decision-selected { color: #2d8a4e; font-weight: bold; }
+    .decision-respond-section { display: flex; gap: 4px; align-items: center; flex-wrap: wrap; }
+    .decision-respond-section h4 { width: 100%; margin: 0 0 4px; }
+    .decision-response-input {
+      flex: 1; min-width: 150px; background: #1a1a2a; border: 1px solid #3a3a5a;
+      color: #ccc; padding: 5px 8px; border-radius: 4px; font-size: 12px;
+    }
+    .decision-response-input:focus { border-color: #d4a017; outline: none; }
+    .decision-send-btn {
+      background: #d4a017; color: #000; border: none; padding: 5px 12px;
+      border-radius: 4px; cursor: pointer; font-size: 12px; font-weight: bold;
+    }
+    .decision-send-btn:hover { background: #e5b028; }
+    .decision-send-btn:disabled { opacity: 0.5; cursor: default; }
+
+    /* Decision toast notifications (bd-tausm) */
+    .decision-toast {
+      position: fixed; top: 60px; right: 20px; z-index: 9999;
+      background: #1a1a2a; border: 1px solid #d4a017; border-radius: 6px;
+      padding: 10px 16px; color: #d4a017; font-size: 13px;
+      max-width: 400px; opacity: 0; transform: translateX(40px);
+      transition: opacity 0.3s, transform 0.3s; pointer-events: auto;
+    }
+    .decision-toast.show { opacity: 1; transform: translateX(0); }
+    .decision-toast.resolved { border-color: #2d8a4e; color: #2d8a4e; }
+    .decision-toast.urgent { border-color: #d04040; border-width: 2px; animation: toast-shake 0.3s; }
+    @keyframes toast-shake {
+      0%, 100% { transform: translateX(0); }
+      25% { transform: translateX(-6px); }
+      75% { transform: translateX(6px); }
+    }
+
     /* Epic cycling HUD indicator (bd-pnngb) */
     #epic-hud {
       display: none;

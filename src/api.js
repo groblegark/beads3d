@@ -154,6 +154,43 @@ export class BeadsAPI {
     return es;
   }
 
+  // --- Decision operations (bd-g0tmq) ---
+
+  async decisionGet(issueId) {
+    return this._rpc('DecisionGet', { issue_id: issueId });
+  }
+
+  async decisionList(opts = {}) {
+    return this._rpc('DecisionList', opts);
+  }
+
+  async decisionListRecent(since, requestedBy) {
+    const args = { since };
+    if (requestedBy) args.requested_by = requestedBy;
+    return this._rpc('DecisionListRecent', args);
+  }
+
+  async decisionResolve(issueId, selectedOption, responseText, respondedBy = 'beads3d') {
+    return this._rpc('DecisionResolve', {
+      issue_id: issueId,
+      selected_option: selectedOption,
+      response_text: responseText,
+      responded_by: respondedBy,
+    });
+  }
+
+  async decisionCancel(issueId, reason, canceledBy = 'beads3d') {
+    return this._rpc('DecisionCancel', {
+      issue_id: issueId,
+      reason,
+      canceled_by: canceledBy,
+    });
+  }
+
+  async decisionRemind(issueId, force = false) {
+    return this._rpc('DecisionRemind', { issue_id: issueId, force });
+  }
+
   // Send mail to an agent (bd-t76aw): creates a message issue targeting the agent
   async sendMail(toAgent, subject, body = '') {
     return this._rpc('Create', {

@@ -863,6 +863,28 @@ function initGraph() {
         group.add(shell);
       }
 
+      // Decision/gate: diamond shape with state-based pulsing glow (bd-zr374)
+      if (n.issue_type === 'gate' || n.issue_type === 'decision') {
+        // Replace sphere core with elongated octahedron (diamond)
+        group.remove(core);
+        const diamond = new THREE.Mesh(GEO.octa, new THREE.MeshBasicMaterial({
+          color: hexColor, transparent: true, opacity: 0.9 * ghostFade,
+        }));
+        diamond.scale.set(size * 0.8, size * 1.4, size * 0.8); // tall diamond
+        group.add(diamond);
+
+        // Pending decisions get animated pulsing glow
+        const ds = n._decisionState || (n.status === 'closed' ? 'resolved' : 'pending');
+        if (ds === 'pending') {
+          const pulseGlow = new THREE.Mesh(GEO.octa, new THREE.MeshBasicMaterial({
+            color: 0xd4a017, transparent: true, opacity: 0.25 * ghostFade, wireframe: true,
+          }));
+          pulseGlow.scale.set(size * 1.2, size * 2.0, size * 1.2);
+          pulseGlow.userData.decisionPulse = true;
+          group.add(pulseGlow);
+        }
+      }
+
       // Blocked: spiky octahedron
       if (n._blocked) {
         const spike = new THREE.Mesh(GEO.octa, new THREE.MeshBasicMaterial({
@@ -870,6 +892,17 @@ function initGraph() {
         }));
         spike.scale.setScalar(size * 2.4);
         group.add(spike);
+      }
+
+      // Pending decision badge — small amber dot with count (bd-o6tgy)
+      if (n._pendingDecisions > 0 && n.issue_type !== 'gate' && n.issue_type !== 'decision') {
+        const badge = new THREE.Mesh(GEO.sphereHi, new THREE.MeshBasicMaterial({
+          color: 0xd4a017, transparent: true, opacity: 0.9,
+        }));
+        badge.scale.setScalar(Math.min(3 + n._pendingDecisions, 6));
+        badge.position.set(size * 1.2, size * 1.2, 0); // top-right offset
+        badge.userData.decisionBadge = true;
+        group.add(badge);
       }
 
       // Selection ring (invisible until selected)
@@ -1294,7 +1327,7 @@ function restoreAllNodeOpacity() {
 
     if (!node._wasDimmed) continue;
     threeObj.traverse(child => {
-      if (!child.material || child.userData.selectionRing || child.userData.pulse || child.userData.nodeLabel) return;
+      if (!child.material || child.userData.selectionRing || child.userData.pulse || child.userData.decisionPulse || child.userData.nodeLabel) return;
       restoreMaterialOpacity(child.material);
     });
     node._wasDimmed = false;
@@ -1392,6 +1425,13 @@ function startAnimation() {
           if (!child.material.uniforms) {
             child.material.opacity = (0.15 + Math.sin(t * 3) * 0.1) * dimFactor;
           }
+        } else if (child.userData.decisionPulse) {
+          // Decision pending pulse: breathe scale + rotate (bd-zr374)
+          const pulse = 1.0 + Math.sin(t * 2.5) * 0.15;
+          child.scale.set(child.scale.x, child.scale.y, child.scale.z);
+          child.scale.multiplyScalar(pulse);
+          child.rotation.y = t * 0.3;
+          child.material.opacity = (0.2 + Math.sin(t * 2.5) * 0.1) * dimFactor;
         } else if (hasSelection) {
           saveBaseOpacity(child.material);
           setMaterialDim(child.material, dimFactor);
@@ -1947,20 +1987,51 @@ async function showDetail(node) {
     closeDetailPanel(node.id);
     showAgentWindow(node);
     return;
-  } else {
+  }
+
+  // Decision/gate nodes: show decision panel with options and resolve UI (bd-1xskh, bd-9gxt1)
+  if (node.issue_type === 'gate' || node.issue_type === 'decision') {
     try {
-      const full = await api.show(node.id);
+      const resp = await api.decisionGet(node.id);
       const body = panel.querySelector('.detail-body');
       if (body) {
         body.classList.remove('loading');
-        body.innerHTML = renderFullDetail(full);
+        body.innerHTML = renderDecisionDetail(node, resp);
+        bindDecisionHandlers(panel, node, resp);
       }
     } catch (err) {
-      const body = panel.querySelector('.detail-body');
-      if (body) {
-        body.classList.remove('loading');
-        body.textContent = `Could not load: ${err.message}`;
+      // Fall back to regular detail
+      try {
+        const full = await api.show(node.id);
+        const body = panel.querySelector('.detail-body');
+        if (body) {
+          body.classList.remove('loading');
+          body.innerHTML = renderFullDetail(full);
+        }
+      } catch (err2) {
+        const body = panel.querySelector('.detail-body');
+        if (body) {
+          body.classList.remove('loading');
+          body.textContent = `Could not load: ${err2.message}`;
+        }
       }
+    }
+    return;
+  }
+
+  // Regular nodes
+  try {
+    const full = await api.show(node.id);
+    const body = panel.querySelector('.detail-body');
+    if (body) {
+      body.classList.remove('loading');
+      body.innerHTML = renderFullDetail(full);
+    }
+  } catch (err) {
+    const body = panel.querySelector('.detail-body');
+    if (body) {
+      body.classList.remove('loading');
+      body.textContent = `Could not load: ${err.message}`;
     }
   }
 }
@@ -2037,6 +2108,132 @@ function renderFullDetail(issue) {
   }
 
   return sections.join('') || '<em>No additional details</em>';
+}
+
+// Render decision detail panel content (bd-1xskh)
+function renderDecisionDetail(node, resp) {
+  const dec = resp.decision || {};
+  const issue = resp.issue || {};
+  const sections = [];
+
+  // State badge
+  const state = dec.selected_option ? 'resolved' : (node.status === 'closed' ? 'resolved' : 'pending');
+  const stateColor = state === 'resolved' ? '#2d8a4e' : state === 'expired' ? '#d04040' : '#d4a017';
+  sections.push(`<div class="decision-state" style="color:${stateColor};font-weight:bold;margin-bottom:8px">${state.toUpperCase()}</div>`);
+
+  // Prompt
+  if (dec.prompt) {
+    sections.push(`<div class="detail-section"><h4>Question</h4><pre class="decision-prompt">${escapeHtml(dec.prompt)}</pre></div>`);
+  }
+
+  // Context
+  if (dec.context) {
+    sections.push(`<div class="detail-section"><h4>Context</h4><pre>${escapeHtml(dec.context)}</pre></div>`);
+  }
+
+  // Options
+  if (dec.options && dec.options.length > 0) {
+    const optHtml = dec.options.map((opt, i) => {
+      const selected = dec.selected_option === opt.id;
+      const cls = selected ? 'decision-opt selected' : 'decision-opt';
+      const label = opt.label || opt.short || opt.id;
+      const beadRef = opt.bead_id ? ` <span class="decision-opt-bead">(${escapeHtml(opt.bead_id)})</span>` : '';
+      return `<button class="${cls}" data-opt-id="${escapeHtml(opt.id)}" data-opt-idx="${i}">${escapeHtml(label)}${beadRef}</button>`;
+    }).join('');
+    sections.push(`<div class="detail-section"><h4>Options</h4><div class="decision-options">${optHtml}</div></div>`);
+  }
+
+  // Resolution result
+  if (dec.selected_option) {
+    sections.push(`<div class="detail-section"><h4>Selected</h4><div class="decision-selected">${escapeHtml(dec.selected_option)}</div></div>`);
+    if (dec.response_text) {
+      sections.push(`<div class="detail-section"><h4>Response</h4><pre>${escapeHtml(dec.response_text)}</pre></div>`);
+    }
+  }
+
+  // Custom response input (only for pending decisions)
+  if (state === 'pending') {
+    sections.push(`<div class="detail-section decision-respond-section">
+      <h4>Respond</h4>
+      <input type="text" class="decision-response-input" placeholder="Custom response text..." />
+      <button class="decision-send-btn">Send</button>
+    </div>`);
+  }
+
+  // Iteration info
+  if (dec.iteration > 0 || dec.max_iterations > 0) {
+    sections.push(`<div class="detail-section detail-timestamps">iteration ${dec.iteration || 0}/${dec.max_iterations || 3}</div>`);
+  }
+
+  // Metadata
+  const meta = [];
+  if (dec.requested_by) meta.push(`by: ${dec.requested_by}`);
+  if (dec.urgency) meta.push(`urgency: ${dec.urgency}`);
+  if (issue.created_at) meta.push(`created: ${new Date(issue.created_at).toLocaleDateString()}`);
+  if (meta.length) {
+    sections.push(`<div class="detail-section detail-timestamps">${meta.join(' &middot; ')}</div>`);
+  }
+
+  return sections.join('');
+}
+
+// Bind click handlers for decision option buttons and custom response (bd-9gxt1)
+function bindDecisionHandlers(panel, node, resp) {
+  const dec = resp.decision || {};
+  const state = dec.selected_option ? 'resolved' : 'pending';
+  if (state !== 'pending') return; // Already resolved — no interaction
+
+  // Option buttons
+  panel.querySelectorAll('.decision-opt').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const optId = btn.dataset.optId;
+      btn.classList.add('selected');
+      btn.disabled = true;
+      try {
+        await api.decisionResolve(node.id, optId, '');
+        // Optimistic state update
+        node._decisionState = 'resolved';
+        const stateEl = panel.querySelector('.decision-state');
+        if (stateEl) { stateEl.textContent = 'RESOLVED'; stateEl.style.color = '#2d8a4e'; }
+        // Disable all buttons
+        panel.querySelectorAll('.decision-opt').forEach(b => { b.disabled = true; });
+        const respondSection = panel.querySelector('.decision-respond-section');
+        if (respondSection) respondSection.remove();
+        // Rebuild graph node
+        graph.nodeThreeObject(graph.nodeThreeObject());
+      } catch (err) {
+        btn.classList.remove('selected');
+        btn.disabled = false;
+        console.error('[beads3d] decision resolve failed:', err);
+      }
+    });
+  });
+
+  // Custom response send button
+  const sendBtn = panel.querySelector('.decision-send-btn');
+  const input = panel.querySelector('.decision-response-input');
+  if (sendBtn && input) {
+    const doSend = async () => {
+      const text = input.value.trim();
+      if (!text) return;
+      sendBtn.disabled = true;
+      try {
+        await api.decisionResolve(node.id, '', text);
+        node._decisionState = 'resolved';
+        const stateEl = panel.querySelector('.decision-state');
+        if (stateEl) { stateEl.textContent = 'RESOLVED'; stateEl.style.color = '#2d8a4e'; }
+        panel.querySelectorAll('.decision-opt').forEach(b => { b.disabled = true; });
+        input.value = 'Sent!';
+        input.disabled = true;
+        graph.nodeThreeObject(graph.nodeThreeObject());
+      } catch (err) {
+        sendBtn.disabled = false;
+        console.error('[beads3d] decision response failed:', err);
+      }
+    };
+    sendBtn.addEventListener('click', doSend);
+    input.addEventListener('keydown', (e) => { if (e.key === 'Enter') doSend(); });
+  }
 }
 
 function hideDetail() {
@@ -2236,6 +2433,45 @@ function showStatusToast(msg, isError = false) {
     el.className = _toastOrigClass;
     _toastTimer = null;
   }, 2000);
+}
+
+// Floating toast notification for decision events (bd-tausm)
+function showDecisionToast(evt) {
+  const p = evt.payload || {};
+  const type = evt.type;
+  let text, cls;
+  if (type === 'DecisionCreated') {
+    const agent = p.requested_by || 'agent';
+    const q = (p.question || 'decision').slice(0, 60);
+    text = `? ${agent}: ${q}`;
+    cls = p.urgency === 'high' ? 'decision-toast urgent' : 'decision-toast';
+  } else if (type === 'DecisionResponded') {
+    text = `✓ Decided: ${(p.chosen_label || 'resolved').slice(0, 40)}`;
+    cls = 'decision-toast resolved';
+  } else {
+    return; // Only toast for created and responded
+  }
+
+  const toast = document.createElement('div');
+  toast.className = cls;
+  toast.textContent = text;
+  // Click to focus the decision node
+  if (p.decision_id) {
+    toast.style.cursor = 'pointer';
+    toast.addEventListener('click', () => {
+      toast.remove();
+      if (graphData) {
+        const decNode = graphData.nodes.find(n => n.id === p.decision_id);
+        if (decNode) handleNodeClick(decNode);
+      }
+    });
+  }
+  document.body.appendChild(toast);
+  requestAnimationFrame(() => toast.classList.add('show'));
+  setTimeout(() => {
+    toast.classList.remove('show');
+    setTimeout(() => toast.remove(), 300);
+  }, 8000);
 }
 
 // Walk the dependency graph in one direction to build a subgraph highlight
@@ -4015,6 +4251,21 @@ async function refresh() {
   applyFilters();
   rebuildEpicIndex();
 
+  // Compute pending decision badge counts per parent node (bd-o6tgy)
+  const nodeById = new Map(mergedNodes.map(n => [n.id, n]));
+  for (const n of mergedNodes) n._pendingDecisions = 0;
+  for (const link of data.links) {
+    if (link.dep_type !== 'parent-child') continue;
+    const childId = typeof link.target === 'object' ? link.target.id : link.target;
+    const parentId = typeof link.source === 'object' ? link.source.id : link.source;
+    const child = nodeById.get(childId);
+    const parent = nodeById.get(parentId);
+    if (child && parent && (child.issue_type === 'gate' || child.issue_type === 'decision')) {
+      const ds = child._decisionState || (child.status === 'closed' ? 'resolved' : 'pending');
+      if (ds === 'pending') parent._pendingDecisions++;
+    }
+  }
+
   if (structureChanged) {
     // graph.graphData() reheats d3-force to alpha=1, which scatters positioned nodes.
     // Fix (bd-7ccyd): pin ALL existing nodes at their current positions during the
@@ -4218,11 +4469,11 @@ function dootLabel(evt) {
   if (type === 'MutationStatus') return p.new_status || 'status';
   if (type === 'MutationClose') return 'closed';
 
-  // Decisions — filtered out of doots (bd-t25i1: too noisy, not tied to visible beads)
-  if (type === 'DecisionCreated') return null;
-  if (type === 'DecisionResponded') return null;
-  if (type === 'DecisionEscalated') return null;
-  if (type === 'DecisionExpired') return null;
+  // Decisions (bd-0j7hr: show decision events as doots + graph updates)
+  if (type === 'DecisionCreated') return `? ${(p.question || 'decision').slice(0, 35)}`;
+  if (type === 'DecisionResponded') return `✓ ${(p.chosen_label || 'resolved').slice(0, 35)}`;
+  if (type === 'DecisionEscalated') return 'escalated';
+  if (type === 'DecisionExpired') return 'expired';
 
   return type.replace(/([A-Z])/g, ' $1').trim().toLowerCase().slice(0, 20);
 }
@@ -4264,11 +4515,12 @@ function findAgentNode(evt) {
   }
 
   const candidates = [
-    p.issue_id,   // mutation events: the bead being mutated
-    p.agent_id,   // agent lifecycle events
-    p.agentID,    // alternate casing
-    p.assignee,   // mutation events: the agent assigned to the bead
-    p.actor,      // hook events (short agent name) or mutations ("daemon")
+    p.issue_id,      // mutation events: the bead being mutated
+    p.agent_id,      // agent lifecycle events
+    p.agentID,       // alternate casing
+    p.assignee,      // mutation events: the agent assigned to the bead
+    p.requested_by,  // decision events: requesting agent (bd-0j7hr)
+    p.actor,         // hook events (short agent name) or mutations ("daemon")
   ].filter(c => c && c !== 'daemon');
 
   if (candidates.length === 0) return null;
@@ -4657,6 +4909,18 @@ function appendAgentEvent(agentId, evt) {
   } else if (type === 'MailRead') {
     win.feedEl.appendChild(createEntry(timeStr, '✉', 'mail read', 'mail'));
   }
+  // Decision events (bd-0j7hr)
+  else if (type === 'DecisionCreated') {
+    const q = (p.question || 'decision').slice(0, 50);
+    win.feedEl.appendChild(createEntry(timeStr, '?', q, 'decision decision-pending'));
+  } else if (type === 'DecisionResponded') {
+    const choice = p.chosen_label || 'resolved';
+    win.feedEl.appendChild(createEntry(timeStr, '✓', `decided: ${choice}`, 'decision decision-resolved'));
+  } else if (type === 'DecisionExpired') {
+    win.feedEl.appendChild(createEntry(timeStr, '⏰', 'decision expired', 'decision decision-expired'));
+  } else if (type === 'DecisionEscalated') {
+    win.feedEl.appendChild(createEntry(timeStr, '!', 'decision escalated', 'decision decision-escalated'));
+  }
   // Skip other event types silently
   else {
     return;
@@ -4727,6 +4991,12 @@ function resolveAgentId(evt) {
     return null;
   }
 
+  // Decision events: route to requesting agent window (bd-0j7hr)
+  if (evt.type && evt.type.startsWith('Decision') && p.requested_by) {
+    const agentNodeId = `agent:${p.requested_by}`;
+    if (agentWindows.has(agentNodeId)) return agentNodeId;
+  }
+
   const actor = p.actor;
   if (!actor) return null;
   // Check for an agent node with this actor name
@@ -4738,7 +5008,7 @@ function resolveAgentId(evt) {
 function connectBusStream() {
   try {
     let _dootDrops = 0;
-    api.connectBusEvents('agents,hooks,oj,mutations,mail', (evt) => {
+    api.connectBusEvents('agents,hooks,oj,mutations,mail,decisions', (evt) => {
       const label = dootLabel(evt);
       if (!label) return;
 
@@ -4786,6 +5056,31 @@ function connectBusStream() {
             }
           }
         }
+      }
+
+      // Decision event: update graph node state, rebuild Three.js, spark edges (bd-0j7hr, bd-fbcbd)
+      if (evt.type && evt.type.startsWith('Decision') && p.decision_id && graphData) {
+        const decNode = graphData.nodes.find(n => n.id === p.decision_id);
+        if (decNode) {
+          if (evt.type === 'DecisionCreated') decNode._decisionState = 'pending';
+          else if (evt.type === 'DecisionResponded') decNode._decisionState = 'resolved';
+          else if (evt.type === 'DecisionExpired') decNode._decisionState = 'expired';
+          // Rebuild node Three.js object to reflect new color/shape
+          graph.nodeThreeObject(graph.nodeThreeObject());
+
+          // Edge spark: agent ↔ decision node (bd-fbcbd)
+          if (p.requested_by && !decNode._hidden) {
+            const agentNode = graphData.nodes.find(n =>
+              n.issue_type === 'agent' && (n.title === p.requested_by || n.id === `agent:${p.requested_by}`)
+            );
+            if (agentNode && !agentNode._hidden) {
+              const sparkColor = evt.type === 'DecisionResponded' ? 0x2d8a4e : 0xd4a017;
+              spawnEdgeSpark(agentNode, decNode, sparkColor);
+            }
+          }
+        }
+        // Toast notification for new/resolved decisions (bd-tausm)
+        showDecisionToast(evt);
       }
 
       // Feed agent activity windows (bd-kau4k)

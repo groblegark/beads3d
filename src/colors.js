@@ -40,6 +40,14 @@ export const DEP_TYPE_COLORS = {
   default:      '#3a3a5a',
 };
 
+// Decision state → color (bd-zr374)
+export const DECISION_COLORS = {
+  pending:  '#d4a017',  // amber — awaiting response
+  resolved: '#2d8a4e',  // green — answered
+  expired:  '#d04040',  // red — timed out
+  canceled: '#666',     // gray — canceled
+};
+
 export function nodeColor(issue) {
   // Blocked nodes glow red
   if (issue._blocked) return '#d04040';
@@ -47,6 +55,11 @@ export function nodeColor(issue) {
   if (issue.issue_type === 'agent') return '#ff6b35';
   // Epics always purple
   if (issue.issue_type === 'epic') return '#8b45a6';
+  // Decision/gate nodes colored by decision state (bd-zr374)
+  if (issue.issue_type === 'gate' || issue.issue_type === 'decision') {
+    const ds = issue._decisionState || (issue.status === 'closed' ? 'resolved' : 'pending');
+    return DECISION_COLORS[ds] || DECISION_COLORS.pending;
+  }
   // Otherwise by status
   return STATUS_COLORS[issue.status] || '#555';
 }
