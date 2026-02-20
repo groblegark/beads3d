@@ -47,6 +47,25 @@ tasks:
     run: |
       npx playwright install --with-deps chromium
 
+  # ── Update visual snapshots (run with --target update-snapshots) ──────
+  - key: update-snapshots
+    use: [build, browsers]
+    timeout: 30 minutes
+    run: |
+      echo "Generating/updating visual test snapshots..."
+      npx playwright test tests/visual.spec.js --update-snapshots --reporter=list 2>&1 | tee snapshot-output.txt || true
+      echo "Snapshot files:"
+      ls -la tests/visual.spec.js-snapshots/*-linux.png 2>/dev/null || echo "No linux snapshots found"
+      # Package all snapshot files as artifact
+      tar cf /tmp/snapshots.tar tests/visual.spec.js-snapshots/
+      echo "Snapshots packaged."
+    outputs:
+      artifacts:
+        - key: snapshots
+          path: /tmp/snapshots.tar
+        - key: snapshot-output
+          path: snapshot-output.txt
+
   # ── Tests (Playwright E2E with mock API) ──────────────────────────────
   - key: test
     use: [build, browsers]
