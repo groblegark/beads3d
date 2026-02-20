@@ -21,6 +21,9 @@ export const MOCK_GRAPH = {
     { id: 'bd-bug2', title: 'Memory leak in event bus', status: 'open', priority: 0, issue_type: 'bug', assignee: 'alice', created_at: '2026-02-18T20:00:00Z', updated_at: '2026-02-19T10:00:00Z', labels: ['critical'], dep_count: 0, dep_by_count: 0, blocked_by: [], fx: 0, fy: 80, fz: 0 },
     { id: 'bd-task5', title: 'Refactor config loader', status: 'open', priority: 3, issue_type: 'task', assignee: 'bob', created_at: '2026-02-16T12:00:00Z', updated_at: '2026-02-19T06:00:00Z', labels: [], dep_count: 0, dep_by_count: 0, blocked_by: [], fx: 50, fy: 80, fz: 0 },
     { id: 'bd-feat3', title: 'WebSocket event streaming', status: 'open', priority: 2, issue_type: 'feature', assignee: 'charlie', created_at: '2026-02-13T15:00:00Z', updated_at: '2026-02-19T11:00:00Z', labels: ['api', 'realtime'], dep_count: 0, dep_by_count: 0, blocked_by: [], fx: 130, fy: 60, fz: 0 },
+    // Closed old nodes — for age filter testing (bd-uc0mw)
+    { id: 'bd-old1', title: 'Legacy config migration', status: 'closed', priority: 3, issue_type: 'task', assignee: 'bob', created_at: '2025-11-01T10:00:00Z', updated_at: '2025-12-15T14:00:00Z', labels: [], dep_count: 0, dep_by_count: 0, blocked_by: [], fx: 0, fy: -100, fz: 0 },
+    { id: 'bd-old2', title: 'Deprecated API cleanup', status: 'closed', priority: 4, issue_type: 'task', assignee: 'charlie', created_at: '2025-10-01T08:00:00Z', updated_at: '2025-11-20T11:00:00Z', labels: [], dep_count: 0, dep_by_count: 1, blocked_by: [], fx: 50, fy: -100, fz: 0 },
     // Agent nodes (synthetic — added by Graph API when include_agents=true)
     { id: 'agent:alice', title: 'alice', status: 'open', priority: 2, issue_type: 'agent', assignee: '', created_at: '2026-02-19T00:00:00Z', updated_at: '2026-02-19T12:00:00Z', labels: [], dep_count: 0, dep_by_count: 0, blocked_by: [], fx: -150, fy: 30, fz: 0 },
     { id: 'agent:bob', title: 'bob', status: 'open', priority: 2, issue_type: 'agent', assignee: '', created_at: '2026-02-19T00:00:00Z', updated_at: '2026-02-19T12:00:00Z', labels: [], dep_count: 0, dep_by_count: 0, blocked_by: [], fx: -150, fy: -30, fz: 0 },
@@ -41,11 +44,14 @@ export const MOCK_GRAPH = {
     { source: 'agent:alice', target: 'bd-bug2', type: 'assigned_to' },
     { source: 'agent:bob', target: 'bd-task1', type: 'assigned_to' },
     { source: 'agent:bob', target: 'bd-task2', type: 'assigned_to' },
+    // Old closed node connected to active task (for age filter rescue test)
+    { source: 'bd-old2', target: 'bd-task3', type: 'blocks' },
   ],
   stats: {
     total_open: 8,
     total_in_progress: 3,
     total_blocked: 3,
+    total_closed: 2,
   },
 };
 
