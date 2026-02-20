@@ -1053,14 +1053,51 @@ function escapeHtml(str) {
 const ctxMenu = document.getElementById('context-menu');
 let ctxNode = null;
 
+function buildStatusSubmenu(currentStatus) {
+  const statuses = [
+    { value: 'open', label: 'open', color: '#2d8a4e' },
+    { value: 'in_progress', label: 'in progress', color: '#d4a017' },
+    { value: 'closed', label: 'closed', color: '#333340' },
+  ];
+  return statuses.map(s =>
+    `<div class="ctx-sub-item${s.value === currentStatus ? ' active' : ''}" data-action="set-status" data-value="${s.value}">` +
+    `<span class="ctx-dot" style="background:${s.color}"></span>${s.label}</div>`
+  ).join('');
+}
+
+function buildPrioritySubmenu(currentPriority) {
+  const priorities = [
+    { value: 0, label: 'P0 critical', color: '#ff3333' },
+    { value: 1, label: 'P1 high', color: '#ff8833' },
+    { value: 2, label: 'P2 medium', color: '#d4a017' },
+    { value: 3, label: 'P3 low', color: '#4a9eff' },
+    { value: 4, label: 'P4 backlog', color: '#666' },
+  ];
+  return priorities.map(p =>
+    `<div class="ctx-sub-item${p.value === currentPriority ? ' active' : ''}" data-action="set-priority" data-value="${p.value}">` +
+    `<span class="ctx-dot" style="background:${p.color}"></span>${p.label}</div>`
+  ).join('');
+}
+
 function handleNodeRightClick(node, event) {
   event.preventDefault();
   if (!node || node._hidden) return;
+  // Skip agent pseudo-nodes — they're not real beads
+  if (node.issue_type === 'agent') return;
   ctxNode = node;
   hideTooltip();
 
   ctxMenu.innerHTML = `
     <div class="ctx-header">${escapeHtml(node.id)}</div>
+    <div class="ctx-item ctx-submenu">status
+      <div class="ctx-submenu-panel">${buildStatusSubmenu(node.status)}</div>
+    </div>
+    <div class="ctx-item ctx-submenu">priority
+      <div class="ctx-submenu-panel">${buildPrioritySubmenu(node.priority)}</div>
+    </div>
+    <div class="ctx-item" data-action="claim">claim (assign to me)</div>
+    <div class="ctx-item" data-action="close-bead">close</div>
+    <div class="ctx-sep"></div>
     <div class="ctx-item" data-action="expand-deps">expand dep tree<span class="ctx-key">e</span></div>
     <div class="ctx-item" data-action="show-deps">show dependencies<span class="ctx-key">d</span></div>
     <div class="ctx-item" data-action="show-blockers">show blockers<span class="ctx-key">b</span></div>
@@ -1079,12 +1116,17 @@ function handleNodeRightClick(node, event) {
   ctxMenu.style.left = x + 'px';
   ctxMenu.style.top = y + 'px';
 
-  // Handle clicks on menu items
+  // Handle clicks on menu items (including submenu items, bd-9g7f0)
   ctxMenu.onclick = (e) => {
+    // Check submenu items first (they're nested inside .ctx-item)
+    const subItem = e.target.closest('.ctx-sub-item');
+    if (subItem) {
+      handleContextAction(subItem.dataset.action, node, subItem);
+      return;
+    }
     const item = e.target.closest('.ctx-item');
-    if (!item) return;
-    const action = item.dataset.action;
-    handleContextAction(action, node);
+    if (!item || item.classList.contains('ctx-submenu')) return; // skip submenu parents
+    handleContextAction(item.dataset.action, node, item);
   };
 }
 
@@ -1094,8 +1136,54 @@ function hideContextMenu() {
   ctxNode = null;
 }
 
-function handleContextAction(action, node) {
+async function handleContextAction(action, node, el) {
   switch (action) {
+    case 'set-status': {
+      const value = el?.dataset.value;
+      if (!value || value === node.status) break;
+      hideContextMenu();
+      try {
+        await api.update(node.id, { status: value });
+        showStatusToast(`${node.id} → ${value}`);
+        refresh();
+      } catch (err) {
+        showStatusToast(`error: ${err.message}`, true);
+      }
+      break;
+    }
+    case 'set-priority': {
+      const value = parseInt(el?.dataset.value, 10);
+      if (isNaN(value) || value === node.priority) break;
+      hideContextMenu();
+      try {
+        await api.update(node.id, { priority: value });
+        showStatusToast(`${node.id} → P${value}`);
+        refresh();
+      } catch (err) {
+        showStatusToast(`error: ${err.message}`, true);
+      }
+      break;
+    }
+    case 'claim':
+      hideContextMenu();
+      try {
+        await api.update(node.id, { status: 'in_progress' });
+        showStatusToast(`claimed ${node.id}`);
+        refresh();
+      } catch (err) {
+        showStatusToast(`error: ${err.message}`, true);
+      }
+      break;
+    case 'close-bead':
+      hideContextMenu();
+      try {
+        await api.close(node.id);
+        showStatusToast(`closed ${node.id}`);
+        refresh();
+      } catch (err) {
+        showStatusToast(`error: ${err.message}`, true);
+      }
+      break;
     case 'expand-deps':
       expandDepTree(node);
       hideContextMenu();
@@ -1117,6 +1205,19 @@ function handleContextAction(action, node) {
       showCtxToast('copied!');
       break;
   }
+}
+
+// Brief toast message overlaid on the status bar (bd-9g7f0)
+function showStatusToast(msg, isError = false) {
+  const el = document.getElementById('status');
+  const prev = el.textContent;
+  const prevClass = el.className;
+  el.textContent = msg;
+  el.className = isError ? 'error' : '';
+  setTimeout(() => {
+    el.textContent = prev;
+    el.className = prevClass;
+  }, 2000);
 }
 
 // Walk the dependency graph in one direction to build a subgraph highlight

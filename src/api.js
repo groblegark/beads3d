@@ -74,6 +74,16 @@ export class BeadsAPI {
     return this._rpc('EpicOverview', {});
   }
 
+  // --- Write operations (bd-9g7f0) ---
+
+  async update(id, fields) {
+    return this._rpc('Update', { id, ...fields });
+  }
+
+  async close(id) {
+    return this._rpc('Close', { id });
+  }
+
   // Check if Graph endpoint is available (probe with empty body)
   async hasGraph() {
     try {
