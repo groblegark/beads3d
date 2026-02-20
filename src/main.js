@@ -2202,13 +2202,65 @@ function setupControls() {
 }
 
 // --- Refresh ---
+// Merge new data into the existing graph, preserving node positions to avoid layout jumps.
+// Only triggers a full graph.graphData() call when nodes are added or removed.
 async function refresh() {
   const data = await fetchGraphData();
-  if (data) {
-    graphData = data;
-    applyFilters();
+  if (!data) return;
+
+  const currentNodes = graphData.nodes;
+  const currentLinks = graphData.links;
+  const existingById = new Map(currentNodes.map(n => [n.id, n]));
+  const newIds = new Set(data.nodes.map(n => n.id));
+
+  // Position-related keys to preserve across refreshes
+  const POSITION_KEYS = ['x', 'y', 'z', 'vx', 'vy', 'vz', 'fx', 'fy', 'fz', '__threeObj', '_wasDimmed'];
+
+  let structureChanged = false;
+
+  // Update existing nodes in-place, detect additions
+  const mergedNodes = data.nodes.map(incoming => {
+    const existing = existingById.get(incoming.id);
+    if (existing) {
+      // Update properties in-place (preserving position/velocity/three.js object)
+      for (const key of Object.keys(incoming)) {
+        if (!POSITION_KEYS.includes(key)) {
+          existing[key] = incoming[key];
+        }
+      }
+      existing._blocked = !!(incoming.blocked_by && incoming.blocked_by.length > 0);
+      return existing;
+    }
+    // New node — force layout will assign position
+    structureChanged = true;
+    return { ...incoming, _blocked: !!(incoming.blocked_by && incoming.blocked_by.length > 0) };
+  });
+
+  // Detect removed nodes
+  if (currentNodes.length !== mergedNodes.length || currentNodes.some(n => !newIds.has(n.id))) {
+    structureChanged = true;
+  }
+
+  // Build link key for comparison (includes dep_type unlike the display linkKey)
+  const refreshLinkKey = l => `${typeof l.source === 'object' ? l.source.id : l.source}→${typeof l.target === 'object' ? l.target.id : l.target}:${l.dep_type}`;
+  const existingLinkKeys = new Set(currentLinks.map(refreshLinkKey));
+  const newLinkKeys = new Set(data.links.map(refreshLinkKey));
+
+  if (data.links.length !== currentLinks.length ||
+      data.links.some(l => !existingLinkKeys.has(refreshLinkKey(l))) ||
+      currentLinks.some(l => !newLinkKeys.has(refreshLinkKey(l)))) {
+    structureChanged = true;
+  }
+
+  graphData = { nodes: mergedNodes, links: data.links };
+  applyFilters();
+
+  if (structureChanged) {
+    // Structure changed — full update (will re-heat simulation briefly)
     graph.graphData(graphData);
   }
+  // If only properties changed (status, title, etc.), the existing three.js
+  // objects pick up the changes via the animation tick — no layout reset needed.
 }
 
 // --- SSE live updates ---
