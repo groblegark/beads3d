@@ -894,6 +894,36 @@
     }
     .agent-window-close:hover { color: #ff4444; }
 
+    /* bd-dqe6k: Pop-out / dock-back button */
+    .agent-window-popout {
+      background: none;
+      border: none;
+      color: #444;
+      cursor: pointer;
+      font-size: 11px;
+      padding: 0 2px;
+      line-height: 1;
+    }
+    .agent-window-popout:hover { color: #39c5cf; }
+
+    /* bd-dqe6k: Popped-out floating window */
+    .agent-window.popped-out {
+      position: fixed;
+      z-index: 300;
+      width: 420px;
+      min-width: 300px;
+      min-height: 200px;
+      resize: both;
+      overflow: hidden;
+      border: 1px solid #39c5cf44;
+      border-top: 2px solid #39c5cf;
+      box-shadow: 0 4px 24px rgba(0, 0, 0, 0.6);
+      border-radius: 4px;
+    }
+    .agent-window.popped-out:not(.collapsed) { height: 350px; }
+    .agent-window.popped-out .agent-window-header { cursor: grab; }
+    .agent-window.popped-out .agent-window-header:active { cursor: grabbing; }
+
     .agent-window-beads {
       padding: 2px 8px 4px;
       border-bottom: 1px solid #1a1a2a;
