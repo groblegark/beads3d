@@ -245,10 +245,11 @@ test.describe('subgraph highlight and camera (beads-cfee)', () => {
       return { labelCount: rects.length, overlaps, totalOverlapArea };
     });
 
-    // Quality gate: total overlap should be bounded
-    // Perfect = 0, but we allow up to 5000px² total across all label pairs
-    // (force-directed + fixed positions means some overlap is inevitable)
-    expect(overlapResult.totalOverlapArea).toBeLessThan(5000);
+    // Quality gate: total overlap should be bounded.
+    // Pairwise spread force (beads-8g56) targets < 3000px².
+    // Perfect = 0, but force-directed layout with fixed positions means some residual overlap.
+    console.log(`[quality-gate] labels=${overlapResult.labelCount} totalOverlap=${Math.round(overlapResult.totalOverlapArea)}px² pairs=${overlapResult.overlaps.length}`);
+    expect(overlapResult.totalOverlapArea).toBeLessThan(3000);
   });
 
   test('deep-link URL highlights full subgraph', async ({ page }) => {

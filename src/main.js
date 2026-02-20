@@ -1292,9 +1292,9 @@ function selectNode(node, componentIds) {
 }
 
 // Temporarily spread out highlighted subgraph nodes for readability (beads-k38a).
-// Installs a radial repulsion force on just the component nodes, then removes it
-// after the layout settles.  Computes centroid, pushes nodes outward with a
-// velocity-based force that decays over ~2 seconds.
+// Uses pairwise repulsion between component nodes (not just radial from centroid)
+// so nearby nodes push apart in all directions.  Also applies a gentle centroid
+// expansion to prevent the subgraph from collapsing inward.
 let _spreadTimeout = null;
 function spreadSubgraph(componentIds) {
   // Remove any previous spread force
@@ -1308,47 +1308,75 @@ function spreadSubgraph(componentIds) {
 
   if (!componentIds || componentIds.size < 2) return;
 
-  // Compute centroid of the component
-  let cx = 0, cy = 0, cz = 0, count = 0;
-  for (const node of graphData.nodes) {
-    if (!componentIds.has(node.id)) continue;
-    cx += (node.x || 0);
-    cy += (node.y || 0);
-    cz += (node.z || 0);
-    count++;
-  }
+  // Collect component nodes for O(n²) pairwise check (n is small — typically < 20)
+  const componentNodeList = graphData.nodes.filter(n => componentIds.has(n.id));
+  const count = componentNodeList.length;
   if (count < 2) return;
-  cx /= count; cy /= count; cz /= count;
 
-  // Target minimum spacing: scale with component size so labels have room
-  const minSpacing = Math.max(30, count * 8);
+  // Minimum pairwise distance — labels are ~80-120px wide at typical zoom.
+  // At camera distance ~200 (zoomToNodes default for small clusters), 1 world unit ≈ 3-4px.
+  // So 40 world units ≈ 120-160px — enough clearance for side-by-side labels.
+  const MIN_PAIR_DIST = Math.max(40, count * 5);
+  // Radial expansion: push nodes to at least this distance from centroid
+  const MIN_RADIAL_DIST = Math.max(30, count * 6);
 
-  // Install a custom force that pushes component nodes outward from centroid
   graph.d3Force('subgraphSpread', (alpha) => {
-    for (const node of graphData.nodes) {
-      if (!componentIds.has(node.id)) continue;
-      const dx = (node.x || 0) - cx;
-      const dy = (node.y || 0) - cy;
-      const dz = (node.z || 0) - cz;
-      const dist = Math.sqrt(dx * dx + dy * dy + dz * dz) || 1;
-      // Only push if too close to centroid
-      if (dist < minSpacing) {
-        const push = alpha * (minSpacing - dist) * 0.1;
-        node.vx += (dx / dist) * push;
-        node.vy += (dy / dist) * push;
-        node.vz += (dz / dist) * push;
+    // Phase 1: Pairwise repulsion — push overlapping node pairs apart
+    const strength = alpha * 0.15;
+    for (let i = 0; i < componentNodeList.length; i++) {
+      const a = componentNodeList[i];
+      for (let j = i + 1; j < componentNodeList.length; j++) {
+        const b = componentNodeList[j];
+        let dx = (a.x || 0) - (b.x || 0);
+        let dy = (a.y || 0) - (b.y || 0);
+        let dz = (a.z || 0) - (b.z || 0);
+        const dist = Math.sqrt(dx * dx + dy * dy + dz * dz) || 0.1;
+        if (dist < MIN_PAIR_DIST) {
+          // Inverse-distance force: stronger when closer
+          const push = strength * (MIN_PAIR_DIST - dist) / dist;
+          // Add small random jitter to break symmetry for overlapping nodes
+          const jx = (Math.random() - 0.5) * 0.1;
+          const jy = (Math.random() - 0.5) * 0.1;
+          a.vx += (dx + jx) * push;
+          a.vy += (dy + jy) * push;
+          a.vz += dz * push;
+          b.vx -= (dx + jx) * push;
+          b.vy -= (dy + jy) * push;
+          b.vz -= dz * push;
+        }
+      }
+    }
+
+    // Phase 2: Radial expansion from live centroid — prevents collapse
+    let cx = 0, cy = 0, cz = 0;
+    for (const n of componentNodeList) {
+      cx += (n.x || 0); cy += (n.y || 0); cz += (n.z || 0);
+    }
+    cx /= count; cy /= count; cz /= count;
+
+    const radialStrength = alpha * 0.08;
+    for (const n of componentNodeList) {
+      const dx = (n.x || 0) - cx;
+      const dy = (n.y || 0) - cy;
+      const dz = (n.z || 0) - cz;
+      const dist = Math.sqrt(dx * dx + dy * dy + dz * dz) || 0.1;
+      if (dist < MIN_RADIAL_DIST) {
+        const push = radialStrength * (MIN_RADIAL_DIST - dist) / dist;
+        n.vx += dx * push;
+        n.vy += dy * push;
+        n.vz += dz * push;
       }
     }
   });
 
-  // Gently reheat so the force takes effect
+  // Reheat simulation to apply the force
   graph.d3ReheatSimulation();
 
-  // Remove the spread force after it settles (2.5s)
+  // Remove the spread force after layout settles (3s — slightly longer for pairwise)
   _spreadTimeout = setTimeout(() => {
     graph.d3Force('subgraphSpread', null);
     _spreadTimeout = null;
-  }, 2500);
+  }, 3000);
 }
 
 function clearSelection() {
