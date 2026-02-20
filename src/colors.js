@@ -40,6 +40,7 @@ export const DEP_TYPE_COLORS = {
   'relates-to': '#4a9eff88',
   'parent-child':'#8b45a688',
   'assigned_to': '#ff6b35',
+  'rig_conflict':'#ff3030',    // bright red — agents on same rig+branch (bd-90ikf)
   default:      '#3a3a5a',
 };
 
@@ -79,6 +80,31 @@ export function nodeSize(issue) {
 
 export function linkColor(dep) {
   return DEP_TYPE_COLORS[dep.dep_type] || DEP_TYPE_COLORS.default;
+}
+
+// Rig colors — deterministic hash-based palette (bd-90ikf)
+// Each rig gets a unique, distinct color for badge and conflict edges.
+const RIG_PALETTE = [
+  '#e06090', // pink
+  '#40c0a0', // teal
+  '#c070e0', // violet
+  '#e0a030', // gold
+  '#50b0e0', // sky blue
+  '#a0d050', // lime
+  '#e07050', // coral
+  '#70a0e0', // periwinkle
+  '#d0b060', // sand
+  '#60d0c0', // mint
+];
+
+const rigColorCache = {};
+export function rigColor(rigName) {
+  if (!rigName) return '#666';
+  if (rigColorCache[rigName]) return rigColorCache[rigName];
+  let hash = 0;
+  for (let i = 0; i < rigName.length; i++) hash = ((hash << 5) - hash + rigName.charCodeAt(i)) | 0;
+  rigColorCache[rigName] = RIG_PALETTE[Math.abs(hash) % RIG_PALETTE.length];
+  return rigColorCache[rigName];
 }
 
 // CSS color string → THREE.js hex number

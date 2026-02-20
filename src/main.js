@@ -136,12 +136,33 @@ function drawPerson(ctx, s, color) {
   ctx.stroke();
 }
 
+// Warning triangle glyph — for rig conflict edges (bd-90ikf)
+function drawWarning(ctx, s, color) {
+  const cx = s / 2, cy = s / 2;
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 2.5;
+  // Triangle
+  ctx.beginPath();
+  ctx.moveTo(cx, cy - 16);
+  ctx.lineTo(cx - 14, cy + 12);
+  ctx.lineTo(cx + 14, cy + 12);
+  ctx.closePath();
+  ctx.stroke();
+  // Exclamation
+  ctx.fillStyle = color;
+  ctx.fillRect(cx - 1.5, cy - 8, 3, 12);
+  ctx.beginPath();
+  ctx.arc(cx, cy + 8, 2, 0, Math.PI * 2);
+  ctx.fill();
+}
+
 const LINK_ICON_MATERIALS = {
   'blocks':       makeLinkIconTexture(drawShield, '#d04040'),
   'waits-for':    makeLinkIconTexture(drawClock,  '#d4a017'),
   'parent-child': makeLinkIconTexture(drawChain,  '#8b45a6'),
   'relates-to':   makeLinkIconTexture(drawDot,    '#4a9eff'),
   'assigned_to':  makeLinkIconTexture(drawPerson, '#ff6b35'),
+  'rig_conflict': makeLinkIconTexture(drawWarning,'#ff3030'),
 };
 const LINK_ICON_DEFAULT = makeLinkIconTexture(drawDot, '#2a2a3a');
 
@@ -931,6 +952,20 @@ function initGraph() {
         group.add(badge);
       }
 
+      // Commit count badge — small number below-left of node (bd-90ikf)
+      // Lights up when backend adds commit_count field to GraphNode
+      if (n.commit_count > 0 && n.issue_type !== 'agent') {
+        const ccSprite = makeTextSprite(`${n.commit_count}`, {
+          fontSize: 16, color: '#a0d050',
+          background: 'rgba(8, 8, 16, 0.85)',
+          sizeAttenuation: false, screenHeight: 0.02,
+        });
+        ccSprite.position.set(-size * 1.2, -size * 1.2, 0); // bottom-left
+        ccSprite.renderOrder = 998;
+        ccSprite.userData.commitBadge = true;
+        group.add(ccSprite);
+      }
+
       // Selection ring (invisible until selected)
       // Selection ring — animated shader with sweep effect (invisible until selected)
       const selRingMat = createSelectionRingMaterial();
@@ -956,6 +991,7 @@ function initGraph() {
         const lk = linkKey(l);
         return highlightLinks.has(lk) ? (l.dep_type === 'blocks' ? 2.0 : 1.2) : 0.2;
       }
+      if (l.dep_type === 'rig_conflict') return 2.5; // thick red conflict edge (bd-90ikf)
       return l.dep_type === 'blocks' ? 1.2 : l.dep_type === 'assigned_to' ? 1.5 : 0.5;
     })
     .linkDirectionalArrowLength(5)
@@ -2004,6 +2040,7 @@ async function showDetail(node) {
       <span class="tag">${node.issue_type || 'task'}</span>
       <span class="tag">${pLabel}</span>
       ${node.assignee ? `<span class="tag tag-assignee">${escapeHtml(node.assignee)}</span>` : ''}
+      ${node.rig ? `<span class="tag" style="color:${rigColor(node.rig)};border-color:${rigColor(node.rig)}33">${escapeHtml(node.rig)}</span>` : ''}
       ${node._blocked ? '<span class="tag tag-blocked">BLOCKED</span>' : ''}
     </div>
     <div class="detail-body loading">loading full details...</div>
@@ -4367,6 +4404,29 @@ async function refresh() {
     }
   }
 
+  // Rig conflict edges — red links between agents sharing the same rig (bd-90ikf)
+  // Synthesized client-side: group agents by rig, create conflict edges between pairs.
+  const rigGroups = new Map(); // rig -> [agentId, ...]
+  for (const n of mergedNodes) {
+    if (n.issue_type === 'agent' && n.rig) {
+      if (!rigGroups.has(n.rig)) rigGroups.set(n.rig, []);
+      rigGroups.get(n.rig).push(n.id);
+    }
+  }
+  // Remove stale conflict edges from previous update
+  graphData.links = graphData.links.filter(l => l.dep_type !== 'rig_conflict');
+  for (const [, agents] of rigGroups) {
+    if (agents.length < 2) continue;
+    for (let i = 0; i < agents.length; i++) {
+      for (let j = i + 1; j < agents.length; j++) {
+        graphData.links.push({
+          source: agents[i], target: agents[j],
+          dep_type: 'rig_conflict',
+        });
+      }
+    }
+  }
+
   if (structureChanged) {
     // graph.graphData() reheats d3-force to alpha=1, which scatters positioned nodes.
     // Fix (bd-7ccyd): pin ALL existing nodes at their current positions during the
@@ -4870,9 +4930,14 @@ function showAgentWindow(node) {
     .map(b => `<div class="agent-window-bead" title="${escapeHtml(b.id)}: ${escapeHtml(b.title)}">${escapeHtml(b.id.replace(/^[a-z]+-/, ''))}: ${escapeHtml(b.title)}</div>`)
     .join('');
 
+  const rigBadge = node.rig
+    ? `<span class="agent-window-rig" style="color:${rigColor(node.rig)};border-color:${rigColor(node.rig)}33">${escapeHtml(node.rig)}</span>`
+    : '';
+
   el.innerHTML = `
     <div class="agent-window-header">
       <span class="agent-window-name">${escapeHtml(agentName)}</span>
+      ${rigBadge}
       <span class="agent-window-badge">${assigned.length}</span>
       <button class="agent-window-close">&times;</button>
     </div>
@@ -5051,9 +5116,14 @@ function openAgentsView() {
       .map(b => `<div class="agent-window-bead" title="${escapeHtml(b.id)}: ${escapeHtml(b.title)}">${escapeHtml(b.id.replace(/^[a-z]+-/, ''))}: ${escapeHtml(b.title)}</div>`)
       .join('');
 
+    const avRigBadge = node.rig
+      ? `<span class="agent-window-rig" style="color:${rigColor(node.rig)};border-color:${rigColor(node.rig)}33">${escapeHtml(node.rig)}</span>`
+      : '';
+
     el.innerHTML = `
       <div class="agent-window-header">
         <span class="agent-window-name">${escapeHtml(agentName)}</span>
+        ${avRigBadge}
         <span class="agent-window-badge" style="color:${statusColor}">${agentStatus || '?'}</span>
         <span class="agent-window-badge">${assigned.length}</span>
         <button class="agent-window-close">&times;</button>
