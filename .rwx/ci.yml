@@ -50,6 +50,7 @@ tasks:
   # ── Tests (Playwright E2E with mock API) ──────────────────────────────
   - key: test
     use: [build, browsers]
+    timeout: 30 minutes
     run: |
       echo "Running Playwright tests..."
       npx playwright test --reporter=list 2>&1 | tee test-output.txt
