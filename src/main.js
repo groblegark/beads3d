@@ -1669,13 +1669,13 @@ function applyFilters() {
       hidden = true;
     }
 
-    // Status filter
-    if (statusFilter.size > 0 && !statusFilter.has(n.status)) {
+    // Status filter — agent nodes are exempt (bd-keeha)
+    if (statusFilter.size > 0 && n.issue_type !== 'agent' && !statusFilter.has(n.status)) {
       hidden = true;
     }
 
-    // Type filter
-    if (typeFilter.size > 0 && !typeFilter.has(n.issue_type)) {
+    // Type filter — agent nodes are always visible (bd-keeha)
+    if (typeFilter.size > 0 && n.issue_type !== 'agent' && !typeFilter.has(n.issue_type)) {
       hidden = true;
     }
 
