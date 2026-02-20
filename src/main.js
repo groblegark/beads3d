@@ -2471,8 +2471,12 @@ function applyFilters() {
 
   // Hide orphaned agents (bd-n0971): if all of an agent's connected beads are hidden
   // (e.g. by search, age, or timeline filters), hide the agent too.
+  // Exception (bd-ixx3d): never hide agents with active/idle status — these are
+  // live agents from the roster and must always be visible even without edges.
   for (const n of graphData.nodes) {
     if (n.issue_type !== 'agent' || n._hidden) continue;
+    const agentStatus = (n.status || '').toLowerCase();
+    if (agentStatus === 'active' || agentStatus === 'idle') continue;
     const hasVisibleBead = graphData.links.some(l => {
       const srcId = typeof l.source === 'object' ? l.source.id : l.source;
       const tgtId = typeof l.target === 'object' ? l.target.id : l.target;
