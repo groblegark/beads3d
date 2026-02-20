@@ -24,11 +24,11 @@ export const TYPE_COLORS = {
 };
 
 export const PRIORITY_SIZES = {
-  0: 12,  // P0 critical — largest
-  1: 8,   // P1 high
-  2: 6,   // P2 medium
-  3: 4.5, // P3 low
-  4: 3.5, // P4 backlog — smallest
+  0: 16,  // P0 critical — largest (bd-d8dfd: increased)
+  1: 11,  // P1 high
+  2: 8,   // P2 medium
+  3: 6,   // P3 low
+  4: 5,   // P4 backlog — smallest
 };
 
 export const DEP_TYPE_COLORS = {

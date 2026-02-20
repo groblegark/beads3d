@@ -465,15 +465,15 @@ function initGraph() {
       core.scale.setScalar(size);
       group.add(core);
 
-      // Outer glow shell — Fresnel rim-lighting shader (bright at edges, clear at center)
-      const glow = new THREE.Mesh(GEO.sphereLo, createFresnelMaterial(hexColor, { opacity: 0.4 * ghostFade, power: 3.0 }));
-      glow.scale.setScalar(size * 1.5);
+      // Outer glow shell — Fresnel rim-lighting shader (bd-s9b4v: subtler glow)
+      const glow = new THREE.Mesh(GEO.sphereLo, createFresnelMaterial(hexColor, { opacity: 0.2 * ghostFade, power: 3.5 }));
+      glow.scale.setScalar(size * 1.25);
       group.add(glow);
 
-      // In-progress: pulsing ring — animated shader with soft edges
+      // In-progress: pulsing ring — intermittent flash (bd-s9b4v: subtler)
       if (n.status === 'in_progress') {
         const ring = new THREE.Mesh(GEO.torus, createPulseRingMaterial(0xd4a017));
-        ring.scale.setScalar(size * 2.0);
+        ring.scale.setScalar(size * 1.6);
         ring.rotation.x = Math.PI / 2;
         ring.userData.pulse = true;
         group.add(ring);
@@ -547,9 +547,9 @@ function initGraph() {
         tip.position.y = s * 1.3;
         group.add(tip);
 
-        // Outer glow — orange fresnel shell, pulses with activity (beads-v0wa)
-        const agentGlow = new THREE.Mesh(GEO.sphereLo, createFresnelMaterial(0xff6b35, { opacity: 0.25, power: 2.5 }));
-        agentGlow.scale.setScalar(size * 1.8);
+        // Outer glow — orange fresnel shell (bd-s9b4v: subtler, tighter)
+        const agentGlow = new THREE.Mesh(GEO.sphereLo, createFresnelMaterial(0xff6b35, { opacity: 0.15, power: 3.0 }));
+        agentGlow.scale.setScalar(size * 1.4);
         agentGlow.userData.agentGlow = true;
         agentGlow.userData.baseScale = size * 1.8;
         group.add(agentGlow);
@@ -762,9 +762,9 @@ function initGraph() {
   // Bloom post-processing
   bloomPass = new UnrealBloomPass(
     new THREE.Vector2(window.innerWidth, window.innerHeight),
-    1.2,   // strength — visible glow
-    0.6,   // radius — wider spread
-    0.2    // threshold — lower so node colors bloom
+    0.7,   // strength — subtle glow (bd-s9b4v: reduced from 1.2)
+    0.4,   // radius — tighter spread (bd-s9b4v: reduced from 0.6)
+    0.35   // threshold — higher so only bright nodes bloom (bd-s9b4v: raised from 0.2)
   );
   bloomPass.enabled = bloomEnabled;
   const composer = graph.postProcessingComposer();
@@ -2079,7 +2079,16 @@ function applyFilters() {
       hidden = true;
     }
 
-    // Status filter — agent nodes are exempt (bd-keeha)
+    // Hide closed/dead agents (bd-n0971): agents with status closed, tombstone,
+    // or that have no in-progress beads assigned to them are not shown.
+    if (n.issue_type === 'agent') {
+      const agentStatus = (n.status || '').toLowerCase();
+      if (agentStatus === 'closed' || agentStatus === 'tombstone') {
+        hidden = true;
+      }
+    }
+
+    // Status filter — agent nodes are exempt from user status filters (bd-keeha)
     if (statusFilter.size > 0 && n.issue_type !== 'agent' && !statusFilter.has(n.status)) {
       hidden = true;
     }
@@ -3407,6 +3416,31 @@ function setupControls() {
     const layoutKeys = { '1': 'free', '2': 'dag', '3': 'timeline', '4': 'radial', '5': 'cluster' };
     if (layoutKeys[e.key] && document.activeElement !== searchInput) {
       setLayout(layoutKeys[e.key]);
+    }
+
+    // Arrow keys: strafe camera (bd-wnt17)
+    const STRAFE_SPEED = 8;
+    if (['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(e.key) &&
+        document.activeElement !== searchInput) {
+      e.preventDefault();
+      const camera = graph.camera();
+      const controls = graph.controls();
+      // Get camera's right and up vectors in world space
+      const right = new THREE.Vector3();
+      const up = new THREE.Vector3();
+      camera.getWorldDirection(new THREE.Vector3()); // ensure matrix is current
+      right.setFromMatrixColumn(camera.matrixWorld, 0).normalize();
+      up.setFromMatrixColumn(camera.matrixWorld, 1).normalize();
+
+      const delta = new THREE.Vector3();
+      if (e.key === 'ArrowLeft')  delta.addScaledVector(right, -STRAFE_SPEED);
+      if (e.key === 'ArrowRight') delta.addScaledVector(right,  STRAFE_SPEED);
+      if (e.key === 'ArrowUp')    delta.addScaledVector(up,     STRAFE_SPEED);
+      if (e.key === 'ArrowDown')  delta.addScaledVector(up,    -STRAFE_SPEED);
+
+      // Move both camera and orbit target to strafe without changing orientation
+      camera.position.add(delta);
+      if (controls && controls.target) controls.target.add(delta);
     }
   });
 }

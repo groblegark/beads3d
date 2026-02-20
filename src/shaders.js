@@ -58,7 +58,9 @@ export function createPulseRingMaterial(color) {
       uniform float time;
       varying vec2 vUv;
       void main() {
-        float pulse = 0.3 + 0.3 * sin(time * 3.0);
+        // Intermittent pulse: brief flash every ~4s, fades quickly (bd-s9b4v)
+        float cycle = mod(time, 4.0);
+        float pulse = smoothstep(0.0, 0.3, cycle) * smoothstep(1.0, 0.3, cycle) * 0.5;
         // Soft edges along the torus cross-section
         float dist = abs(vUv.y - 0.5) * 2.0;
         float softEdge = smoothstep(1.0, 0.3, dist);
