@@ -826,11 +826,19 @@ function restoreMaterialOpacity(mat) {
 // Restore all nodes that were dimmed during selection
 function restoreAllNodeOpacity() {
   for (const node of graphData.nodes) {
-    if (!node._wasDimmed) continue;
     const threeObj = node.__threeObj;
     if (!threeObj) continue;
+
+    // Hide selection-shown labels (bd-xk0tx): revert to global toggle state
     threeObj.traverse(child => {
-      if (!child.material || child.userData.selectionRing || child.userData.pulse) return;
+      if (child.userData.nodeLabel) {
+        child.visible = labelsVisible;
+      }
+    });
+
+    if (!node._wasDimmed) continue;
+    threeObj.traverse(child => {
+      if (!child.material || child.userData.selectionRing || child.userData.pulse || child.userData.nodeLabel) return;
       restoreMaterialOpacity(child.material);
     });
     node._wasDimmed = false;
@@ -870,14 +878,23 @@ function startAnimation() {
       const isSelected = (hasSelection && node.id === selectedNode.id) || isMultiSelected;
       const dimFactor = isHighlighted ? 1.0 : 0.35;
 
+      // Show labels on highlighted beads when there's an active selection (bd-xk0tx)
+      const showLabel = hasSelection ? isHighlighted : labelsVisible;
+
       // Skip traversal when nothing to update
-      if (!hasSelection && !isMultiSelected && node.status !== 'in_progress') continue;
+      if (!hasSelection && !isMultiSelected && node.status !== 'in_progress' && !labelsVisible) continue;
 
       // Track dimmed nodes for restoration in clearSelection()
       if (hasSelection && !isHighlighted) node._wasDimmed = true;
 
       threeObj.traverse(child => {
         if (!child.material) return;
+
+        // Label sprites: show on highlighted nodes or when global toggle is on (bd-xk0tx)
+        if (child.userData.nodeLabel) {
+          child.visible = showLabel;
+          return;
+        }
 
         if (child.userData.selectionRing) {
           if (child.material.uniforms && child.material.uniforms.visible) {
