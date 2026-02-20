@@ -168,6 +168,7 @@ let minimapVisible = true;
 let multiSelected = new Set(); // set of node IDs currently multi-selected
 let isBoxSelecting = false;
 let boxSelectStart = null; // {x, y} screen coords
+let cameraFrozen = false; // true when multi-select has locked orbit controls (bd-casin)
 
 // --- Minimap ---
 const minimapCanvas = document.getElementById('minimap');
@@ -599,9 +600,82 @@ function clearSelection() {
   highlightLinks.clear();
   multiSelected.clear();
   hideBulkMenu();
+  unfreezeCamera(); // bd-casin: restore orbit controls
   restoreAllNodeOpacity();
   // Force link width recalculation
   graph.linkWidth(graph.linkWidth());
+}
+
+// --- Camera freeze / center on multi-select (bd-casin) ---
+
+// Fly camera to center on the selected nodes + their immediate connections,
+// then freeze orbit controls. Call unfreezeCamera() (Escape) to restore.
+function centerCameraOnSelection() {
+  if (multiSelected.size === 0) return;
+
+  // Collect selected node IDs + their direct neighbors
+  const relevantIds = new Set(multiSelected);
+  for (const l of graphData.links) {
+    const srcId = typeof l.source === 'object' ? l.source.id : l.source;
+    const tgtId = typeof l.target === 'object' ? l.target.id : l.target;
+    if (multiSelected.has(srcId) || multiSelected.has(tgtId)) {
+      relevantIds.add(srcId);
+      relevantIds.add(tgtId);
+    }
+  }
+
+  // Calculate bounding-box center of relevant nodes
+  let cx = 0, cy = 0, cz = 0, count = 0;
+  for (const node of graphData.nodes) {
+    if (!relevantIds.has(node.id)) continue;
+    cx += (node.x || 0);
+    cy += (node.y || 0);
+    cz += (node.z || 0);
+    count++;
+  }
+  if (count === 0) return;
+  cx /= count; cy /= count; cz /= count;
+
+  // Calculate radius (max distance from center) to set camera distance
+  let maxDist = 0;
+  for (const node of graphData.nodes) {
+    if (!relevantIds.has(node.id)) continue;
+    const dx = (node.x || 0) - cx;
+    const dy = (node.y || 0) - cy;
+    const dz = (node.z || 0) - cz;
+    const d = Math.sqrt(dx * dx + dy * dy + dz * dz);
+    if (d > maxDist) maxDist = d;
+  }
+
+  // Camera distance: enough to see the whole cluster with some padding
+  const distance = Math.max(maxDist * 2.5, 60);
+  const lookAt = { x: cx, y: cy, z: cz };
+  // Position camera along the current camera direction, but at the right distance
+  const cam = graph.camera();
+  const dir = new THREE.Vector3(
+    cam.position.x - cx, cam.position.y - cy, cam.position.z - cz
+  ).normalize();
+  const camPos = {
+    x: cx + dir.x * distance,
+    y: cy + dir.y * distance,
+    z: cz + dir.z * distance,
+  };
+
+  graph.cameraPosition(camPos, lookAt, 1000);
+
+  // Freeze orbit controls after the fly animation
+  cameraFrozen = true;
+  setTimeout(() => {
+    const controls = graph.controls();
+    if (controls) controls.enabled = false;
+  }, 1050);
+}
+
+function unfreezeCamera() {
+  if (!cameraFrozen) return;
+  cameraFrozen = false;
+  const controls = graph.controls();
+  if (controls) controls.enabled = true;
 }
 
 // --- Node opacity helpers ---
@@ -1144,53 +1218,58 @@ function hideContextMenu() {
   ctxNode = null;
 }
 
+// Apply an optimistic update to a node: immediately update local data + visuals,
+// fire the API call, and revert on failure.
+async function optimisticUpdate(node, changes, apiCall) {
+  // Snapshot current values for rollback
+  const snapshot = {};
+  for (const key of Object.keys(changes)) {
+    snapshot[key] = node[key];
+  }
+
+  // Apply changes immediately
+  Object.assign(node, changes);
+
+  // Force Three.js object rebuild for this node (picks up new color, size, status effects)
+  graph.nodeThreeObject(graph.nodeThreeObject());
+
+  try {
+    await apiCall();
+  } catch (err) {
+    // Revert on failure
+    Object.assign(node, snapshot);
+    graph.nodeThreeObject(graph.nodeThreeObject());
+    showStatusToast(`error: ${err.message}`, true);
+  }
+}
+
 async function handleContextAction(action, node, el) {
   switch (action) {
     case 'set-status': {
       const value = el?.dataset.value;
       if (!value || value === node.status) break;
       hideContextMenu();
-      try {
-        await api.update(node.id, { status: value });
-        showStatusToast(`${node.id} → ${value}`);
-        refresh();
-      } catch (err) {
-        showStatusToast(`error: ${err.message}`, true);
-      }
+      showStatusToast(`${node.id} → ${value}`);
+      await optimisticUpdate(node, { status: value }, () => api.update(node.id, { status: value }));
       break;
     }
     case 'set-priority': {
       const value = parseInt(el?.dataset.value, 10);
       if (isNaN(value) || value === node.priority) break;
       hideContextMenu();
-      try {
-        await api.update(node.id, { priority: value });
-        showStatusToast(`${node.id} → P${value}`);
-        refresh();
-      } catch (err) {
-        showStatusToast(`error: ${err.message}`, true);
-      }
+      showStatusToast(`${node.id} → P${value}`);
+      await optimisticUpdate(node, { priority: value }, () => api.update(node.id, { priority: value }));
       break;
     }
     case 'claim':
       hideContextMenu();
-      try {
-        await api.update(node.id, { status: 'in_progress' });
-        showStatusToast(`claimed ${node.id}`);
-        refresh();
-      } catch (err) {
-        showStatusToast(`error: ${err.message}`, true);
-      }
+      showStatusToast(`claimed ${node.id}`);
+      await optimisticUpdate(node, { status: 'in_progress' }, () => api.update(node.id, { status: 'in_progress' }));
       break;
     case 'close-bead':
       hideContextMenu();
-      try {
-        await api.close(node.id);
-        showStatusToast(`closed ${node.id}`);
-        refresh();
-      } catch (err) {
-        showStatusToast(`error: ${err.message}`, true);
-      }
+      showStatusToast(`closed ${node.id}`);
+      await optimisticUpdate(node, { status: 'closed' }, () => api.close(node.id));
       break;
     case 'expand-deps':
       expandDepTree(node);
@@ -1963,12 +2042,30 @@ function setupBoxSelect() {
     selectOverlay.style.pointerEvents = 'none';
     selectCtx.clearRect(0, 0, selectOverlay.width, selectOverlay.height);
 
-    // Re-enable orbit controls
+    // Re-enable orbit controls (will be re-frozen by centerCameraOnSelection if multi-select)
     const controls = graph.controls();
     if (controls) controls.enabled = true;
 
     // Finalize selection
     if (multiSelected.size > 0) {
+      // Highlight connected nodes/links for the selection
+      highlightNodes.clear();
+      highlightLinks.clear();
+      for (const id of multiSelected) highlightNodes.add(id);
+      for (const l of graphData.links) {
+        const srcId = typeof l.source === 'object' ? l.source.id : l.source;
+        const tgtId = typeof l.target === 'object' ? l.target.id : l.target;
+        if (multiSelected.has(srcId) || multiSelected.has(tgtId)) {
+          highlightNodes.add(srcId);
+          highlightNodes.add(tgtId);
+          highlightLinks.add(linkKey(l));
+        }
+      }
+      graph.linkWidth(graph.linkWidth());
+
+      // Center camera on selection and freeze controls (bd-casin)
+      centerCameraOnSelection();
+
       showBulkMenu(e.clientX, e.clientY);
     }
   });
@@ -2041,24 +2138,58 @@ async function handleBulkAction(action, value) {
   const ids = [...multiSelected];
   hideBulkMenu();
 
+  // Build snapshot for rollback and apply optimistic changes
+  const nodeMap = new Map(graphData.nodes.map(n => [n.id, n]));
+  const snapshots = new Map();
+
   switch (action) {
     case 'bulk-status': {
+      for (const id of ids) {
+        const n = nodeMap.get(id);
+        if (n) { snapshots.set(id, { status: n.status }); n.status = value; }
+      }
+      graph.nodeThreeObject(graph.nodeThreeObject());
+      showStatusToast(`${ids.length} → ${value}`);
       const results = await Promise.allSettled(ids.map(id => api.update(id, { status: value })));
-      const ok = results.filter(r => r.status === 'fulfilled').length;
-      showStatusToast(`${ok}/${ids.length} → ${value}`);
+      const failed = results.filter(r => r.status === 'rejected').length;
+      if (failed > 0) {
+        showStatusToast(`${failed}/${ids.length} failed`, true);
+        for (const [id, snap] of snapshots) { const n = nodeMap.get(id); if (n) Object.assign(n, snap); }
+        graph.nodeThreeObject(graph.nodeThreeObject());
+      }
       break;
     }
     case 'bulk-priority': {
       const p = parseInt(value, 10);
+      for (const id of ids) {
+        const n = nodeMap.get(id);
+        if (n) { snapshots.set(id, { priority: n.priority }); n.priority = p; }
+      }
+      graph.nodeThreeObject(graph.nodeThreeObject());
+      showStatusToast(`${ids.length} → P${p}`);
       const results = await Promise.allSettled(ids.map(id => api.update(id, { priority: p })));
-      const ok = results.filter(r => r.status === 'fulfilled').length;
-      showStatusToast(`${ok}/${ids.length} → P${p}`);
+      const failed = results.filter(r => r.status === 'rejected').length;
+      if (failed > 0) {
+        showStatusToast(`${failed}/${ids.length} failed`, true);
+        for (const [id, snap] of snapshots) { const n = nodeMap.get(id); if (n) Object.assign(n, snap); }
+        graph.nodeThreeObject(graph.nodeThreeObject());
+      }
       break;
     }
     case 'bulk-close': {
+      for (const id of ids) {
+        const n = nodeMap.get(id);
+        if (n) { snapshots.set(id, { status: n.status }); n.status = 'closed'; }
+      }
+      graph.nodeThreeObject(graph.nodeThreeObject());
+      showStatusToast(`closed ${ids.length}`);
       const results = await Promise.allSettled(ids.map(id => api.close(id)));
-      const ok = results.filter(r => r.status === 'fulfilled').length;
-      showStatusToast(`closed ${ok}/${ids.length}`);
+      const failed = results.filter(r => r.status === 'rejected').length;
+      if (failed > 0) {
+        showStatusToast(`${failed}/${ids.length} failed`, true);
+        for (const [id, snap] of snapshots) { const n = nodeMap.get(id); if (n) Object.assign(n, snap); }
+        graph.nodeThreeObject(graph.nodeThreeObject());
+      }
       break;
     }
     case 'bulk-clear':
@@ -2066,7 +2197,7 @@ async function handleBulkAction(action, value) {
   }
 
   multiSelected.clear();
-  refresh();
+  unfreezeCamera(); // bd-casin: restore orbit controls after bulk action
 }
 
 // --- Controls ---
@@ -2154,6 +2285,9 @@ function setupControls() {
     }
     // Escape to clear search, close detail, close context/bulk menu, and deselect
     if (e.key === 'Escape') {
+      // Always unfreeze camera on Escape (bd-casin)
+      unfreezeCamera();
+
       if (bulkMenu.style.display === 'block') {
         hideBulkMenu();
         multiSelected.clear();
@@ -2287,7 +2421,7 @@ async function main() {
     setInterval(refresh, POLL_INTERVAL);
     graph.cameraPosition({ x: 0, y: 0, z: 400 });
     // Expose for Playwright tests
-    window.__beads3d = { graph, graphData: () => graphData };
+    window.__beads3d = { graph, graphData: () => graphData, multiSelected: () => multiSelected, showBulkMenu };
   } catch (err) {
     console.error('Init failed:', err);
     document.getElementById('status').textContent = `init error: ${err.message}`;
