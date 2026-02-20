@@ -746,6 +746,54 @@ test.describe('detail panel', () => {
     const meta = page.locator('#detail .detail-meta');
     await expect(meta.locator('.tag-assignee')).toContainText('alice');
   });
+
+  // bd-fbmq3: tiling detail panels
+  test('multiple detail panels tile side-by-side', async ({ page }) => {
+    const tracker = createAPITracker();
+    await mockAPI(page, tracker);
+    await page.goto('/');
+    await waitForGraph(page);
+
+    // Open first panel (bd-feat1)
+    await page.evaluate(() => {
+      const b = window.__beads3d;
+      if (!b) return;
+      const node = b.graphData().nodes.find(n => n.id === 'bd-feat1');
+      if (node) b.showDetail(node);
+    });
+
+    const detail = page.locator('#detail');
+    await expect(detail).toBeVisible();
+    let panels = detail.locator('.detail-panel');
+    await expect(panels).toHaveCount(1);
+
+    // Open second panel (bd-task1)
+    await page.evaluate(() => {
+      const b = window.__beads3d;
+      if (!b) return;
+      const node = b.graphData().nodes.find(n => n.id === 'bd-task1');
+      if (node) b.showDetail(node);
+    });
+
+    panels = detail.locator('.detail-panel');
+    await expect(panels).toHaveCount(2);
+
+    // Both beads should be visible in their respective panels
+    await expect(detail).toContainText('bd-feat1');
+    await expect(detail).toContainText('bd-task1');
+
+    // Close first panel by clicking it again (toggle)
+    await page.evaluate(() => {
+      const b = window.__beads3d;
+      if (!b) return;
+      const node = b.graphData().nodes.find(n => n.id === 'bd-feat1');
+      if (node) b.showDetail(node);
+    });
+
+    panels = detail.locator('.detail-panel');
+    await expect(panels).toHaveCount(1);
+    await expect(detail).toContainText('bd-task1');
+  });
 });
 
 // --- Search navigation tests (bd-yprv2) ---
