@@ -10,6 +10,7 @@ import { createFresnelMaterial, createPulseRingMaterial, createSelectionRingMate
 const params = new URLSearchParams(window.location.search);
 const API_BASE = params.get('api') || '/api';
 const DEEP_LINK_BEAD = params.get('bead') || ''; // bd-he95o: URL deep-linking
+const DEEP_LINK_MOLECULE = params.get('molecule') || ''; // bd-lwut6: molecule focus view
 const URL_PROFILE = params.get('profile') || ''; // bd-8o2gd phase 4: load named profile from URL
 const URL_ASSIGNEE = params.get('assignee') || ''; // bd-8o2gd phase 4: filter by assignee via URL
 const URL_STATUS = params.get('status') || ''; // bd-8o2gd phase 4: comma-separated statuses
@@ -197,6 +198,7 @@ let minimapVisible = true;
 // Multi-selection state (rubber-band / shift+drag)
 let multiSelected = new Set(); // set of node IDs currently multi-selected
 let revealedNodes = new Set(); // node IDs force-shown by click-to-reveal (hq-vorf47)
+let focusedMoleculeNodes = new Set(); // node IDs in the focused molecule (bd-lwut6)
 let isBoxSelecting = false;
 let boxSelectStart = null; // {x, y} screen coords
 let cameraFrozen = false; // true when multi-select has locked orbit controls (bd-casin)
@@ -251,7 +253,8 @@ let css2dRenderer = null; // CSS2DRenderer instance
 const dootPopups = new Map(); // nodeId → { el, timer, node, lastDoot }
 
 // Agent activity feed windows — rich session transcript popups (bd-kau4k)
-const agentWindows = new Map(); // agentId → { el, feedEl, node, entries, pendingTool, collapsed }
+// bd-5ok9s: enhanced status: lastStatus, lastTool, idleSince, crashError
+const agentWindows = new Map();
 
 // Agents View overlay state (bd-jgvas)
 let agentsViewOpen = false;
@@ -712,8 +715,10 @@ function resolveOverlappingLabels() {
   const camDist = camPos.length(); // distance from origin
   // Budget: at distance 100 show ~40 labels, at 500 show ~12, at 1000 show ~6
   // Selected/multi-selected always shown (budget doesn't apply).
+  // bd-lwut6: when a molecule is focused, increase budget to show all its labels.
   const BASE_BUDGET = 40;
-  const labelBudget = Math.max(6, Math.round(BASE_BUDGET * (100 / Math.max(camDist, 50))));
+  const moleculeBudgetBoost = focusedMoleculeNodes.size > 0 ? focusedMoleculeNodes.size : 0;
+  const labelBudget = Math.max(6, Math.round(BASE_BUDGET * (100 / Math.max(camDist, 50)))) + moleculeBudgetBoost;
 
   // Sort by priority descending — highest priority labels shown first
   allLabels.sort((a, b) => b.pri - a.pri);
@@ -816,6 +821,8 @@ function _labelPriority(label) {
   let pri = 0;
   if (selectedNode && n.id === selectedNode.id) pri += 1000;
   if (multiSelected.has(n.id)) pri += 500;
+  // bd-lwut6: boost labels in focused molecule — always show at full opacity
+  if (focusedMoleculeNodes.has(n.id)) pri += 500;
   if (n.issue_type === 'agent') pri += 100;
   // In-progress beads are more important than open/closed
   if (n.status === 'in_progress') pri += 50;
@@ -1394,6 +1401,8 @@ function clearSelection() {
     graphData.nodes.forEach(n => { n._revealed = false; });
     applyFilters();
   }
+  // Clear molecule focus state (bd-lwut6)
+  focusedMoleculeNodes.clear();
   hideBulkMenu();
   unfreezeCamera(); // bd-casin: restore orbit controls
   restoreAllNodeOpacity();
@@ -1436,6 +1445,55 @@ function focusDeepLinkBead(beadId) {
   }
 
   console.log(`[beads3d] Deep-linked to bead: ${beadId}`);
+}
+
+// --- Molecule focus view (bd-lwut6) ---
+// Brings a molecule's connected subgraph into view with all labels readable.
+// Triggered via ?molecule=<id> URL parameter or programmatically.
+function focusMolecule(moleculeId) {
+  const node = graphData.nodes.find(n => n.id === moleculeId);
+  if (!node) {
+    console.warn(`[beads3d] Molecule "${moleculeId}" not found in graph`);
+    return;
+  }
+
+  // Find the full connected component
+  const component = getConnectedComponent(node.id);
+
+  // Store focused molecule nodes for label LOD override
+  focusedMoleculeNodes = new Set(component);
+
+  // Select and highlight the subgraph
+  selectNode(node, component);
+
+  // Reveal all nodes in the component (override filters)
+  revealedNodes.clear();
+  for (const id of component) revealedNodes.add(id);
+  applyFilters();
+
+  // Enable labels if not already visible
+  if (!labelsVisible) {
+    labelsVisible = true;
+    const btn = document.getElementById('btn-labels');
+    if (btn) btn.classList.toggle('active', true);
+  }
+
+  // Spread nodes apart for readability, then zoom to fit
+  spreadSubgraph(component);
+  zoomToNodes(component);
+
+  // Show detail panel for the molecule node
+  setTimeout(() => showDetail(node), 500);
+
+  // Update URL for shareability
+  if (window.history.replaceState) {
+    const url = new URL(window.location.href);
+    url.searchParams.set('molecule', moleculeId);
+    url.searchParams.delete('bead');
+    window.history.replaceState(null, '', url.toString());
+  }
+
+  console.log(`[beads3d] Molecule focus: ${moleculeId} (${component.size} nodes)`);
 }
 
 // --- Camera freeze / center on multi-select (bd-casin) ---
@@ -1774,7 +1832,9 @@ async function fetchViaGraph(statusEl) {
     include_deps: true,
     include_body: true,
     include_agents: true,
-    exclude_types: ['message', 'config', 'gate', 'wisp', 'convoy', 'molecule', 'formula', 'advice', 'role'], // bd-04wet, bd-t25i1, bd-uqkpq: filter noise types
+    exclude_types: DEEP_LINK_MOLECULE
+      ? ['message', 'config', 'gate', 'wisp', 'convoy', 'formula', 'advice', 'role'] // bd-lwut6: include molecules when focusing one
+      : ['message', 'config', 'gate', 'wisp', 'convoy', 'molecule', 'formula', 'advice', 'role'], // bd-04wet, bd-t25i1, bd-uqkpq: filter noise types
   };
   const result = await api.graph(graphArgs);
 
@@ -1869,7 +1929,9 @@ async function fetchViaGraph(statusEl) {
 }
 
 async function fetchViaList(statusEl) {
-  const SKIP_TYPES = new Set(['message', 'config', 'gate', 'wisp', 'convoy', 'decision', 'molecule', 'formula', 'advice', 'role']);
+  const SKIP_TYPES = new Set(DEEP_LINK_MOLECULE
+    ? ['message', 'config', 'gate', 'wisp', 'convoy', 'decision', 'formula', 'advice', 'role'] // bd-lwut6: include molecules
+    : ['message', 'config', 'gate', 'wisp', 'convoy', 'decision', 'molecule', 'formula', 'advice', 'role']);
 
   // Parallel fetch: open/active beads + blocked + stats (bd-7haep: include all active statuses)
   const [openIssues, inProgress, hookedIssues, deferredIssues, blocked, stats] = await Promise.all([
@@ -2109,6 +2171,7 @@ function updateBeadURL(beadId) {
     url.searchParams.set('bead', beadId);
   } else {
     url.searchParams.delete('bead');
+    url.searchParams.delete('molecule'); // bd-lwut6: clear molecule param on deselect
   }
   window.history.replaceState(null, '', url.toString());
 }
@@ -5751,6 +5814,7 @@ function showAgentWindow(node) {
     : '';
 
   el.innerHTML = `
+    <div class="agent-window-resize-handle"></div>
     <div class="agent-window-header">
       <span class="agent-window-name" style="cursor:pointer" title="Click to zoom to agent">${escapeHtml(agentName)}</span>
       ${rigBadge}
@@ -5849,6 +5913,7 @@ function showAgentWindow(node) {
     pendingTool: null,
     collapsed: false,
   });
+  enableTopResize(el); // bd-9wxm9
 }
 
 function closeAgentWindow(agentId) {
@@ -5936,6 +6001,34 @@ function enableHeaderDrag(el) {
     document.removeEventListener('mousemove', onMouseMove);
     document.removeEventListener('mouseup', onMouseUp);
   };
+}
+
+// bd-9wxm9: Enable top-edge resize on agent windows (drag upward to expand)
+function enableTopResize(el) {
+  const handle = el.querySelector('.agent-window-resize-handle');
+  if (!handle) return;
+  let resizing = false, startY = 0, origHeight = 0;
+
+  handle.addEventListener('mousedown', (e) => {
+    resizing = true;
+    startY = e.clientY;
+    origHeight = el.offsetHeight;
+    handle.classList.add('active');
+    el.style.transition = 'none'; // disable height transition while dragging
+    e.preventDefault();
+  });
+  document.addEventListener('mousemove', (e) => {
+    if (!resizing) return;
+    const dy = startY - e.clientY; // drag up = positive
+    const newH = Math.max(100, Math.min(window.innerHeight - 40, origHeight + dy));
+    el.style.height = newH + 'px';
+  });
+  document.addEventListener('mouseup', () => {
+    if (!resizing) return;
+    resizing = false;
+    handle.classList.remove('active');
+    el.style.transition = '';
+  });
 }
 
 // --- Agents View overlay — Shift+A (bd-jgvas) ---
@@ -6046,6 +6139,7 @@ function openAgentsView() {
       : '';
 
     el.innerHTML = `
+      <div class="agent-window-resize-handle"></div>
       <div class="agent-window-header">
         <span class="agent-window-name" style="cursor:pointer" title="Click to zoom to agent">${escapeHtml(agentName)}</span>
         ${avRigBadge}
@@ -6144,6 +6238,7 @@ function openAgentsView() {
       pendingTool: null,
       collapsed: false,
     });
+    enableTopResize(el); // bd-9wxm9
   }
 
   overlay.classList.add('open');
@@ -6204,6 +6299,7 @@ function createAgentWindowInGrid(node) {
     .join('');
 
   el.innerHTML = `
+    <div class="agent-window-resize-handle"></div>
     <div class="agent-window-header">
       <span class="agent-window-name" style="cursor:pointer" title="Click to zoom to agent">${escapeHtml(agentName)}</span>
       <span class="agent-window-badge" style="color:${statusColor}">${agentStatus || '?'}</span>
@@ -6301,6 +6397,7 @@ function createAgentWindowInGrid(node) {
     pendingTool: null,
     collapsed: false,
   });
+  enableTopResize(el); // bd-9wxm9
 
   // Update the header stats count
   updateAgentsViewStats();
@@ -6630,9 +6727,13 @@ async function main() {
     if (DEEP_LINK_BEAD) {
       setTimeout(() => focusDeepLinkBead(DEEP_LINK_BEAD), 2000);
     }
+    // Molecule focus view (bd-lwut6): ?molecule=<id> focuses on a molecule's subgraph.
+    if (DEEP_LINK_MOLECULE) {
+      setTimeout(() => focusMolecule(DEEP_LINK_MOLECULE), 2000);
+    }
     // Expose for Playwright tests
     window.__THREE = THREE;
-    window.__beads3d = { graph, graphData: () => graphData, multiSelected: () => multiSelected, highlightNodes: () => highlightNodes, showBulkMenu, showDetail, hideDetail, selectNode, highlightSubgraph, clearSelection, get selectedNode() { return selectedNode; }, get cameraFrozen() { return cameraFrozen; } };
+    window.__beads3d = { graph, graphData: () => graphData, multiSelected: () => multiSelected, highlightNodes: () => highlightNodes, showBulkMenu, showDetail, hideDetail, selectNode, highlightSubgraph, clearSelection, focusMolecule, focusedMoleculeNodes: () => focusedMoleculeNodes, get selectedNode() { return selectedNode; }, get cameraFrozen() { return cameraFrozen; } };
     // Expose doot internals for testing (bd-pg7vy)
     window.__beads3d_spawnDoot = spawnDoot;
     window.__beads3d_doots = () => doots;

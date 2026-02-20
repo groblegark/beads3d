@@ -838,6 +838,18 @@
     .agent-window.collapsed { height: 28px; overflow: hidden; }
     .agent-window:not(.collapsed) { height: 280px; }
 
+    /* bd-9wxm9: Resize handle on top edge of agent window */
+    .agent-window-resize-handle {
+      height: 4px;
+      cursor: ns-resize;
+      background: transparent;
+      flex-shrink: 0;
+      transition: background 0.15s;
+    }
+    .agent-window-resize-handle:hover,
+    .agent-window-resize-handle.active { background: #39c5cf66; }
+    .agent-window.collapsed .agent-window-resize-handle { display: none; }
+
     .agent-window-header {
       display: flex;
       align-items: center;
@@ -872,6 +884,34 @@
       padding: 1px 4px;
       border-radius: 3px;
     }
+    /* bd-5ok9s: enhanced agent status bar */
+    .agent-status-bar {
+      display: flex;
+      gap: 8px;
+      padding: 2px 8px;
+      font-size: 9px;
+      color: #888;
+      background: #0a0a14;
+      border-bottom: 1px solid #1a1a2a;
+      white-space: nowrap;
+      overflow: hidden;
+    }
+    .agent-status-bar .status-label {
+      color: #555;
+    }
+    .agent-status-bar .status-active { color: #2d8a4e; }
+    .agent-status-bar .status-idle { color: #d4a017; }
+    .agent-status-bar .status-crashed {
+      color: #ff4444;
+      font-weight: bold;
+      animation: crash-pulse 1.5s ease-in-out infinite;
+    }
+    @keyframes crash-pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.5; }
+    }
+    .agent-status-bar .status-tool { color: #39c5cf; }
+    .agent-status-bar .status-idle-dur { color: #d4a017; font-variant-numeric: tabular-nums; }
     .agent-window-rig {
       font-size: 8px;
       padding: 1px 5px;
