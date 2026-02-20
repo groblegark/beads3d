@@ -565,7 +565,7 @@ function initGraph() {
         const lk = linkKey(l);
         return highlightLinks.has(lk) ? (l.dep_type === 'blocks' ? 2.0 : 1.2) : 0.2;
       }
-      return l.dep_type === 'blocks' ? 1.2 : 0.5;
+      return l.dep_type === 'blocks' ? 1.2 : l.dep_type === 'assigned_to' ? 1.5 : 0.5;
     })
     .linkDirectionalArrowLength(5)
     .linkDirectionalArrowRelPos(1)
@@ -604,10 +604,10 @@ function initGraph() {
       }
     })
 
-    // Directional particles — only on blocking links (perf at scale)
-    .linkDirectionalParticles(l => l.dep_type === 'blocks' ? 2 : l.dep_type === 'assigned_to' ? 1 : 0)
-    .linkDirectionalParticleWidth(1.0)
-    .linkDirectionalParticleSpeed(0.003)
+    // Directional particles — blocking links + agent tethers (beads-1gx1)
+    .linkDirectionalParticles(l => l.dep_type === 'blocks' ? 2 : l.dep_type === 'assigned_to' ? 3 : 0)
+    .linkDirectionalParticleWidth(l => l.dep_type === 'assigned_to' ? 1.8 : 1.0)
+    .linkDirectionalParticleSpeed(l => l.dep_type === 'assigned_to' ? 0.008 : 0.003)
     .linkDirectionalParticleColor(l => linkColor(l))
 
     // Interaction
@@ -732,6 +732,7 @@ function clearSelection() {
   hideBulkMenu();
   unfreezeCamera(); // bd-casin: restore orbit controls
   restoreAllNodeOpacity();
+  updateBeadURL(null); // bd-he95o: clear URL deep-link on deselect
   // Force link width recalculation
   graph.linkWidth(graph.linkWidth());
 }
@@ -2664,6 +2665,100 @@ function setLayout(mode) {
 
   // Reheat simulation to animate the transition
   graph.d3ReheatSimulation();
+
+  // Re-apply agent tether force (survives layout changes)
+  setupAgentTether();
+}
+
+// --- Agent DAG Tether (beads-1gx1) ---
+// Strong elastic coupling between agent nodes and their claimed bead subtrees.
+// When an agent moves (drag or force), its beads follow like a kite tail.
+// Force propagates: agent → assigned bead → bead's dependencies (with decay).
+function setupAgentTether() {
+  graph.d3Force('agentTether', (alpha) => {
+    // Build agent → bead adjacency from current links
+    const nodeById = new Map();
+    for (const n of graphData.nodes) {
+      if (!n._hidden) nodeById.set(n.id, n);
+    }
+
+    // Collect agent→bead assignments
+    const agentBeads = new Map(); // agentId → [beadNode, ...]
+    for (const l of graphData.links) {
+      if (l.dep_type !== 'assigned_to') continue;
+      const srcId = typeof l.source === 'object' ? l.source.id : l.source;
+      const tgtId = typeof l.target === 'object' ? l.target.id : l.target;
+      const agent = nodeById.get(srcId);
+      const bead = nodeById.get(tgtId);
+      if (!agent || !bead || agent.issue_type !== 'agent') continue;
+      if (!agentBeads.has(srcId)) agentBeads.set(srcId, []);
+      agentBeads.get(srcId).push(bead);
+    }
+
+    // Build dep adjacency for subtree traversal (bead → its deps)
+    const deps = new Map(); // nodeId → [depNode, ...]
+    for (const l of graphData.links) {
+      if (l.dep_type === 'assigned_to') continue;
+      const srcId = typeof l.source === 'object' ? l.source.id : l.source;
+      const tgtId = typeof l.target === 'object' ? l.target.id : l.target;
+      // parent→child and blocks edges: target is the dependent
+      const parent = nodeById.get(srcId);
+      const child = nodeById.get(tgtId);
+      if (!parent || !child) continue;
+      if (!deps.has(srcId)) deps.set(srcId, []);
+      deps.get(srcId).push(child);
+    }
+
+    // Apply spring force: agent pulls beads, beads pull deps (with decay)
+    const TETHER_STRENGTH = 0.08;  // direct agent→bead coupling
+    const DECAY = 0.5;             // force halves per hop
+    const REST_DIST = 25;          // desired agent→bead distance
+
+    for (const [agentId, beads] of agentBeads) {
+      const agent = nodeById.get(agentId);
+      if (!agent || agent.x === undefined) continue;
+
+      // BFS from agent through beads and their deps
+      const queue = beads.map(b => ({ node: b, depth: 1 }));
+      const visited = new Set([agentId]);
+
+      while (queue.length > 0) {
+        const { node, depth } = queue.shift();
+        if (visited.has(node.id)) continue;
+        visited.add(node.id);
+        if (node.x === undefined) continue;
+
+        const strength = TETHER_STRENGTH * Math.pow(DECAY, depth - 1);
+        const dx = agent.x - node.x;
+        const dy = agent.y - node.y;
+        const dz = (agent.z || 0) - (node.z || 0);
+        const dist = Math.sqrt(dx * dx + dy * dy + dz * dz) || 1;
+
+        // Only apply pull when beyond rest distance
+        if (dist > REST_DIST * depth) {
+          const pull = strength * alpha;
+          node.vx += dx * pull;
+          node.vy += dy * pull;
+          node.vz += dz * pull;
+          // Slight counter-force on agent (Newton's 3rd, dampened)
+          const counterPull = pull * 0.1;
+          agent.vx -= dx * counterPull;
+          agent.vy -= dy * counterPull;
+          agent.vz -= dz * counterPull;
+        }
+
+        // Enqueue this node's deps (up to 3 hops)
+        if (depth < 3) {
+          const children = deps.get(node.id) || [];
+          for (const child of children) {
+            if (!visited.has(child.id)) {
+              queue.push({ node: child, depth: depth + 1 });
+            }
+          }
+        }
+      }
+    }
+  });
 }
 
 // --- Screenshot & Export ---
