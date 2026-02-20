@@ -1313,15 +1313,24 @@ async function handleContextAction(action, node, el) {
 }
 
 // Brief toast message overlaid on the status bar (bd-9g7f0)
+let _toastTimer = null;
+let _toastOrigText = null;
+let _toastOrigClass = null;
 function showStatusToast(msg, isError = false) {
   const el = document.getElementById('status');
-  const prev = el.textContent;
-  const prevClass = el.className;
+  // Save the base state only on first (non-nested) toast
+  if (_toastTimer === null) {
+    _toastOrigText = el.textContent;
+    _toastOrigClass = el.className;
+  } else {
+    clearTimeout(_toastTimer);
+  }
   el.textContent = msg;
   el.className = isError ? 'error' : '';
-  setTimeout(() => {
-    el.textContent = prev;
-    el.className = prevClass;
+  _toastTimer = setTimeout(() => {
+    el.textContent = _toastOrigText;
+    el.className = _toastOrigClass;
+    _toastTimer = null;
   }, 2000);
 }
 
