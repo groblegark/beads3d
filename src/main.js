@@ -174,6 +174,9 @@ let graph;
 let searchFilter = '';
 let statusFilter = new Set(); // empty = show all
 let typeFilter = new Set();
+let priorityFilter = new Set(); // empty = show all priorities (bd-8o2gd phase 2)
+let assigneeFilter = ''; // empty = show all assignees (bd-8o2gd phase 2)
+let filterDashboardOpen = false; // slide-out filter panel state (bd-8o2gd phase 2)
 let startTime = performance.now();
 let selectedNode = null;
 let highlightNodes = new Set();
@@ -2794,6 +2797,17 @@ function applyFilters() {
       hidden = true;
     }
 
+    // Priority filter (bd-8o2gd phase 2) — agents exempt
+    if (priorityFilter.size > 0 && n.issue_type !== 'agent') {
+      const p = n.priority != null ? String(n.priority) : null;
+      if (p === null || !priorityFilter.has(p)) hidden = true;
+    }
+
+    // Assignee filter (bd-8o2gd phase 2) — agents exempt
+    if (assigneeFilter && n.issue_type !== 'agent') {
+      if ((n.assignee || '').toLowerCase() !== assigneeFilter.toLowerCase()) hidden = true;
+    }
+
     // Age filter (bd-uc0mw): hide old closed beads, always show active/open/blocked/agent
     if (!hidden && activeAgeDays > 0 && n.status === 'closed') {
       const updatedAt = n.updated_at ? new Date(n.updated_at) : null;
@@ -3318,9 +3332,8 @@ function hideEpicHUD() {
   }
 }
 
-// Populate rig filter pills — clickable pills for each discovered rig (bd-8o2gd)
-function updateRigPills(nodes) {
-  const container = document.getElementById('agent-rig-pills');
+// Populate rig filter pills in a container — clickable pills for each discovered rig (bd-8o2gd)
+function _buildRigPillsIn(container, nodes) {
   if (!container) return;
 
   const rigs = new Set();
@@ -3332,7 +3345,6 @@ function updateRigPills(nodes) {
   // Only rebuild if rig set changed
   const currentRigs = [...container.querySelectorAll('.rig-pill')].map(p => p.dataset.rig);
   if (currentRigs.length === sortedRigs.length && currentRigs.every((r, i) => r === sortedRigs[i])) {
-    // Just update excluded state
     for (const pill of container.querySelectorAll('.rig-pill')) {
       pill.classList.toggle('excluded', agentFilterRigExclude.has(pill.dataset.rig));
     }
@@ -3353,16 +3365,253 @@ function updateRigPills(nodes) {
     pill.addEventListener('click', () => {
       if (agentFilterRigExclude.has(rig)) {
         agentFilterRigExclude.delete(rig);
-        pill.classList.remove('excluded');
       } else {
         agentFilterRigExclude.add(rig);
-        pill.classList.add('excluded');
       }
-      pill.title = `Click to ${agentFilterRigExclude.has(rig) ? 'show' : 'hide'} agents on ${rig}`;
+      // Sync all rig pill containers
+      _syncAllRigPills();
       applyFilters();
     });
     container.appendChild(pill);
   }
+}
+
+function _syncAllRigPills() {
+  document.querySelectorAll('.rig-pill').forEach(pill => {
+    const rig = pill.dataset.rig;
+    pill.classList.toggle('excluded', agentFilterRigExclude.has(rig));
+    pill.title = `Click to ${agentFilterRigExclude.has(rig) ? 'show' : 'hide'} agents on ${rig}`;
+  });
+}
+
+function updateRigPills(nodes) {
+  _buildRigPillsIn(document.getElementById('agent-rig-pills'), nodes);
+  _buildRigPillsIn(document.getElementById('fd-rig-pills'), nodes);
+}
+
+// ── Filter Dashboard (bd-8o2gd phase 2) ─────────────────────────────────────
+
+function toggleFilterDashboard() {
+  const panel = document.getElementById('filter-dashboard');
+  if (!panel) return;
+  filterDashboardOpen = !filterDashboardOpen;
+  panel.classList.toggle('open', filterDashboardOpen);
+  if (filterDashboardOpen) syncFilterDashboard();
+}
+
+// Sync dashboard button states to match current filter state
+function syncFilterDashboard() {
+  // Status buttons
+  document.querySelectorAll('.fd-status').forEach(btn => {
+    const status = btn.dataset.status;
+    const STATUS_GROUPS = { in_progress: ['in_progress', 'blocked', 'hooked', 'deferred'] };
+    const group = STATUS_GROUPS[status] || [status];
+    btn.classList.toggle('active', group.some(s => statusFilter.has(s)));
+  });
+
+  // Type buttons
+  document.querySelectorAll('.fd-type').forEach(btn => {
+    btn.classList.toggle('active', typeFilter.has(btn.dataset.type));
+  });
+
+  // Priority buttons
+  document.querySelectorAll('.fd-priority').forEach(btn => {
+    btn.classList.toggle('active', priorityFilter.has(btn.dataset.priority));
+  });
+
+  // Age buttons
+  document.querySelectorAll('.fd-age').forEach(btn => {
+    const days = parseInt(btn.dataset.days, 10);
+    btn.classList.toggle('active', days === activeAgeDays);
+  });
+
+  // Agent toggles
+  const fdShow = document.getElementById('fd-agent-show');
+  const fdOrph = document.getElementById('fd-agent-orphaned');
+  if (fdShow) fdShow.classList.toggle('active', agentFilterShow);
+  if (fdOrph) fdOrph.classList.toggle('active', agentFilterOrphaned);
+
+  // Assignee buttons
+  updateAssigneeButtons();
+}
+
+// Sync toolbar controls to match dashboard changes
+function syncToolbarControls() {
+  // Status
+  const STATUS_GROUPS = { in_progress: ['in_progress', 'blocked', 'hooked', 'deferred'] };
+  document.querySelectorAll('.filter-status').forEach(btn => {
+    const status = btn.dataset.status;
+    const group = STATUS_GROUPS[status] || [status];
+    btn.classList.toggle('active', group.some(s => statusFilter.has(s)));
+  });
+  // Type
+  document.querySelectorAll('.filter-type').forEach(btn => {
+    btn.classList.toggle('active', typeFilter.has(btn.dataset.type));
+  });
+  // Age
+  document.querySelectorAll('.filter-age').forEach(btn => {
+    const days = parseInt(btn.dataset.days, 10);
+    btn.classList.toggle('active', days === activeAgeDays);
+  });
+  // Agent toggles
+  const btnShow = document.getElementById('btn-agent-show');
+  const btnOrph = document.getElementById('btn-agent-orphaned');
+  if (btnShow) btnShow.classList.toggle('active', agentFilterShow);
+  if (btnOrph) btnOrph.classList.toggle('active', agentFilterOrphaned);
+}
+
+function updateAssigneeButtons() {
+  const body = document.getElementById('fd-assignee-body');
+  if (!body) return;
+
+  // Collect unique assignees from visible graph data
+  const assignees = new Set();
+  for (const n of graphData.nodes) {
+    if (n.assignee && n.issue_type !== 'agent') assignees.add(n.assignee);
+  }
+  const sorted = [...assignees].sort();
+
+  // Only rebuild if set changed
+  const current = [...body.querySelectorAll('.fd-btn')].map(b => b.dataset.assignee);
+  if (current.length === sorted.length && current.every((a, i) => a === sorted[i])) {
+    body.querySelectorAll('.fd-btn').forEach(btn => {
+      btn.classList.toggle('active', assigneeFilter === btn.dataset.assignee);
+    });
+    return;
+  }
+
+  body.innerHTML = '';
+  for (const name of sorted) {
+    const btn = document.createElement('button');
+    btn.className = 'fd-btn';
+    btn.dataset.assignee = name;
+    btn.textContent = name;
+    if (assigneeFilter === name) btn.classList.add('active');
+    btn.addEventListener('click', () => {
+      if (assigneeFilter === name) {
+        assigneeFilter = '';
+      } else {
+        assigneeFilter = name;
+      }
+      body.querySelectorAll('.fd-btn').forEach(b => {
+        b.classList.toggle('active', assigneeFilter === b.dataset.assignee);
+      });
+      applyFilters();
+    });
+    body.appendChild(btn);
+  }
+}
+
+function initFilterDashboard() {
+  const panel = document.getElementById('filter-dashboard');
+  if (!panel) return;
+
+  // Close button
+  document.getElementById('fd-close')?.addEventListener('click', toggleFilterDashboard);
+
+  // Collapsible sections
+  panel.querySelectorAll('.fd-section-header').forEach(header => {
+    header.addEventListener('click', () => {
+      header.parentElement.classList.toggle('collapsed');
+    });
+  });
+
+  const STATUS_GROUPS = {
+    in_progress: ['in_progress', 'blocked', 'hooked', 'deferred'],
+  };
+
+  // Status buttons — sync with toolbar
+  panel.querySelectorAll('.fd-status').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const status = btn.dataset.status;
+      const group = STATUS_GROUPS[status] || [status];
+      btn.classList.toggle('active');
+      if (statusFilter.has(status)) {
+        group.forEach(s => statusFilter.delete(s));
+      } else {
+        group.forEach(s => statusFilter.add(s));
+      }
+      syncToolbarControls();
+      applyFilters();
+    });
+  });
+
+  // Type buttons — sync with toolbar
+  panel.querySelectorAll('.fd-type').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const type = btn.dataset.type;
+      btn.classList.toggle('active');
+      if (typeFilter.has(type)) {
+        typeFilter.delete(type);
+      } else {
+        typeFilter.add(type);
+      }
+      syncToolbarControls();
+      applyFilters();
+    });
+  });
+
+  // Priority buttons (bd-8o2gd phase 2)
+  panel.querySelectorAll('.fd-priority').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const p = btn.dataset.priority;
+      btn.classList.toggle('active');
+      if (priorityFilter.has(p)) {
+        priorityFilter.delete(p);
+      } else {
+        priorityFilter.add(p);
+      }
+      applyFilters();
+    });
+  });
+
+  // Age buttons — sync with toolbar (triggers re-fetch)
+  panel.querySelectorAll('.fd-age').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const newDays = parseInt(btn.dataset.days, 10);
+      if (newDays === activeAgeDays) return;
+      panel.querySelectorAll('.fd-age').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      activeAgeDays = newDays;
+      timelineSelStart = 0;
+      timelineSelEnd = 1;
+      syncToolbarControls();
+      refresh();
+    });
+  });
+
+  // Agent show/orphaned toggles — sync with toolbar
+  document.getElementById('fd-agent-show')?.addEventListener('click', () => {
+    agentFilterShow = !agentFilterShow;
+    document.getElementById('fd-agent-show')?.classList.toggle('active', agentFilterShow);
+    syncToolbarControls();
+    applyFilters();
+  });
+
+  document.getElementById('fd-agent-orphaned')?.addEventListener('click', () => {
+    agentFilterOrphaned = !agentFilterOrphaned;
+    document.getElementById('fd-agent-orphaned')?.classList.toggle('active', agentFilterOrphaned);
+    syncToolbarControls();
+    applyFilters();
+  });
+
+  // Reset button
+  document.getElementById('fd-reset')?.addEventListener('click', () => {
+    statusFilter.clear();
+    typeFilter.clear();
+    priorityFilter.clear();
+    assigneeFilter = '';
+    agentFilterShow = true;
+    agentFilterOrphaned = false;
+    agentFilterRigExclude.clear();
+    activeAgeDays = 7;
+    timelineSelStart = 0;
+    timelineSelEnd = 1;
+    syncFilterDashboard();
+    syncToolbarControls();
+    _syncAllRigPills();
+    refresh();
+  });
 }
 
 function updateFilterCount() {
@@ -3378,6 +3627,9 @@ function updateFilterCount() {
       el.textContent = `${total}`;
     }
   }
+  // Update filter dashboard node count (bd-8o2gd phase 2)
+  const fdCount = document.getElementById('fd-node-count');
+  if (fdCount) fdCount.textContent = `${visible}/${total} nodes`;
 }
 
 // --- Layout modes ---
@@ -4228,6 +4480,7 @@ function setupControls() {
       } else {
         group.forEach(s => statusFilter.add(s));
       }
+      syncFilterDashboard();
       applyFilters();
     });
   });
@@ -4242,6 +4495,7 @@ function setupControls() {
       } else {
         typeFilter.add(type);
       }
+      syncFilterDashboard();
       applyFilters();
     });
   });
@@ -4254,6 +4508,7 @@ function setupControls() {
     btnAgentShow.addEventListener('click', () => {
       agentFilterShow = !agentFilterShow;
       btnAgentShow.classList.toggle('active', agentFilterShow);
+      syncFilterDashboard();
       applyFilters();
     });
   }
@@ -4262,6 +4517,7 @@ function setupControls() {
     btnAgentOrphaned.addEventListener('click', () => {
       agentFilterOrphaned = !agentFilterOrphaned;
       btnAgentOrphaned.classList.toggle('active', agentFilterOrphaned);
+      syncFilterDashboard();
       applyFilters();
     });
   }
@@ -4279,12 +4535,16 @@ function setupControls() {
       // Reset timeline scrubber to full range when age filter changes (bd-huwyz)
       timelineSelStart = 0;
       timelineSelEnd = 1;
+      syncFilterDashboard();
       refresh(); // re-fetch with new age cutoff (bd-uc0mw)
     });
   });
 
   // Timeline scrubber (bd-huwyz)
   initTimelineScrubber();
+
+  // Filter dashboard panel (bd-8o2gd phase 2)
+  initFilterDashboard();
 
   // Keyboard shortcuts
   document.addEventListener('keydown', (e) => {
@@ -4297,6 +4557,12 @@ function setupControls() {
     if (e.key === 'Escape') {
       // Always unfreeze camera on Escape (bd-casin)
       unfreezeCamera();
+
+      // Close filter dashboard if open (bd-8o2gd phase 2)
+      if (filterDashboardOpen) {
+        toggleFilterDashboard();
+        return;
+      }
 
       // Close Agents View if open (bd-jgvas)
       if (agentsViewOpen) {
@@ -4350,6 +4616,10 @@ function setupControls() {
     // 'l' for labels toggle (bd-1o2f7, beads-p97b: ignore key repeat)
     if (e.key === 'l' && !e.repeat && !isTextInputFocused()) {
       toggleLabels();
+    }
+    // 'f' for filter dashboard (bd-8o2gd phase 2)
+    if (e.key === 'f' && !e.repeat && !isTextInputFocused()) {
+      toggleFilterDashboard();
     }
     // 'p' for screenshot
     if (e.key === 'p' && !isTextInputFocused()) {
@@ -4485,6 +4755,8 @@ async function refresh() {
 
   // Populate rig filter pills from agent nodes (bd-8o2gd)
   updateRigPills(mergedNodes);
+  // Update assignee buttons in filter dashboard (bd-8o2gd phase 2)
+  updateAssigneeButtons();
 
   applyFilters();
   rebuildEpicIndex();
