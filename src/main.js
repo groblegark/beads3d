@@ -4109,12 +4109,17 @@ function dootColor(evt) {
 function findAgentNode(evt) {
   const p = evt.payload || {};
 
-  // Mail events: find recipient agent node (bd-t76aw)
+  // Mail events: find recipient agent node (bd-t76aw, bd-gal6f: prefer visible)
   if (evt.type === 'MailSent' || evt.type === 'MailRead') {
     const to = (p.to || '').replace(/^@/, '');
     if (to && graphData) {
-      const agents = graphData.nodes.filter(n => n.issue_type === 'agent');
-      for (const node of agents) {
+      const visible = graphData.nodes.filter(n => n.issue_type === 'agent' && !n._hidden);
+      for (const node of visible) {
+        if (node.title === to || node.id === `agent:${to}`) return node;
+      }
+      // Fall back to hidden agents
+      const hidden = graphData.nodes.filter(n => n.issue_type === 'agent' && n._hidden);
+      for (const node of hidden) {
         if (node.title === to || node.id === `agent:${to}`) return node;
       }
     }
@@ -4131,13 +4136,23 @@ function findAgentNode(evt) {
 
   if (candidates.length === 0) return null;
 
-  // Pass 1: Prefer dedicated agent nodes
-  const agents = graphData.nodes.filter(n => n.issue_type === 'agent');
+  // Pass 1a: Prefer VISIBLE agent nodes (bd-gal6f: avoid doots on hidden agents)
+  const visibleAgents = graphData.nodes.filter(n => n.issue_type === 'agent' && !n._hidden);
   for (const candidate of candidates) {
-    for (const node of agents) {
+    for (const node of visibleAgents) {
       if (node.id === candidate || node.title === candidate || node.assignee === candidate) return node;
     }
-    for (const node of agents) {
+    for (const node of visibleAgents) {
+      if (node.id === `agent:${candidate}`) return node;
+    }
+  }
+  // Pass 1b: Fall back to hidden agent nodes (still better than random bead)
+  const allAgents = graphData.nodes.filter(n => n.issue_type === 'agent' && n._hidden);
+  for (const candidate of candidates) {
+    for (const node of allAgents) {
+      if (node.id === candidate || node.title === candidate || node.assignee === candidate) return node;
+    }
+    for (const node of allAgents) {
       if (node.id === `agent:${candidate}`) return node;
     }
   }
