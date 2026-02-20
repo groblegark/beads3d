@@ -2085,7 +2085,7 @@ function initTimelineScrubber() {
 
   canvas.addEventListener('mousedown', (e) => {
     const pos = posFromEvent(e);
-    if (pos >= timelineSelStart + 0.02 && pos <= timelineSelEnd - 0.02) {
+    if (pos >= timelineSelStart + 0.005 && pos <= timelineSelEnd - 0.005) {
       dragging = 'range';
       dragStartX = pos;
       dragStartSelStart = timelineSelStart;
@@ -2109,9 +2109,9 @@ function initTimelineScrubber() {
     if (!dragging) return;
     const pos = posFromEvent(e);
     if (dragging === 'left') {
-      timelineSelStart = Math.min(pos, timelineSelEnd - 0.02);
+      timelineSelStart = Math.min(pos, timelineSelEnd - 0.005);
     } else if (dragging === 'right') {
-      timelineSelEnd = Math.max(pos, timelineSelStart + 0.02);
+      timelineSelEnd = Math.max(pos, timelineSelStart + 0.005);
     } else if (dragging === 'range') {
       const delta = pos - dragStartX;
       const width = dragStartSelEnd - dragStartSelStart;
@@ -2138,6 +2138,31 @@ function initTimelineScrubber() {
     updateTimeline();
     applyFilters();
   });
+
+  // Scroll wheel zoom: zoom in/out around cursor position (bd-or8t1)
+  canvas.addEventListener('wheel', (e) => {
+    e.preventDefault();
+    const pos = posFromEvent(e);
+    const width = timelineSelEnd - timelineSelStart;
+    const zoomFactor = e.deltaY > 0 ? 1.15 : 0.85; // scroll down = zoom out
+    const newWidth = Math.max(0.005, Math.min(1, width * zoomFactor));
+
+    // Anchor zoom around cursor position within selection
+    const anchor = (pos - timelineSelStart) / (width || 1);
+    let newStart = pos - anchor * newWidth;
+    let newEnd = newStart + newWidth;
+
+    // Clamp to [0, 1]
+    if (newStart < 0) { newEnd -= newStart; newStart = 0; }
+    if (newEnd > 1) { newStart -= (newEnd - 1); newEnd = 1; }
+    newStart = Math.max(0, newStart);
+    newEnd = Math.min(1, newEnd);
+
+    timelineSelStart = newStart;
+    timelineSelEnd = newEnd;
+    updateTimeline();
+    applyFilters();
+  }, { passive: false });
 }
 
 // Navigate search results: fly camera to the current match
