@@ -5813,6 +5813,10 @@ function showAgentWindow(node) {
     ? `<span class="agent-window-rig" style="color:${rigColor(node.rig)};border-color:${rigColor(node.rig)}33">${escapeHtml(node.rig)}</span>`
     : '';
 
+  // bd-5ok9s: derive initial status from node data
+  const initStatus = (node.status || '').toLowerCase();
+  const initStatusClass = initStatus === 'active' ? 'status-active' : initStatus === 'idle' ? 'status-idle' : initStatus === 'crashed' ? 'status-crashed' : '';
+
   el.innerHTML = `
     <div class="agent-window-resize-handle"></div>
     <div class="agent-window-header">
@@ -5821,6 +5825,11 @@ function showAgentWindow(node) {
       <span class="agent-window-badge">${assigned.length}</span>
       <button class="agent-window-popout" title="Pop out to floating window">&#x2197;</button>
       <button class="agent-window-close">&times;</button>
+    </div>
+    <div class="agent-status-bar">
+      <span><span class="status-label">Status:</span> <span class="agent-status-state ${initStatusClass}">${initStatus || '?'}</span></span>
+      <span class="agent-status-idle-dur"></span>
+      <span class="agent-status-tool"></span>
     </div>
     ${beadsList ? `<div class="agent-window-beads">${beadsList}</div>` : ''}
     <div class="agent-feed"><div class="agent-window-empty">waiting for events...</div></div>
@@ -5907,11 +5916,16 @@ function showAgentWindow(node) {
   container.appendChild(el);
 
   const feedEl = el.querySelector('.agent-feed');
+  const statusEl = el.querySelector('.agent-status-bar');
   agentWindows.set(node.id, {
-    el, feedEl, node,
+    el, feedEl, statusEl, node,
     entries: [],
     pendingTool: null,
     collapsed: false,
+    lastStatus: initStatus || null,
+    lastTool: null,
+    idleSince: initStatus === 'idle' ? Date.now() : null,
+    crashError: null,
   });
   enableTopResize(el); // bd-9wxm9
 }
@@ -6138,6 +6152,8 @@ function openAgentsView() {
       ? `<span class="agent-window-rig" style="color:${rigColor(node.rig)};border-color:${rigColor(node.rig)}33">${escapeHtml(node.rig)}</span>`
       : '';
 
+    const avStatusClass = agentStatus === 'active' ? 'status-active' : agentStatus === 'idle' ? 'status-idle' : agentStatus === 'crashed' ? 'status-crashed' : '';
+
     el.innerHTML = `
       <div class="agent-window-resize-handle"></div>
       <div class="agent-window-header">
@@ -6147,6 +6163,11 @@ function openAgentsView() {
         <span class="agent-window-badge">${assigned.length}</span>
         <button class="agent-window-popout" title="Pop out to floating window">&#x2197;</button>
         <button class="agent-window-close">&times;</button>
+      </div>
+      <div class="agent-status-bar">
+        <span><span class="status-label">Status:</span> <span class="agent-status-state ${avStatusClass}">${agentStatus || '?'}</span></span>
+        <span class="agent-status-idle-dur"></span>
+        <span class="agent-status-tool"></span>
       </div>
       ${beadsList ? `<div class="agent-window-beads">${beadsList}</div>` : ''}
       <div class="agent-feed"><div class="agent-window-empty">waiting for events...</div></div>
@@ -6232,11 +6253,16 @@ function openAgentsView() {
     grid.appendChild(el);
 
     const feedEl = el.querySelector('.agent-feed');
+    const statusEl = el.querySelector('.agent-status-bar');
     agentWindows.set(node.id, {
-      el, feedEl, node,
+      el, feedEl, statusEl, node,
       entries: [],
       pendingTool: null,
       collapsed: false,
+      lastStatus: agentStatus || null,
+      lastTool: null,
+      idleSince: agentStatus === 'idle' ? Date.now() : null,
+      crashError: null,
     });
     enableTopResize(el); // bd-9wxm9
   }
@@ -6298,6 +6324,8 @@ function createAgentWindowInGrid(node) {
     .map(b => `<div class="agent-window-bead" data-bead-id="${escapeHtml(b.id)}" title="${escapeHtml(b.id)}: ${escapeHtml(b.title)}" style="cursor:pointer">${escapeHtml(b.id.replace(/^[a-z]+-/, ''))}: ${escapeHtml(b.title)}</div>`)
     .join('');
 
+  const ciwStatusClass = agentStatus === 'active' ? 'status-active' : agentStatus === 'idle' ? 'status-idle' : agentStatus === 'crashed' ? 'status-crashed' : '';
+
   el.innerHTML = `
     <div class="agent-window-resize-handle"></div>
     <div class="agent-window-header">
@@ -6306,6 +6334,11 @@ function createAgentWindowInGrid(node) {
       <span class="agent-window-badge">${assigned.length}</span>
       <button class="agent-window-popout" title="Pop out to floating window">&#x2197;</button>
       <button class="agent-window-close">&times;</button>
+    </div>
+    <div class="agent-status-bar">
+      <span><span class="status-label">Status:</span> <span class="agent-status-state ${ciwStatusClass}">${agentStatus || '?'}</span></span>
+      <span class="agent-status-idle-dur"></span>
+      <span class="agent-status-tool"></span>
     </div>
     ${beadsList ? `<div class="agent-window-beads">${beadsList}</div>` : ''}
     <div class="agent-feed"><div class="agent-window-empty">waiting for events...</div></div>
@@ -6391,11 +6424,16 @@ function createAgentWindowInGrid(node) {
   grid.appendChild(el);
 
   const feedEl = el.querySelector('.agent-feed');
+  const statusEl = el.querySelector('.agent-status-bar');
   agentWindows.set(node.id, {
-    el, feedEl, node,
+    el, feedEl, statusEl, node,
     entries: [],
     pendingTool: null,
     collapsed: false,
+    lastStatus: agentStatus || null,
+    lastTool: null,
+    idleSince: agentStatus === 'idle' ? Date.now() : null,
+    crashError: null,
   });
   enableTopResize(el); // bd-9wxm9
 
@@ -6448,6 +6486,12 @@ function appendAgentEvent(agentId, evt) {
     win.feedEl.appendChild(entry);
     win.entries.push(entry);
     win.pendingTool = { toolName, startTs: ts.getTime(), entry };
+    // bd-5ok9s: track last tool used
+    win.lastTool = toolName;
+    win.lastStatus = 'active';
+    win.idleSince = null;
+    win.crashError = null;
+    _updateAgentStatusBar(win);
     autoScroll(win);
     return;
   }
@@ -6465,17 +6509,32 @@ function appendAgentEvent(agentId, evt) {
     return; // Don't add a separate row
   }
 
-  // Lifecycle events
+  // Lifecycle events — bd-5ok9s: update status tracking
   if (type === 'AgentStarted') {
     win.feedEl.appendChild(createEntry(timeStr, '●', 'started', 'lifecycle lifecycle-started'));
+    win.lastStatus = 'active';
+    win.idleSince = null;
+    win.crashError = null;
+    win.lastTool = null;
   } else if (type === 'AgentIdle') {
     win.feedEl.appendChild(createEntry(timeStr, '◌', 'idle', 'lifecycle lifecycle-idle'));
+    win.lastStatus = 'idle';
+    win.idleSince = ts.getTime();
+    win.crashError = null;
   } else if (type === 'AgentCrashed') {
     win.feedEl.appendChild(createEntry(timeStr, '✕', 'crashed!', 'lifecycle lifecycle-crashed'));
+    win.lastStatus = 'crashed';
+    win.idleSince = null;
+    win.crashError = p.error || 'unknown error';
   } else if (type === 'AgentStopped') {
     win.feedEl.appendChild(createEntry(timeStr, '○', 'stopped', 'lifecycle lifecycle-stopped'));
+    win.lastStatus = 'stopped';
+    win.idleSince = null;
   } else if (type === 'SessionStart') {
     win.feedEl.appendChild(createEntry(timeStr, '▸', 'session start', 'lifecycle'));
+    win.lastStatus = 'active';
+    win.idleSince = null;
+    win.crashError = null;
   }
   // Mutation events
   else if (type === 'MutationCreate') {
@@ -6527,6 +6586,8 @@ function appendAgentEvent(agentId, evt) {
     return;
   }
 
+  // bd-5ok9s: update status bar after any lifecycle event
+  _updateAgentStatusBar(win);
   autoScroll(win);
 }
 
@@ -6731,7 +6792,69 @@ async function main() {
     if (DEEP_LINK_MOLECULE) {
       setTimeout(() => focusMolecule(DEEP_LINK_MOLECULE), 2000);
     }
-    // Expose for Playwright tests
+    
+// bd-5ok9s: update the agent status bar with current state
+function _updateAgentStatusBar(win) {
+  if (!win.statusEl) return;
+  const stateEl = win.statusEl.querySelector('.agent-status-state');
+  const idleDurEl = win.statusEl.querySelector('.agent-status-idle-dur');
+  const toolEl = win.statusEl.querySelector('.agent-status-tool');
+
+  if (stateEl) {
+    const s = win.lastStatus || '?';
+    stateEl.textContent = s;
+    stateEl.className = 'agent-status-state ' + (
+      s === 'active' ? 'status-active' :
+      s === 'idle' ? 'status-idle' :
+      s === 'crashed' ? 'status-crashed' : ''
+    );
+  }
+
+  if (idleDurEl) {
+    if (win.lastStatus === 'idle' && win.idleSince) {
+      const dur = Math.floor((Date.now() - win.idleSince) / 1000);
+      idleDurEl.innerHTML = '<span class="status-label">Idle:</span> <span class="status-idle-dur">' + _formatDuration(dur) + '</span>';
+    } else if (win.lastStatus === 'crashed' && win.crashError) {
+      idleDurEl.innerHTML = '<span class="status-crashed">' + _escapeStatusText(win.crashError) + '</span>';
+    } else {
+      idleDurEl.textContent = '';
+    }
+  }
+
+  if (toolEl) {
+    if (win.lastTool) {
+      toolEl.innerHTML = '<span class="status-label">Last:</span> <span class="status-tool">' + _escapeStatusText(win.lastTool) + '</span>';
+    } else {
+      toolEl.textContent = '';
+    }
+  }
+}
+
+function _formatDuration(seconds) {
+  if (seconds < 60) return seconds + 's';
+  const m = Math.floor(seconds / 60);
+  const s = seconds % 60;
+  if (m < 60) return m + 'm' + (s > 0 ? s + 's' : '');
+  const h = Math.floor(m / 60);
+  return h + 'h' + (m % 60) + 'm';
+}
+
+function _escapeStatusText(str) {
+  const d = document.createElement('div');
+  d.textContent = str;
+  return d.innerHTML;
+}
+
+// bd-5ok9s: live-update idle durations every second
+setInterval(() => {
+  for (const [, win] of agentWindows) {
+    if (win.lastStatus === 'idle' && win.idleSince) {
+      _updateAgentStatusBar(win);
+    }
+  }
+}, 1000);
+
+// Expose for Playwright tests
     window.__THREE = THREE;
     window.__beads3d = { graph, graphData: () => graphData, multiSelected: () => multiSelected, highlightNodes: () => highlightNodes, showBulkMenu, showDetail, hideDetail, selectNode, highlightSubgraph, clearSelection, focusMolecule, focusedMoleculeNodes: () => focusedMoleculeNodes, get selectedNode() { return selectedNode; }, get cameraFrozen() { return cameraFrozen; } };
     // Expose doot internals for testing (bd-pg7vy)
