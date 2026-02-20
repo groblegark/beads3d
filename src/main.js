@@ -6436,6 +6436,7 @@ async function main() {
       setTimeout(() => focusDeepLinkBead(DEEP_LINK_BEAD), 2000);
     }
     // Expose for Playwright tests
+    window.__THREE = THREE;
     window.__beads3d = { graph, graphData: () => graphData, multiSelected: () => multiSelected, showBulkMenu, showDetail, hideDetail, selectNode, highlightSubgraph, clearSelection };
     // Expose doot internals for testing (bd-pg7vy)
     window.__beads3d_spawnDoot = spawnDoot;
