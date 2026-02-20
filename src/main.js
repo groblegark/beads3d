@@ -2220,11 +2220,13 @@ function bindDecisionHandlers(panel, node, resp) {
         panel.querySelectorAll('.decision-opt').forEach(b => { b.disabled = true; });
         const respondSection = panel.querySelector('.decision-respond-section');
         if (respondSection) respondSection.remove();
+        showStatusToast(`resolved ${node.id}: ${optId}`);
         // Rebuild graph node
         graph.nodeThreeObject(graph.nodeThreeObject());
       } catch (err) {
         btn.classList.remove('selected');
         btn.disabled = false;
+        showStatusToast(`resolve failed: ${err.message}`, true);
         console.error('[beads3d] decision resolve failed:', err);
       }
     });
@@ -2246,9 +2248,11 @@ function bindDecisionHandlers(panel, node, resp) {
         panel.querySelectorAll('.decision-opt').forEach(b => { b.disabled = true; });
         input.value = 'Sent!';
         input.disabled = true;
+        showStatusToast(`resolved ${node.id}`);
         graph.nodeThreeObject(graph.nodeThreeObject());
       } catch (err) {
         sendBtn.disabled = false;
+        showStatusToast(`response failed: ${err.message}`, true);
         console.error('[beads3d] decision response failed:', err);
       }
     };
