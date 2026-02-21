@@ -2464,10 +2464,10 @@ function zoomToNodes(nodeIds) {
   if (count === 1) {
     const distance = 80;
     const distRatio = 1 + distance / Math.hypot(cx, cy, cz);
-    graph.cameraPosition(
-      { x: cx * distRatio, y: cy * distRatio, z: cz * distRatio },
-      { x: cx, y: cy, z: cz }, 1000
-    );
+    const camFrom = graph.camera().position.clone();
+    const camTo = { x: cx * distRatio, y: cy * distRatio, z: cz * distRatio };
+    spawnFlyToTrail(camFrom, { x: cx, y: cy, z: cz }); // bd-m9525: particle trail
+    graph.cameraPosition(camTo, { x: cx, y: cy, z: cz }, 1000);
     return;
   }
 
@@ -2493,6 +2493,7 @@ function zoomToNodes(nodeIds) {
     y: cy + dir.y * distance,
     z: cz + dir.z * distance,
   };
+  spawnFlyToTrail(graph.camera().position.clone(), lookAt); // bd-m9525: particle trail
   graph.cameraPosition(camPos, lookAt, 1000);
 }
 
