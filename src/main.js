@@ -2090,6 +2090,30 @@ function buildGraphData(issues) {
   return { nodes, links };
 }
 
+// bd-9cpbc.1: live-update project pulse from bus mutation events
+function _liveUpdateProjectPulse() {
+  if (!graphData) return;
+  const pulseEl = document.getElementById('hud-project-pulse');
+  if (!pulseEl) return;
+  const nodes = graphData.nodes.filter(n => !n._hidden);
+  let open = 0, active = 0, blocked = 0, agentCount = 0, pendingDecisions = 0;
+  for (const n of nodes) {
+    if (n.issue_type === 'agent') { agentCount++; continue; }
+    if ((n.issue_type === 'gate' || n.issue_type === 'decision') && n.status !== 'closed') pendingDecisions++;
+    if (n._blocked) blocked++;
+    else if (n.status === 'in_progress') active++;
+    else if (n.status === 'open' || n.status === 'hooked' || n.status === 'deferred') open++;
+  }
+  pulseEl.innerHTML = `
+    <div class="pulse-stat"><span class="pulse-stat-label">open</span><span class="pulse-stat-value">${open}</span></div>
+    <div class="pulse-stat"><span class="pulse-stat-label">active</span><span class="pulse-stat-value good">${active}</span></div>
+    <div class="pulse-stat"><span class="pulse-stat-label">blocked</span><span class="pulse-stat-value${blocked ? ' bad' : ''}">${blocked}</span></div>
+    <div class="pulse-stat"><span class="pulse-stat-label">agents</span><span class="pulse-stat-value${agentCount ? ' warn' : ''}">${agentCount}</span></div>
+    <div class="pulse-stat"><span class="pulse-stat-label">decisions</span><span class="pulse-stat-value${pendingDecisions ? ' warn' : ''}">${pendingDecisions}</span></div>
+    <div class="pulse-stat"><span class="pulse-stat-label">shown</span><span class="pulse-stat-value">${nodes.length}</span></div>
+  `;
+}
+
 function updateStats(stats, issues) {
   const el = document.getElementById('stats');
   const parts = [];
@@ -7331,6 +7355,17 @@ function connectBusStream() {
             }
           }
         }
+      }
+
+      // bd-9cpbc.1: live-update right sidebar from bus events
+      if (evt.type && evt.type.startsWith('Decision')) {
+        updateDecisionQueue();
+      }
+      if (evt.type === 'MutationStatus' || evt.type === 'MutationClose' || evt.type === 'MutationUpdate') {
+        updateEpicProgress();
+        updateDepHealth();
+        // Live-update project pulse stats
+        _liveUpdateProjectPulse(evt);
       }
 
       // bd-nnr22: update left sidebar agent roster from all SSE events
