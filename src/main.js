@@ -6196,6 +6196,105 @@ function initControlPanel() {
       graph.d3ReheatSimulation();
     }
   });
+
+  // bd-krh7y: Theme presets
+  const BUILT_IN_PRESETS = {
+    'Default Dark': {
+      'cp-bloom-threshold': 0.35, 'cp-bloom-strength': 0.7, 'cp-bloom-radius': 0.4,
+      'cp-fresnel-opacity': 0.4, 'cp-fresnel-power': 2.0, 'cp-pulse-speed': 4.0,
+      'cp-star-count': 2000, 'cp-twinkle-speed': 1.0,
+      'cp-bg-color': '#000005',
+      'cp-color-open': '#2d8a4e', 'cp-color-active': '#d4a017',
+      'cp-color-blocked': '#d04040', 'cp-color-agent': '#ff6b35', 'cp-color-epic': '#8b45a6',
+      'cp-label-size': 11, 'cp-label-opacity': 0.8,
+      'cp-fly-speed': 1000, 'cp-force-strength': 60,
+    },
+    'Neon': {
+      'cp-bloom-threshold': 0.15, 'cp-bloom-strength': 1.8, 'cp-bloom-radius': 0.6,
+      'cp-fresnel-opacity': 0.7, 'cp-fresnel-power': 1.5, 'cp-pulse-speed': 2.0,
+      'cp-star-count': 3000, 'cp-twinkle-speed': 2.0,
+      'cp-bg-color': '#050510',
+      'cp-color-open': '#00ff88', 'cp-color-active': '#ffee00',
+      'cp-color-blocked': '#ff2050', 'cp-color-agent': '#ff8800', 'cp-color-epic': '#cc44ff',
+      'cp-label-size': 12, 'cp-label-opacity': 0.9,
+      'cp-fly-speed': 800, 'cp-force-strength': 80,
+    },
+    'High Contrast': {
+      'cp-bloom-threshold': 0.8, 'cp-bloom-strength': 0.3, 'cp-bloom-radius': 0.2,
+      'cp-fresnel-opacity': 0.2, 'cp-fresnel-power': 3.0, 'cp-pulse-speed': 4.0,
+      'cp-star-count': 500, 'cp-twinkle-speed': 0.5,
+      'cp-bg-color': '#000000',
+      'cp-color-open': '#00cc44', 'cp-color-active': '#ffcc00',
+      'cp-color-blocked': '#ff0000', 'cp-color-agent': '#ff8844', 'cp-color-epic': '#aa44cc',
+      'cp-label-size': 13, 'cp-label-opacity': 1.0,
+      'cp-fly-speed': 1000, 'cp-force-strength': 60,
+    },
+  };
+
+  function applyPreset(settings) {
+    for (const [id, val] of Object.entries(settings)) {
+      const el = document.getElementById(id);
+      if (!el) continue;
+      el.value = val;
+      el.dispatchEvent(new Event('input')); // triggers all wired handlers
+    }
+  }
+
+  function getCurrentSettings() {
+    const settings = {};
+    const ids = Object.keys(BUILT_IN_PRESETS['Default Dark']);
+    for (const id of ids) {
+      const el = document.getElementById(id);
+      if (el) settings[id] = el.type === 'color' ? el.value : parseFloat(el.value);
+    }
+    return settings;
+  }
+
+  // Render preset buttons
+  const presetContainer = document.getElementById('cp-preset-buttons');
+  if (presetContainer) {
+    function renderPresetButtons() {
+      presetContainer.innerHTML = '';
+      // Built-in presets
+      for (const name of Object.keys(BUILT_IN_PRESETS)) {
+        const btn = document.createElement('button');
+        btn.className = 'cp-preset-btn';
+        btn.textContent = name;
+        btn.onclick = () => applyPreset(BUILT_IN_PRESETS[name]);
+        presetContainer.appendChild(btn);
+      }
+      // Custom presets from localStorage
+      const custom = JSON.parse(localStorage.getItem('beads3d-custom-presets') || '{}');
+      for (const name of Object.keys(custom)) {
+        const btn = document.createElement('button');
+        btn.className = 'cp-preset-btn';
+        btn.textContent = name;
+        btn.onclick = () => applyPreset(custom[name]);
+        btn.oncontextmenu = (e) => {
+          e.preventDefault();
+          delete custom[name];
+          localStorage.setItem('beads3d-custom-presets', JSON.stringify(custom));
+          renderPresetButtons();
+        };
+        btn.title = 'Click to load, right-click to delete';
+        presetContainer.appendChild(btn);
+      }
+      // Save button
+      const saveBtn = document.createElement('button');
+      saveBtn.className = 'cp-preset-btn';
+      saveBtn.textContent = '+ save';
+      saveBtn.style.color = '#39c5cf';
+      saveBtn.onclick = () => {
+        const name = prompt('Preset name:');
+        if (!name) return;
+        custom[name] = getCurrentSettings();
+        localStorage.setItem('beads3d-custom-presets', JSON.stringify(custom));
+        renderPresetButtons();
+      };
+      presetContainer.appendChild(saveBtn);
+    }
+    renderPresetButtons();
+  }
 }
 
 // --- Agents View overlay — Shift+A (bd-jgvas) ---
