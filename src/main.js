@@ -274,6 +274,47 @@ let _epicCycleIndex = -1;  // current position in _epicNodes (-1 = none)
 const eventSprites = []; // { mesh, birth, lifetime, type, ... }
 const EVENT_SPRITE_MAX = 40;
 
+// --- GPU Particle Pool (bd-8b6ly) ---
+let _particlePool = null; // initialized in graph setup, see createParticlePool()
+
+// Effect presets — type name → particle emission config (bd-8b6ly)
+const EFFECT_PRESETS = {
+  // Status transitions
+  'status-open':        { color: 0x2d8a4e, count: 8,  velocity: [0, 3, 0],   spread: 2, lifetime: 1.5, size: 2.5 },
+  'status-in_progress': { color: 0xd4a017, count: 15, velocity: [0, 2, 0],   spread: 3, lifetime: 2.0, size: 3.0 },
+  'status-blocked':     { color: 0xd04040, count: 12, velocity: [0, -1, 0],  spread: 2, lifetime: 1.0, size: 2.0 },
+  'status-closed':      { color: 0x2d8a4e, count: 20, velocity: [0, 0, 0],   spread: 1, lifetime: 2.5, size: 1.5 },
+  'status-unblocked':   { color: 0x4a9eff, count: 15, velocity: [0, 4, 0],   spread: 3, lifetime: 2.0, size: 2.5 },
+  // Agent events
+  'agent-started':      { color: 0xff6b35, count: 20, velocity: [0, 5, 0],   spread: 2, lifetime: 3.0, size: 2.0 },
+  'agent-crashed':      { color: 0xd04040, count: 25, velocity: [0, 0, 0],   spread: 6, lifetime: 2.0, size: 3.0 },
+  'agent-idle':         { color: 0xd4a017, count: 3,  velocity: [0, 1, 0],   spread: 1, lifetime: 4.0, size: 1.5 },
+  'agent-tool':         { color: 0xff6b35, count: 5,  velocity: [0, 2, 0],   spread: 1, lifetime: 0.5, size: 1.5 },
+  'agent-tool-done':    { color: 0x2d8a4e, count: 8,  velocity: [0, 3, 0],   spread: 2, lifetime: 0.8, size: 2.0 },
+  // Decision events
+  'decision-created':   { color: 0xd4a017, count: 10, velocity: [0, 2, 0],   spread: 2, lifetime: 1.5, size: 2.5 },
+  'decision-resolved':  { color: 0x2d8a4e, count: 15, velocity: [0, 4, 0],   spread: 3, lifetime: 2.0, size: 3.0 },
+  'decision-expired':   { color: 0xd04040, count: 8,  velocity: [0, -2, 0],  spread: 2, lifetime: 1.5, size: 2.0 },
+  // Edge sparks
+  'edge-spark':         { color: 0x4a9eff, count: 8,  velocity: [0, 0, 0],   spread: 1, lifetime: 1.2, size: 1.5 },
+  // Selection
+  'select':             { color: 0x4a9eff, count: 12, velocity: [0, 2, 0],   spread: 2, lifetime: 1.0, size: 2.0 },
+};
+
+// High-level effect API: spawnEffect(type, position, overrides) (bd-8b6ly)
+function spawnEffect(type, pos, overrides = {}) {
+  if (!_particlePool) return;
+  const preset = EFFECT_PRESETS[type];
+  if (!preset) { console.warn('Unknown effect:', type); return; }
+  const opts = { ...preset, ...overrides };
+  _particlePool.emit(pos, opts.color, opts.count, {
+    velocity: opts.velocity,
+    spread: opts.spread,
+    lifetime: opts.lifetime,
+    size: opts.size,
+  });
+}
+
 // Status pulse colors by transition
 const STATUS_PULSE_COLORS = {
   in_progress: 0xd4a017, // amber — just started
@@ -288,6 +329,11 @@ function spawnStatusPulse(node, oldStatus, newStatus) {
   if (!node || !graph) return;
   const color = STATUS_PULSE_COLORS[newStatus] || 0x4a9eff;
   const size = nodeSize({ priority: node.priority, issue_type: node.issue_type });
+
+  // GPU particle burst (bd-8b6ly)
+  const pos = { x: node.x || 0, y: node.y || 0, z: node.z || 0 };
+  const effectKey = (oldStatus === 'blocked' && newStatus !== 'blocked') ? 'status-unblocked' : `status-${newStatus}`;
+  spawnEffect(effectKey, pos);
 
   // Ring 1: fast expanding ring
   const ringGeo = new THREE.RingGeometry(size * 0.8, size * 1.0, 24);
@@ -332,6 +378,12 @@ function spawnStatusPulse(node, oldStatus, newStatus) {
 function spawnEdgeSpark(sourceNode, targetNode, color) {
   if (!sourceNode || !targetNode || !graph) return;
   const sparkColor = color || 0x4a9eff;
+
+  // GPU particle burst at midpoint (bd-8b6ly)
+  const midX = ((sourceNode.x || 0) + (targetNode.x || 0)) / 2;
+  const midY = ((sourceNode.y || 0) + (targetNode.y || 0)) / 2;
+  const midZ = ((sourceNode.z || 0) + (targetNode.z || 0)) / 2;
+  spawnEffect('edge-spark', { x: midX, y: midY, z: midZ }, { color: sparkColor });
 
   // Create 3 small sphere sparks that travel from source to target
   for (let i = 0; i < 3; i++) {
@@ -1229,6 +1281,11 @@ function initGraph() {
   const stars = createStarField(1500, 500);
   scene.add(stars);
 
+  // Particle pool — GPU-instanced particles for all visual effects (bd-8b6ly)
+  _particlePool = createParticlePool(2000);
+  _particlePool.mesh.userData.isParticlePool = true;
+  scene.add(_particlePool.mesh);
+
   // Extend camera draw distance
   const camera = graph.camera();
   camera.far = 50000;
@@ -1804,6 +1861,9 @@ function startAnimation() {
 
     // Update event sprites — status pulses + edge sparks (bd-9qeto)
     updateEventSprites(t);
+
+    // Update GPU particle pool (bd-8b6ly)
+    if (_particlePool) _particlePool.update(t);
 
     // Label anti-overlap: run every 4th frame for perf (beads-rgmh)
     if (!animate._labelFrame) animate._labelFrame = 0;
@@ -7434,6 +7494,9 @@ async function main() {
     window.__beads3d_spawnStatusPulse = spawnStatusPulse;
     window.__beads3d_spawnEdgeSpark = spawnEdgeSpark;
     window.__beads3d_eventSprites = () => eventSprites;
+    // GPU particle pool API (bd-8b6ly)
+    window.__beads3d_spawnEffect = spawnEffect;
+    window.__beads3d_particlePool = () => _particlePool;
     // Expose camera velocity system for testing (bd-zab4q)
     window.__beads3d_keysDown = _keysDown;
     window.__beads3d_camVelocity = _camVelocity;
