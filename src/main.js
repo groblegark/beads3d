@@ -4,7 +4,7 @@ import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPa
 import { CSS2DRenderer, CSS2DObject } from 'three/examples/jsm/renderers/CSS2DRenderer.js';
 import { BeadsAPI } from './api.js';
 import { nodeColor, nodeSize, linkColor, colorToHex, rigColor } from './colors.js';
-import { createFresnelMaterial, createPulseRingMaterial, createSelectionRingMaterial, createStarField, updateShaderTime, createMateriaMaterial, createMateriaHaloTexture, createParticlePool } from './shaders.js';
+import { createFresnelMaterial, createStarField, updateShaderTime, createMateriaMaterial, createMateriaHaloTexture, createParticlePool } from './shaders.js';
 
 // --- Config ---
 const params = new URLSearchParams(window.location.search);
@@ -29,6 +29,9 @@ const GEO = {
   octa:       new THREE.OctahedronGeometry(1, 0),      // blocked spikes
   box:        new THREE.BoxGeometry(1, 1, 1),           // descent stage, general purpose
 };
+
+// Shared materia halo texture (bd-c7d5z) — lazy-initialized on first use
+let _materiaHaloTex = null;
 
 // --- Link icon textures (shared, one per dep type) ---
 // Draw simple glyphs on canvas → texture → SpriteMaterial
@@ -853,26 +856,30 @@ function initGraph() {
       const hexColor = colorToHex(nodeColor(n));
       const group = new THREE.Group();
 
-      // Inner sphere (solid core) — shared geometry, scaled
-      const core = new THREE.Mesh(GEO.sphereHi, new THREE.MeshBasicMaterial({
-        color: hexColor, transparent: true, opacity: 0.85 * ghostFade,
+      // Materia orb core — FFVII-style inner glow (bd-c7d5z, replaces MeshBasicMaterial)
+      const breathSpeed = n.status === 'in_progress' ? 2.0 : (n.status === 'blocked' ? 0.5 : 0.0);
+      const coreIntensity = n.status === 'closed' ? 0.5 : (n.status === 'in_progress' ? 1.8 : 1.4);
+      const coreOpacity = n.status === 'closed' ? 0.4 : 0.85;
+      const core = new THREE.Mesh(GEO.sphereHi, createMateriaMaterial(hexColor, {
+        opacity: coreOpacity * ghostFade,
+        coreIntensity,
+        breathSpeed,
       }));
       core.scale.setScalar(size);
       group.add(core);
 
-      // Outer glow shell — Fresnel rim-lighting shader (bd-s9b4v: subtler glow)
-      const glow = new THREE.Mesh(GEO.sphereLo, createFresnelMaterial(hexColor, { opacity: 0.2 * ghostFade, power: 3.5 }));
-      glow.scale.setScalar(size * 1.25);
-      group.add(glow);
-
-      // In-progress: pulsing ring — intermittent flash (bd-s9b4v: subtler)
-      if (n.status === 'in_progress') {
-        const ring = new THREE.Mesh(GEO.torus, createPulseRingMaterial(0xd4a017));
-        ring.scale.setScalar(size * 1.6);
-        ring.rotation.x = Math.PI / 2;
-        ring.userData.pulse = true;
-        group.add(ring);
-      }
+      // Materia halo sprite — soft radial gradient billboard (bd-c7d5z, replaces Fresnel shell)
+      if (!_materiaHaloTex) _materiaHaloTex = createMateriaHaloTexture(64);
+      const halo = new THREE.Sprite(new THREE.SpriteMaterial({
+        map: _materiaHaloTex,
+        color: hexColor,
+        transparent: true,
+        opacity: 0.2 * ghostFade,
+        blending: THREE.AdditiveBlending,
+        depthWrite: false,
+      }));
+      halo.scale.setScalar(size * 3.0);
+      group.add(halo);
 
       // Agent: retro lunar lander — cute spaceship with landing legs (beads-yp2y)
       if (n.issue_type === 'agent') {
@@ -1046,13 +1053,10 @@ function initGraph() {
         group.add(ccSprite);
       }
 
-      // Selection ring (invisible until selected)
-      // Selection ring — animated shader with sweep effect (invisible until selected)
-      const selRingMat = createSelectionRingMaterial();
-      const selRing = new THREE.Mesh(GEO.torus, selRingMat);
-      selRing.scale.setScalar(size * 2.5);
-      selRing.userData.selectionRing = true;
-      group.add(selRing);
+      // Selection glow — materia intensification instead of orbiting ring (bd-c7d5z)
+      // The core materia material has a `selected` uniform (0=off, 1=on)
+      // Updated in animation loop to boost glow when selected
+      core.userData.materiaCore = true;
 
       // Persistent info label sprite (bd-1o2f7) — hidden until 'l' toggles labels on
       const labelSprite = createNodeLabelSprite(n);
@@ -1633,7 +1637,7 @@ function restoreAllNodeOpacity() {
 
     if (!node._wasDimmed) continue;
     threeObj.traverse(child => {
-      if (!child.material || child.userData.selectionRing || child.userData.pulse || child.userData.decisionPulse || child.userData.nodeLabel) return;
+      if (!child.material || child.userData.selectionRing || child.userData.materiaCore || child.userData.pulse || child.userData.decisionPulse || child.userData.nodeLabel) return;
       restoreMaterialOpacity(child.material);
     });
     node._wasDimmed = false;
@@ -1692,15 +1696,15 @@ function startAnimation() {
           return;
         }
 
-        if (child.userData.selectionRing) {
+        if (child.userData.materiaCore) {
+          // Materia selection boost — glow intensification (bd-c7d5z)
+          if (child.material.uniforms && child.material.uniforms.selected) {
+            child.material.uniforms.selected.value = isSelected ? 1.0 : 0.0;
+          }
+        } else if (child.userData.selectionRing) {
+          // Legacy selection ring (kept for backward compat)
           if (child.material.uniforms && child.material.uniforms.visible) {
             child.material.uniforms.visible.value = isSelected ? 1.0 : 0.0;
-          } else {
-            child.material.opacity = isSelected ? 0.6 + Math.sin(t * 4) * 0.2 : 0;
-          }
-          if (isSelected) {
-            child.rotation.x = t * 1.2;
-            child.rotation.y = t * 0.8;
           }
         } else if (child.userData.agentGlow) {
           // Agent glow: breathing pulse (beads-v0wa)
