@@ -7319,6 +7319,10 @@ function connectBusStream() {
       const label = dootLabel(evt);
       if (!label) return;
 
+      // bd-9cpbc.2: always feed unified stream, even if node not found yet
+      const ufAgentId = resolveAgentIdLoose(evt);
+      if (ufAgentId) appendUnifiedEntry(ufAgentId, evt);
+
       const node = findAgentNode(evt);
       if (!node) {
         if (++_dootDrops <= 5) {
@@ -7329,6 +7333,18 @@ function connectBusStream() {
       }
 
       spawnDoot(node, label, dootColor(evt));
+
+      // Particle effects for bus events (bd-l7chu)
+      const nodePos = { x: node.x || 0, y: node.y || 0, z: node.z || 0 };
+      if (evt.type === 'AgentStarted') spawnEffect('agent-started', nodePos);
+      else if (evt.type === 'AgentCrashed') spawnEffect('agent-crashed', nodePos);
+      else if (evt.type === 'AgentIdle' || evt.type === 'OjAgentIdle') spawnEffect('agent-idle', nodePos);
+      else if (evt.type === 'PreToolUse') spawnEffect('agent-tool', nodePos);
+      else if (evt.type === 'PostToolUse') spawnEffect('agent-tool-done', nodePos);
+      else if (evt.type === 'MutationCreate') spawnEffect('status-open', nodePos);
+      else if (evt.type === 'DecisionCreated') spawnEffect('decision-created', nodePos);
+      else if (evt.type === 'DecisionResponded') spawnEffect('decision-resolved', nodePos);
+      else if (evt.type === 'DecisionExpired') spawnEffect('decision-expired', nodePos);
 
       // Event sprites: status change pulse + close burst (bd-9qeto)
       const p = evt.payload || {};
