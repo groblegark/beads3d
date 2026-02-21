@@ -258,6 +258,45 @@
       padding: 4px 12px 0;
       flex-shrink: 0;
     }
+    /* Unified activity feed (bd-9ndk0.3) */
+    #unified-feed {
+      flex: 1;
+      overflow-y: auto;
+      overflow-x: hidden;
+      padding: 2px 8px;
+      font-family: 'JetBrains Mono', 'Fira Code', monospace;
+      font-size: 10px;
+      display: none; /* hidden by default, toggled via button */
+    }
+    #unified-feed.active { display: block; }
+    #unified-feed::-webkit-scrollbar { width: 3px; }
+    #unified-feed::-webkit-scrollbar-thumb { background: #2a2a3a; border-radius: 2px; }
+    .uf-entry {
+      display: flex;
+      gap: 4px;
+      padding: 1px 0;
+      line-height: 1.3;
+      border-bottom: 1px solid rgba(255,255,255,0.02);
+    }
+    .uf-entry-time { color: #333; flex-shrink: 0; width: 55px; }
+    .uf-entry-agent { color: #ff6b35; flex-shrink: 0; max-width: 100px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .uf-entry-icon { flex-shrink: 0; width: 14px; text-align: center; }
+    .uf-entry-text { color: #888; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .uf-entry.lifecycle-started .uf-entry-icon { color: #2d8a4e; }
+    .uf-entry.lifecycle-idle .uf-entry-icon { color: #d4a017; }
+    .uf-entry.lifecycle-crashed .uf-entry-icon { color: #d04040; }
+    .uf-entry.mutation .uf-entry-text { color: #59c2ff; }
+    .uf-entry.mutation-close .uf-entry-text { color: #2d8a4e; }
+    .uf-entry.decision-pending .uf-entry-text { color: #d4a017; }
+    .uf-entry.decision-resolved .uf-entry-text { color: #2d8a4e; }
+    .uf-entry.mail-received .uf-entry-text { color: #d2a6ff; }
+    .uf-entry.running .uf-entry-icon { color: #d4a017; }
+    .uf-entry .uf-entry-dur { color: #555; flex-shrink: 0; margin-left: auto; }
+    #unified-feed .uf-empty { color: #333; padding: 8px 0; text-align: center; }
+
+    /* Hide agent-windows when unified feed is active */
+    #unified-feed.active ~ #agent-windows { display: none; }
+
     /* Right section — project pulse & status */
     #bottom-hud-right {
       width: 240px;
@@ -1878,9 +1917,13 @@
       </div>
     </div>
 
-    <!-- Center: activity stream (agent windows) -->
+    <!-- Center: unified activity stream + agent windows (bd-9ndk0.3) -->
     <div id="bottom-hud-center">
-      <div class="hud-section-label">Activity Stream</div>
+      <div class="hud-section-label">
+        Activity Stream
+        <span id="unified-feed-toggle" class="ctrl-btn" style="font-size:8px;padding:1px 5px;margin-left:6px;cursor:pointer" title="Toggle unified/split view">unified</span>
+      </div>
+      <div id="unified-feed"></div>
       <div id="agent-windows"></div>
     </div>
 

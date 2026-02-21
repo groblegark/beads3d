@@ -4994,6 +4994,9 @@ function setupControls() {
   // bd-inqge: Right sidebar
   initRightSidebar();
 
+  // bd-9ndk0.3: Unified activity stream
+  initUnifiedFeed();
+
   // Search — debounced input updates filter, Enter/arrows navigate results (bd-7n4g8)
   searchInput.addEventListener('input', (e) => {
     searchFilter = e.target.value;
@@ -6917,7 +6920,117 @@ function updateAgentsViewStats() {
   `;
 }
 
+// --- Unified Activity Stream (bd-9ndk0.3) ---
+const _unifiedFeed = { el: null, entries: [], maxEntries: 500, pendingTools: new Map() };
+function initUnifiedFeed() {
+  _unifiedFeed.el = document.getElementById('unified-feed');
+  if (!_unifiedFeed.el) return;
+  _unifiedFeed.el.innerHTML = '<div class="uf-empty">waiting for agent events...</div>';
+  // Toggle button
+  const toggleBtn = document.getElementById('unified-feed-toggle');
+  if (toggleBtn) {
+    toggleBtn.onclick = () => {
+      const active = _unifiedFeed.el.classList.toggle('active');
+      toggleBtn.textContent = active ? 'split' : 'unified';
+    };
+  }
+}
+function appendUnifiedEntry(agentId, evt) {
+  if (!_unifiedFeed.el) return;
+  const type = evt.type;
+  const p = evt.payload || {};
+  const ts = evt.ts ? new Date(evt.ts) : new Date();
+  const timeStr = ts.toTimeString().slice(0, 8);
+  // Extract short agent name from ID (e.g. "agent:cool-trout" → "cool-trout")
+  const agentName = agentId.replace(/^agent:/, '');
+
+  // Handle PreToolUse / PostToolUse pairing
+  if (type === 'PreToolUse') {
+    const label = formatToolLabel(p);
+    const toolClass = `tool-${(p.tool_name || 'tool').toLowerCase()}`;
+    const entry = createUnifiedEntry(timeStr, agentName, TOOL_ICONS[p.tool_name] || '·', label, toolClass + ' running');
+    _unifiedFeed.el.appendChild(entry);
+    _unifiedFeed.entries.push(entry);
+    _unifiedFeed.pendingTools.set(agentId, { entry, startTs: ts.getTime() });
+    trimUnifiedFeed();
+    autoScrollUnified();
+    return;
+  }
+  if (type === 'PostToolUse') {
+    const pending = _unifiedFeed.pendingTools.get(agentId);
+    if (pending) {
+      const dur = (ts.getTime() - pending.startTs) / 1000;
+      pending.entry.classList.remove('running');
+      const durEl = pending.entry.querySelector('.uf-entry-dur');
+      if (durEl && dur > 0.1) durEl.textContent = `${dur.toFixed(1)}s`;
+      const iconEl = pending.entry.querySelector('.uf-entry-icon');
+      if (iconEl) iconEl.textContent = '✓';
+      _unifiedFeed.pendingTools.delete(agentId);
+    }
+    return;
+  }
+  // Map event types to display
+  let icon, text, classes;
+  if (type === 'AgentStarted') { icon = '●'; text = 'started'; classes = 'lifecycle lifecycle-started'; }
+  else if (type === 'AgentIdle') { icon = '◌'; text = 'idle'; classes = 'lifecycle lifecycle-idle'; }
+  else if (type === 'AgentCrashed') { icon = '✕'; text = 'crashed!'; classes = 'lifecycle lifecycle-crashed'; }
+  else if (type === 'AgentStopped') { icon = '○'; text = 'stopped'; classes = 'lifecycle lifecycle-stopped'; }
+  else if (type === 'SessionStart') { icon = '▸'; text = 'session start'; classes = 'lifecycle'; }
+  else if (type === 'MutationCreate') { icon = '+'; text = `new: ${p.title || 'bead'}`; classes = 'mutation'; }
+  else if (type === 'MutationClose') { icon = '✓'; text = `closed ${p.issue_id || ''}`; classes = 'mutation mutation-close'; }
+  else if (type === 'MutationStatus') { icon = '~'; text = p.new_status || 'updated'; classes = 'mutation'; }
+  else if (type === 'MutationUpdate') {
+    if (p.assignee) { icon = '→'; text = `claimed by ${p.assignee}`; classes = 'mutation'; }
+    else return;
+  }
+  else if (type === 'DecisionCreated') { icon = '?'; text = (p.question || 'decision').slice(0, 50); classes = 'decision decision-pending'; }
+  else if (type === 'DecisionResponded') { icon = '✓'; text = `decided: ${p.chosen_label || 'resolved'}`; classes = 'decision decision-resolved'; }
+  else if (type === 'DecisionExpired') { icon = '⏰'; text = 'decision expired'; classes = 'decision decision-expired'; }
+  else if (type === 'MailSent') { icon = '✉'; text = `from ${p.from || '?'}: ${p.subject || ''}`; classes = 'mail mail-received'; }
+  else if (type === 'MailRead') { icon = '✉'; text = 'mail read'; classes = 'mail'; }
+  else return;
+
+  const entry = createUnifiedEntry(timeStr, agentName, icon, text, classes);
+  _unifiedFeed.el.appendChild(entry);
+  _unifiedFeed.entries.push(entry);
+  trimUnifiedFeed();
+  autoScrollUnified();
+}
+function createUnifiedEntry(time, agent, icon, text, classes) {
+  // Remove empty placeholder
+  if (_unifiedFeed.el) {
+    const empty = _unifiedFeed.el.querySelector('.uf-empty');
+    if (empty) empty.remove();
+  }
+  const el = document.createElement('div');
+  el.className = `uf-entry ${classes}`;
+  el.innerHTML = `
+    <span class="uf-entry-time">${escapeHtml(time)}</span>
+    <span class="uf-entry-agent">${escapeHtml(agent)}</span>
+    <span class="uf-entry-icon">${escapeHtml(icon)}</span>
+    <span class="uf-entry-text">${escapeHtml(text)}</span>
+    <span class="uf-entry-dur"></span>
+  `;
+  return el;
+}
+function trimUnifiedFeed() {
+  while (_unifiedFeed.entries.length > _unifiedFeed.maxEntries) {
+    const old = _unifiedFeed.entries.shift();
+    if (old && old.parentNode) old.parentNode.removeChild(old);
+  }
+}
+function autoScrollUnified() {
+  if (!_unifiedFeed.el) return;
+  const isNear = _unifiedFeed.el.scrollTop + _unifiedFeed.el.clientHeight >= _unifiedFeed.el.scrollHeight - 30;
+  if (isNear || _unifiedFeed.entries.length <= 1) {
+    requestAnimationFrame(() => { _unifiedFeed.el.scrollTop = _unifiedFeed.el.scrollHeight; });
+  }
+}
+
 function appendAgentEvent(agentId, evt) {
+  // Also append to unified feed (bd-9ndk0.3)
+  appendUnifiedEntry(agentId, evt);
+
   const win = agentWindows.get(agentId);
   if (!win) return;
 
