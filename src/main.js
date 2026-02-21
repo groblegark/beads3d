@@ -1302,7 +1302,7 @@ function selectNode(node, componentIds) {
   graph.linkWidth(graph.linkWidth());
 
   // bd-nnr22: update left sidebar focused issue
-  updateLeftSidebarFocus(node);
+  if (typeof updateLeftSidebarFocus === 'function') updateLeftSidebarFocus(node);
 }
 
 // Temporarily spread out highlighted subgraph nodes for readability (beads-k38a).
@@ -1417,7 +1417,7 @@ function clearSelection() {
   // Force link width recalculation
   graph.linkWidth(graph.linkWidth());
   // bd-nnr22: clear left sidebar focused issue
-  updateLeftSidebarFocus(null);
+  if (typeof updateLeftSidebarFocus === 'function') updateLeftSidebarFocus(null);
 }
 
 // --- URL deep-linking (bd-he95o) ---
