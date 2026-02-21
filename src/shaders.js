@@ -45,6 +45,7 @@ export function createPulseRingMaterial(color) {
     uniforms: {
       ringColor: { value: new THREE.Color(color) },
       time: { value: 0 },
+      pulseCycle: { value: 4.0 }, // bd-b3ujw: controllable pulse speed
     },
     vertexShader: `
       varying vec2 vUv;
@@ -56,10 +57,11 @@ export function createPulseRingMaterial(color) {
     fragmentShader: `
       uniform vec3 ringColor;
       uniform float time;
+      uniform float pulseCycle;
       varying vec2 vUv;
       void main() {
-        // Intermittent pulse: brief flash every ~4s, fades quickly (bd-s9b4v)
-        float cycle = mod(time, 4.0);
+        // Intermittent pulse: brief flash every ~Ns, fades quickly (bd-s9b4v, bd-b3ujw)
+        float cycle = mod(time, pulseCycle);
         float pulse = smoothstep(0.0, 0.3, cycle) * smoothstep(1.0, 0.3, cycle) * 0.3;
         // Soft edges along the torus cross-section
         float dist = abs(vUv.y - 0.5) * 2.0;
@@ -101,17 +103,19 @@ export function createStarField(count = 2000, radius = 600) {
     uniforms: {
       time: { value: 0 },
       color: { value: new THREE.Color(0x6688aa) },
+      twinkleSpeed: { value: 1.0 }, // bd-b3ujw: controllable twinkle speed
     },
     vertexShader: `
       attribute float size;
       attribute float alpha;
       varying float vAlpha;
       uniform float time;
+      uniform float twinkleSpeed;
       void main() {
         vAlpha = alpha;
         vec4 mvPos = modelViewMatrix * vec4(position, 1.0);
-        // Subtle twinkle: size oscillates per-particle
-        float twinkle = 1.0 + 0.3 * sin(time * 1.5 + position.x * 0.1);
+        // Subtle twinkle: size oscillates per-particle (bd-b3ujw: speed controllable)
+        float twinkle = 1.0 + 0.3 * sin(time * 1.5 * twinkleSpeed + position.x * 0.1);
         gl_PointSize = size * twinkle * (300.0 / -mvPos.z);
         gl_Position = projectionMatrix * mvPos;
       }

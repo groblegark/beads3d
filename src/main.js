@@ -6121,8 +6121,13 @@ function initControlPanel() {
     });
   });
   wireSlider('cp-pulse-speed', v => {
-    // Store for use in updateShaderTime — the pulse cycle uses mod(time, N)
-    window.__beads3d_pulseSpeed = v;
+    // Update pulseCycle uniform on all pulse ring materials (bd-b3ujw)
+    if (!graph) return;
+    graph.scene().traverse(obj => {
+      if (obj.material?.uniforms?.pulseCycle) {
+        obj.material.uniforms.pulseCycle.value = v;
+      }
+    });
   });
 
   // Star field controls
@@ -6138,7 +6143,13 @@ function initControlPanel() {
     }
   });
   wireSlider('cp-twinkle-speed', v => {
-    window.__beads3d_twinkleSpeed = v;
+    // Update twinkleSpeed uniform on star field (bd-b3ujw)
+    if (!graph) return;
+    graph.scene().traverse(obj => {
+      if (obj.userData?.isStarField && obj.material?.uniforms?.twinkleSpeed) {
+        obj.material.uniforms.twinkleSpeed.value = v;
+      }
+    });
   });
 
   // Background color
