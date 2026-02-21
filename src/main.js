@@ -1333,6 +1333,9 @@ function selectNode(node, componentIds) {
 
   if (!node) return;
 
+  // Particle burst on selection (bd-l7chu)
+  spawnEffect('select', { x: node.x || 0, y: node.y || 0, z: node.z || 0 });
+
   // If a pre-computed connected component is provided, highlight the full subgraph.
   // Otherwise fall back to direct neighbors only (e.g. for keyboard navigation).
   const targetIds = componentIds || new Set([node.id]);
