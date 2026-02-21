@@ -4940,6 +4940,9 @@ function setupControls() {
   // Labels toggle (bd-1o2f7)
   document.getElementById('btn-labels').onclick = () => toggleLabels();
 
+  // bd-69y6v: Control panel toggle & wiring
+  initControlPanel();
+
   // Search — debounced input updates filter, Enter/arrows navigate results (bd-7n4g8)
   searchInput.addEventListener('input', (e) => {
     searchFilter = e.target.value;
@@ -5055,6 +5058,12 @@ function setupControls() {
       // Always unfreeze camera on Escape (bd-casin)
       unfreezeCamera();
 
+      // Close control panel if open (bd-69y6v)
+      if (controlPanelOpen) {
+        toggleControlPanel();
+        return;
+      }
+
       // Close filter dashboard if open (bd-8o2gd phase 2)
       if (filterDashboardOpen) {
         toggleFilterDashboard();
@@ -5117,6 +5126,10 @@ function setupControls() {
     // 'f' for filter dashboard (bd-8o2gd phase 2)
     if (e.key === 'f' && !e.repeat && !isTextInputFocused()) {
       toggleFilterDashboard();
+    }
+    // 'g' for control panel (bd-69y6v)
+    if (e.key === 'g' && !e.repeat && !isTextInputFocused()) {
+      toggleControlPanel();
     }
     // 'p' for screenshot
     if (e.key === 'p' && !isTextInputFocused()) {
@@ -6042,6 +6055,131 @@ function enableTopResize(el) {
     resizing = false;
     handle.classList.remove('active');
     el.style.transition = '';
+  });
+}
+
+// --- bd-69y6v: Control Panel ---
+
+let controlPanelOpen = false;
+
+function toggleControlPanel() {
+  const panel = document.getElementById('control-panel');
+  if (!panel) return;
+  controlPanelOpen = !controlPanelOpen;
+  panel.classList.toggle('open', controlPanelOpen);
+}
+
+function initControlPanel() {
+  const panel = document.getElementById('control-panel');
+  if (!panel) return;
+
+  // Toggle button
+  const btn = document.getElementById('btn-control-panel');
+  if (btn) btn.onclick = () => toggleControlPanel();
+
+  // Close button
+  const closeBtn = document.getElementById('cp-close');
+  if (closeBtn) closeBtn.onclick = () => { controlPanelOpen = false; panel.classList.remove('open'); };
+
+  // Collapsible sections
+  panel.querySelectorAll('.cp-section-header').forEach(header => {
+    header.onclick = () => header.parentElement.classList.toggle('collapsed');
+  });
+
+  // Helper: wire a slider to its value display and a callback
+  function wireSlider(id, cb) {
+    const slider = document.getElementById(id);
+    const valEl = document.getElementById(id + '-val');
+    if (!slider) return;
+    slider.addEventListener('input', () => {
+      const v = parseFloat(slider.value);
+      if (valEl) valEl.textContent = Number.isInteger(v) ? v : v.toFixed(2);
+      cb(v);
+    });
+  }
+
+  // Bloom controls
+  wireSlider('cp-bloom-threshold', v => { if (bloomPass) bloomPass.threshold = v; });
+  wireSlider('cp-bloom-strength', v => { if (bloomPass) bloomPass.strength = v; });
+  wireSlider('cp-bloom-radius', v => { if (bloomPass) bloomPass.radius = v; });
+
+  // Shader controls — update fresnel materials on all glow shells
+  wireSlider('cp-fresnel-opacity', v => {
+    if (!graph) return;
+    graph.scene().traverse(obj => {
+      if (obj.material?.uniforms?.opacity && obj.material?.uniforms?.power) {
+        obj.material.uniforms.opacity.value = v;
+      }
+    });
+  });
+  wireSlider('cp-fresnel-power', v => {
+    if (!graph) return;
+    graph.scene().traverse(obj => {
+      if (obj.material?.uniforms?.opacity && obj.material?.uniforms?.power) {
+        obj.material.uniforms.power.value = v;
+      }
+    });
+  });
+  wireSlider('cp-pulse-speed', v => {
+    // Store for use in updateShaderTime — the pulse cycle uses mod(time, N)
+    window.__beads3d_pulseSpeed = v;
+  });
+
+  // Star field controls
+  wireSlider('cp-star-count', v => {
+    if (!graph) return;
+    const scene = graph.scene();
+    // Remove existing star field
+    scene.traverse(obj => { if (obj.userData?.isStarField) scene.remove(obj); });
+    // Add new one with updated count
+    if (v > 0) {
+      const stars = createStarField(v, 500);
+      scene.add(stars);
+    }
+  });
+  wireSlider('cp-twinkle-speed', v => {
+    window.__beads3d_twinkleSpeed = v;
+  });
+
+  // Background color
+  const bgColor = document.getElementById('cp-bg-color');
+  if (bgColor) {
+    bgColor.addEventListener('input', () => {
+      if (!graph) return;
+      graph.scene().background = new THREE.Color(bgColor.value);
+    });
+  }
+
+  // Node color overrides — stored in a config object
+  window.__beads3d_colorOverrides = {};
+  const colorMap = {
+    'cp-color-open': 'open',
+    'cp-color-active': 'in_progress',
+    'cp-color-blocked': 'blocked',
+    'cp-color-agent': 'agent',
+    'cp-color-epic': 'epic',
+  };
+  for (const [elId, key] of Object.entries(colorMap)) {
+    const el = document.getElementById(elId);
+    if (!el) continue;
+    el.addEventListener('input', () => {
+      window.__beads3d_colorOverrides[key] = el.value;
+      // Force graph re-render to pick up new colors
+      if (graph) graph.nodeColor(graph.nodeColor());
+    });
+  }
+
+  // Label controls
+  wireSlider('cp-label-size', v => { window.__beads3d_labelSize = v; });
+  wireSlider('cp-label-opacity', v => { window.__beads3d_labelOpacity = v; });
+
+  // Animation controls
+  wireSlider('cp-fly-speed', v => { window.__beads3d_flySpeed = v; });
+  wireSlider('cp-force-strength', v => {
+    if (graph) {
+      graph.d3Force('charge')?.strength(-v);
+      graph.d3ReheatSimulation();
+    }
   });
 }
 

@@ -510,6 +510,150 @@
     }
     .fd-profile-bar select:focus { border-color: #4a9eff; }
 
+    /* bd-69y6v: Control panel — slide-out from right */
+    #control-panel {
+      position: fixed;
+      top: 0;
+      right: 0;
+      width: 300px;
+      height: 100vh;
+      background: rgba(12, 12, 22, 0.96);
+      border-left: 1px solid #1a1a2a;
+      overflow-y: auto;
+      padding: 16px;
+      box-sizing: border-box;
+      transform: translateX(100%);
+      transition: transform 0.2s ease-out;
+      backdrop-filter: blur(12px);
+      z-index: 260;
+    }
+    #control-panel.open { transform: translateX(0); }
+    #control-panel::-webkit-scrollbar { width: 4px; }
+    #control-panel::-webkit-scrollbar-thumb { background: #2a2a3a; border-radius: 2px; }
+
+    .cp-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 12px;
+    }
+    .cp-title {
+      font-size: 12px;
+      font-weight: 600;
+      color: #e0e0e0;
+      letter-spacing: 0.5px;
+    }
+    .cp-close {
+      background: none;
+      border: none;
+      color: #666;
+      font-size: 18px;
+      cursor: pointer;
+      padding: 4px 8px;
+    }
+    .cp-close:hover { color: #fff; }
+
+    .cp-section {
+      border-bottom: 1px solid #1a1a2a;
+      padding: 10px 0;
+    }
+    .cp-section:last-child { border-bottom: none; }
+    .cp-section-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      cursor: pointer;
+      user-select: none;
+    }
+    .cp-section-label {
+      font-size: 10px;
+      font-weight: 600;
+      color: #888;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+    }
+    .cp-section-toggle {
+      font-size: 9px;
+      color: #555;
+      transition: transform 0.15s;
+    }
+    .cp-section.collapsed .cp-section-toggle { transform: rotate(-90deg); }
+    .cp-section-body {
+      padding-top: 8px;
+    }
+    .cp-section.collapsed .cp-section-body { display: none; }
+
+    .cp-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      margin-bottom: 6px;
+    }
+    .cp-label {
+      font-size: 10px;
+      color: #888;
+      white-space: nowrap;
+    }
+    .cp-slider {
+      flex: 1;
+      -webkit-appearance: none;
+      appearance: none;
+      height: 3px;
+      background: #2a2a3a;
+      border-radius: 2px;
+      outline: none;
+    }
+    .cp-slider::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      background: #39c5cf;
+      cursor: pointer;
+    }
+    .cp-value {
+      font-size: 9px;
+      color: #555;
+      font-family: 'JetBrains Mono', monospace;
+      min-width: 28px;
+      text-align: right;
+    }
+    .cp-color-input {
+      width: 28px;
+      height: 20px;
+      border: 1px solid #2a2a3a;
+      border-radius: 3px;
+      padding: 0;
+      cursor: pointer;
+      background: none;
+    }
+    .cp-color-input::-webkit-color-swatch-wrapper { padding: 1px; }
+    .cp-color-input::-webkit-color-swatch { border-radius: 2px; border: none; }
+
+    .cp-preset-row {
+      display: flex;
+      gap: 4px;
+      flex-wrap: wrap;
+    }
+    .cp-preset-btn {
+      font-size: 9px;
+      color: #888;
+      background: rgba(20, 20, 35, 0.8);
+      border: 1px solid #2a2a3a;
+      border-radius: 3px;
+      padding: 3px 8px;
+      cursor: pointer;
+    }
+    .cp-preset-btn:hover { color: #fff; border-color: #39c5cf; }
+    .cp-preset-btn.active { color: #39c5cf; border-color: #39c5cf; }
+
+    /* Gear icon button for opening control panel */
+    #btn-control-panel {
+      font-size: 14px;
+      line-height: 1;
+    }
+
     /* Context menu */
     #context-menu {
       position: fixed;
@@ -1349,6 +1493,7 @@
       <button class="ctrl-btn" id="btn-bloom">bloom</button>
       <button class="ctrl-btn" id="btn-labels">labels (l)</button>
       <button class="ctrl-btn" id="btn-refresh">refresh</button>
+      <button class="ctrl-btn" id="btn-control-panel" title="Control panel (g)">&#x2699;</button>
     </div>
 
     <div class="btn-row">
@@ -1375,7 +1520,7 @@
   <span id="minimap-label">minimap</span>
   <canvas id="minimap" width="360" height="280"></canvas>
   <div id="status">connecting...</div>
-  <div id="keyhints">/ search &middot; enter fly &middot; &uarr;&darr; cycle &middot; esc close &middot; r refresh &middot; b bloom &middot; l labels &middot; m minimap &middot; f filters &middot; 1-5 layout &middot; shift+drag select &middot; A agents</div>
+  <div id="keyhints">/ search &middot; enter fly &middot; &uarr;&darr; cycle &middot; esc close &middot; r refresh &middot; b bloom &middot; l labels &middot; m minimap &middot; f filters &middot; g controls &middot; 1-5 layout &middot; shift+drag select &middot; A agents</div>
 
   <!-- Filter dashboard slide-out panel (bd-8o2gd phase 2) -->
   <div id="filter-dashboard">
@@ -1452,6 +1597,162 @@
       <span id="fd-node-count">0/0 nodes</span>
       <button class="fd-reset" id="fd-share" title="Copy shareable URL">share</button>
       <button class="fd-reset" id="fd-reset">reset</button>
+    </div>
+  </div>
+
+  <!-- bd-69y6v: Control panel -->
+  <div id="control-panel">
+    <div class="cp-header">
+      <span class="cp-title">CONTROL PANEL</span>
+      <button class="cp-close" id="cp-close">&times;</button>
+    </div>
+
+    <div class="cp-section" id="cp-bloom">
+      <div class="cp-section-header">
+        <span class="cp-section-label">Bloom</span>
+        <span class="cp-section-toggle">&#9660;</span>
+      </div>
+      <div class="cp-section-body">
+        <div class="cp-row">
+          <span class="cp-label">threshold</span>
+          <input type="range" class="cp-slider" id="cp-bloom-threshold" min="0" max="1" step="0.05" value="0.35">
+          <span class="cp-value" id="cp-bloom-threshold-val">0.35</span>
+        </div>
+        <div class="cp-row">
+          <span class="cp-label">strength</span>
+          <input type="range" class="cp-slider" id="cp-bloom-strength" min="0" max="3" step="0.1" value="0.7">
+          <span class="cp-value" id="cp-bloom-strength-val">0.70</span>
+        </div>
+        <div class="cp-row">
+          <span class="cp-label">radius</span>
+          <input type="range" class="cp-slider" id="cp-bloom-radius" min="0" max="1" step="0.05" value="0.4">
+          <span class="cp-value" id="cp-bloom-radius-val">0.40</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="cp-section" id="cp-shaders">
+      <div class="cp-section-header">
+        <span class="cp-section-label">Shaders</span>
+        <span class="cp-section-toggle">&#9660;</span>
+      </div>
+      <div class="cp-section-body">
+        <div class="cp-row">
+          <span class="cp-label">glow opacity</span>
+          <input type="range" class="cp-slider" id="cp-fresnel-opacity" min="0" max="1" step="0.05" value="0.4">
+          <span class="cp-value" id="cp-fresnel-opacity-val">0.40</span>
+        </div>
+        <div class="cp-row">
+          <span class="cp-label">glow power</span>
+          <input type="range" class="cp-slider" id="cp-fresnel-power" min="0.5" max="5" step="0.1" value="2.0">
+          <span class="cp-value" id="cp-fresnel-power-val">2.0</span>
+        </div>
+        <div class="cp-row">
+          <span class="cp-label">pulse speed</span>
+          <input type="range" class="cp-slider" id="cp-pulse-speed" min="0.5" max="8" step="0.5" value="4.0">
+          <span class="cp-value" id="cp-pulse-speed-val">4.0</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="cp-section" id="cp-stars">
+      <div class="cp-section-header">
+        <span class="cp-section-label">Star Field</span>
+        <span class="cp-section-toggle">&#9660;</span>
+      </div>
+      <div class="cp-section-body">
+        <div class="cp-row">
+          <span class="cp-label">star count</span>
+          <input type="range" class="cp-slider" id="cp-star-count" min="0" max="5000" step="100" value="2000">
+          <span class="cp-value" id="cp-star-count-val">2000</span>
+        </div>
+        <div class="cp-row">
+          <span class="cp-label">twinkle speed</span>
+          <input type="range" class="cp-slider" id="cp-twinkle-speed" min="0" max="3" step="0.1" value="1.0">
+          <span class="cp-value" id="cp-twinkle-speed-val">1.0</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="cp-section" id="cp-colors">
+      <div class="cp-section-header">
+        <span class="cp-section-label">Colors</span>
+        <span class="cp-section-toggle">&#9660;</span>
+      </div>
+      <div class="cp-section-body">
+        <div class="cp-row">
+          <span class="cp-label">background</span>
+          <input type="color" class="cp-color-input" id="cp-bg-color" value="#000005">
+        </div>
+        <div class="cp-row">
+          <span class="cp-label">open</span>
+          <input type="color" class="cp-color-input" id="cp-color-open" value="#2d8a4e">
+        </div>
+        <div class="cp-row">
+          <span class="cp-label">active</span>
+          <input type="color" class="cp-color-input" id="cp-color-active" value="#d4a017">
+        </div>
+        <div class="cp-row">
+          <span class="cp-label">blocked</span>
+          <input type="color" class="cp-color-input" id="cp-color-blocked" value="#d04040">
+        </div>
+        <div class="cp-row">
+          <span class="cp-label">agent</span>
+          <input type="color" class="cp-color-input" id="cp-color-agent" value="#ff6b35">
+        </div>
+        <div class="cp-row">
+          <span class="cp-label">epic</span>
+          <input type="color" class="cp-color-input" id="cp-color-epic" value="#8b45a6">
+        </div>
+      </div>
+    </div>
+
+    <div class="cp-section" id="cp-labels">
+      <div class="cp-section-header">
+        <span class="cp-section-label">Labels</span>
+        <span class="cp-section-toggle">&#9660;</span>
+      </div>
+      <div class="cp-section-body">
+        <div class="cp-row">
+          <span class="cp-label">font size</span>
+          <input type="range" class="cp-slider" id="cp-label-size" min="6" max="24" step="1" value="11">
+          <span class="cp-value" id="cp-label-size-val">11</span>
+        </div>
+        <div class="cp-row">
+          <span class="cp-label">opacity</span>
+          <input type="range" class="cp-slider" id="cp-label-opacity" min="0" max="1" step="0.05" value="0.8">
+          <span class="cp-value" id="cp-label-opacity-val">0.80</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="cp-section" id="cp-animation">
+      <div class="cp-section-header">
+        <span class="cp-section-label">Animation</span>
+        <span class="cp-section-toggle">&#9660;</span>
+      </div>
+      <div class="cp-section-body">
+        <div class="cp-row">
+          <span class="cp-label">fly speed</span>
+          <input type="range" class="cp-slider" id="cp-fly-speed" min="200" max="3000" step="100" value="1000">
+          <span class="cp-value" id="cp-fly-speed-val">1000</span>
+        </div>
+        <div class="cp-row">
+          <span class="cp-label">force strength</span>
+          <input type="range" class="cp-slider" id="cp-force-strength" min="0" max="200" step="5" value="60">
+          <span class="cp-value" id="cp-force-strength-val">60</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="cp-section" id="cp-presets">
+      <div class="cp-section-header">
+        <span class="cp-section-label">Presets</span>
+        <span class="cp-section-toggle">&#9660;</span>
+      </div>
+      <div class="cp-section-body">
+        <div class="cp-preset-row" id="cp-preset-buttons"></div>
+      </div>
     </div>
   </div>
 
