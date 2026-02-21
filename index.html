@@ -210,16 +210,109 @@
       text-align: right;
     }
 
-    /* Legend */
-    #legend {
+    /* ===== Bottom HUD Bar (bd-ddj44) ===== */
+    #bottom-hud {
       position: fixed;
-      bottom: 16px;
-      left: 16px;
-      z-index: 100;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      height: 120px;
+      z-index: 250;
+      display: flex;
+      align-items: stretch;
+      background: rgba(8, 8, 16, 0.92);
+      border-top: 1px solid #1a1a2a;
+      backdrop-filter: blur(12px);
+      pointer-events: auto;
+    }
+    /* Left section — quick actions & legend */
+    #bottom-hud-left {
+      width: 260px;
+      min-width: 200px;
+      padding: 8px 12px;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      border-right: 1px solid #1a1a2a;
+    }
+    #bottom-hud-left .hud-section-label {
+      font-size: 8px;
+      color: #444;
+      text-transform: uppercase;
+      letter-spacing: 1.5px;
+      margin-bottom: 4px;
+    }
+    /* Center section — activity stream (agent windows dock here) */
+    #bottom-hud-center {
+      flex: 1;
+      min-width: 0;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+    #bottom-hud-center .hud-section-label {
+      font-size: 8px;
+      color: #444;
+      text-transform: uppercase;
+      letter-spacing: 1.5px;
+      padding: 4px 12px 0;
+      flex-shrink: 0;
+    }
+    /* Right section — project pulse & status */
+    #bottom-hud-right {
+      width: 240px;
+      min-width: 180px;
+      padding: 8px 12px;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      border-left: 1px solid #1a1a2a;
+    }
+    #bottom-hud-right .hud-section-label {
+      font-size: 8px;
+      color: #444;
+      text-transform: uppercase;
+      letter-spacing: 1.5px;
+      margin-bottom: 4px;
+    }
+
+    /* Quick actions row (bd-ddj44) */
+    #hud-quick-actions {
+      display: flex;
+      gap: 4px;
+      flex-wrap: wrap;
+      margin-bottom: 6px;
+    }
+    #hud-quick-actions .ctrl-btn {
+      font-size: 9px;
+      padding: 3px 8px;
+    }
+
+    /* Project pulse stats (bd-ddj44) */
+    #hud-project-pulse {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      font-size: 10px;
+    }
+    .pulse-stat {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .pulse-stat-label { color: #555; }
+    .pulse-stat-value { color: #888; font-variant-numeric: tabular-nums; }
+    .pulse-stat-value.good { color: #2d8a4e; }
+    .pulse-stat-value.warn { color: #d4a017; }
+    .pulse-stat-value.bad { color: #d04040; }
+
+    /* Legend — now inside bottom-hud-left (bd-ddj44) */
+    #legend {
       font-size: 10px;
       display: flex;
-      gap: 14px;
-      opacity: 0.6;
+      flex-wrap: wrap;
+      gap: 8px;
+      opacity: 0.7;
     }
     #legend .item { display: flex; align-items: center; gap: 5px; }
     #legend .dot {
@@ -229,26 +322,19 @@
       display: inline-block;
     }
 
-    /* Connection status */
+    /* Connection status — now inside bottom-hud-right (bd-ddj44) */
     #status {
-      position: fixed;
-      bottom: 16px;
-      right: 16px;
-      z-index: 100;
       font-size: 10px;
       color: #444;
     }
     #status.connected { color: #2d8a4e; }
     #status.error { color: #d04040; }
 
-    /* Keyboard hints */
+    /* Keyboard hints — now inside bottom-hud-right (bd-ddj44) */
     #keyhints {
-      position: fixed;
-      bottom: 36px;
-      right: 16px;
-      z-index: 100;
       font-size: 9px;
       color: #333;
+      line-height: 1.5;
     }
 
     /* Detail panel container — holds tiling panels (bd-fbmq3) */
@@ -510,6 +596,206 @@
     }
     .fd-profile-bar select:focus { border-color: #4a9eff; }
 
+    /* ===== Left Sidebar — Agent Roster & Focused Issue (bd-nnr22) ===== */
+    #left-sidebar {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 280px;
+      height: calc(100vh - 120px);
+      z-index: 240;
+      display: flex;
+      flex-direction: column;
+      background: rgba(8, 8, 16, 0.92);
+      border-right: 1px solid #1a1a2a;
+      backdrop-filter: blur(12px);
+      transform: translateX(-100%);
+      transition: transform 0.2s ease-out;
+      pointer-events: auto;
+    }
+    #left-sidebar.open { transform: translateX(0); }
+    #left-sidebar::-webkit-scrollbar { width: 4px; }
+    #left-sidebar::-webkit-scrollbar-thumb { background: #2a2a3a; border-radius: 2px; }
+    .ls-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 10px 12px 6px;
+      border-bottom: 1px solid #1a1a2a;
+      flex-shrink: 0;
+    }
+    .ls-title {
+      font-size: 10px;
+      font-weight: 600;
+      color: #e0e0e0;
+      letter-spacing: 0.5px;
+      text-transform: uppercase;
+    }
+    .ls-close {
+      background: none;
+      border: none;
+      color: #555;
+      font-size: 16px;
+      cursor: pointer;
+      padding: 2px 6px;
+    }
+    .ls-close:hover { color: #fff; }
+    .ls-section {
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+    .ls-section-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 8px 12px 4px;
+      flex-shrink: 0;
+    }
+    .ls-section-label {
+      font-size: 8px;
+      color: #4a9eff;
+      text-transform: uppercase;
+      letter-spacing: 1.5px;
+      font-weight: 600;
+    }
+    .ls-section-count {
+      font-size: 9px;
+      color: #555;
+      font-variant-numeric: tabular-nums;
+    }
+    #ls-agent-roster {
+      flex: 0 0 auto;
+      max-height: 45%;
+      border-bottom: 1px solid #1a1a2a;
+    }
+    #ls-agent-list {
+      overflow-y: auto;
+      padding: 0 8px 8px;
+    }
+    #ls-agent-list::-webkit-scrollbar { width: 3px; }
+    #ls-agent-list::-webkit-scrollbar-thumb { background: #2a2a3a; border-radius: 2px; }
+    .ls-agent-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 5px 6px;
+      border-radius: 3px;
+      cursor: pointer;
+      transition: background 0.1s;
+    }
+    .ls-agent-row:hover { background: rgba(74, 158, 255, 0.08); }
+    .ls-agent-dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+    .ls-agent-dot.active { background: #2d8a4e; }
+    .ls-agent-dot.idle { background: #d4a017; }
+    .ls-agent-dot.crashed { background: #d04040; animation: crash-pulse 1s infinite; }
+    .ls-agent-name {
+      font-size: 10px;
+      color: #ccc;
+      white-space: nowrap;
+      min-width: 0;
+    }
+    .ls-agent-task {
+      font-size: 9px;
+      color: #666;
+      flex: 1;
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .ls-agent-meta {
+      font-size: 9px;
+      color: #555;
+      white-space: nowrap;
+      font-variant-numeric: tabular-nums;
+    }
+    .ls-agent-empty {
+      font-size: 10px;
+      color: #444;
+      padding: 12px 8px;
+      font-style: italic;
+    }
+    #ls-focused-issue {
+      flex: 1;
+      min-height: 0;
+      display: flex;
+      flex-direction: column;
+    }
+    #ls-focused-content {
+      flex: 1;
+      overflow-y: auto;
+      padding: 0 12px 12px;
+    }
+    #ls-focused-content::-webkit-scrollbar { width: 3px; }
+    #ls-focused-content::-webkit-scrollbar-thumb { background: #2a2a3a; border-radius: 2px; }
+    .ls-issue-header {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      margin-bottom: 8px;
+    }
+    .ls-issue-id {
+      font-size: 9px;
+      color: #4a9eff;
+      font-weight: 600;
+    }
+    .ls-issue-status {
+      font-size: 8px;
+      padding: 1px 5px;
+      border-radius: 2px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+    .ls-issue-status.open { background: rgba(45, 138, 78, 0.2); color: #2d8a4e; }
+    .ls-issue-status.in_progress { background: rgba(212, 160, 23, 0.2); color: #d4a017; }
+    .ls-issue-status.closed { background: rgba(85, 85, 85, 0.2); color: #666; }
+    .ls-issue-status.blocked { background: rgba(208, 64, 64, 0.2); color: #d04040; }
+    .ls-issue-priority {
+      font-size: 8px;
+      color: #888;
+    }
+    .ls-issue-title {
+      font-size: 11px;
+      color: #e0e0e0;
+      line-height: 1.4;
+      margin-bottom: 10px;
+    }
+    .ls-issue-field {
+      margin-bottom: 8px;
+    }
+    .ls-issue-field-label {
+      font-size: 8px;
+      color: #4a9eff;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      margin-bottom: 3px;
+    }
+    .ls-issue-field-value {
+      font-size: 10px;
+      color: #999;
+      line-height: 1.4;
+    }
+    .ls-dep-link {
+      font-size: 9px;
+      color: #4a9eff;
+      cursor: pointer;
+      text-decoration: none;
+    }
+    .ls-dep-link:hover { text-decoration: underline; color: #6bb5ff; }
+    .ls-placeholder {
+      font-size: 10px;
+      color: #444;
+      padding: 20px 12px;
+      text-align: center;
+      font-style: italic;
+    }
+
     /* bd-69y6v: Control panel — slide-out from right */
     #control-panel {
       position: fixed;
@@ -654,6 +940,65 @@
       line-height: 1;
     }
 
+    /* bd-inqge: Right sidebar — persistent panel */
+    #right-sidebar {
+      position: fixed;
+      top: 0;
+      right: 0;
+      width: 260px;
+      height: calc(100vh - 120px);
+      background: rgba(10, 10, 18, 0.92);
+      border-left: 1px solid #1a1a2a;
+      overflow-y: auto;
+      overflow-x: hidden;
+      padding: 8px 0;
+      box-sizing: border-box;
+      backdrop-filter: blur(8px);
+      z-index: 95;
+      transition: transform 0.2s ease-out, width 0.2s ease-out;
+      display: flex;
+      flex-direction: column;
+    }
+    #right-sidebar.collapsed { width: 32px; overflow: hidden; }
+    #right-sidebar::-webkit-scrollbar { width: 4px; }
+    #right-sidebar::-webkit-scrollbar-thumb { background: #2a2a3a; border-radius: 2px; }
+
+    .rs-header {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 4px 10px; flex-shrink: 0;
+    }
+    .rs-title { font-size: 10px; font-weight: 600; color: #666; text-transform: uppercase; letter-spacing: 1px; }
+    #right-sidebar.collapsed .rs-title { display: none; }
+    .rs-collapse-btn { background: none; border: none; color: #555; cursor: pointer; font-size: 12px; padding: 2px 4px; }
+    .rs-collapse-btn:hover { color: #fff; }
+
+    .rs-section { border-top: 1px solid #1a1a2a; padding: 8px 10px; flex-shrink: 0; }
+    .rs-section:first-of-type { border-top: none; }
+    #right-sidebar.collapsed .rs-section { display: none; }
+    .rs-section-header { display: flex; justify-content: space-between; align-items: center; cursor: pointer; user-select: none; margin-bottom: 6px; }
+    .rs-section-label { font-size: 9px; font-weight: 600; color: #888; text-transform: uppercase; letter-spacing: 1px; }
+    .rs-section-toggle { font-size: 9px; color: #555; transition: transform 0.15s; }
+    .rs-section.collapsed .rs-section-toggle { transform: rotate(-90deg); }
+    .rs-section-body { padding-top: 2px; }
+    .rs-section.collapsed .rs-section-body { display: none; }
+
+    .rs-epic-item { margin-bottom: 6px; cursor: pointer; }
+    .rs-epic-item:hover .rs-epic-name { color: #fff; }
+    .rs-epic-name { font-size: 9px; color: #999; font-family: 'JetBrains Mono', monospace; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin-bottom: 2px; }
+    .rs-epic-bar { height: 4px; background: #1a1a2a; border-radius: 2px; overflow: hidden; display: flex; }
+    .rs-epic-bar > span { height: 100%; transition: width 0.3s ease; }
+    .rs-epic-pct { font-size: 8px; color: #555; float: right; }
+
+    .rs-decision-item { margin-bottom: 8px; padding: 6px 8px; background: rgba(20, 20, 35, 0.6); border-left: 2px solid #d4a017; border-radius: 0 3px 3px 0; }
+    .rs-decision-prompt { font-size: 9px; color: #aaa; margin-bottom: 4px; line-height: 1.3; max-height: 40px; overflow: hidden; }
+    .rs-decision-options { display: flex; gap: 4px; flex-wrap: wrap; }
+    .rs-decision-opt { font-size: 8px; color: #888; background: rgba(20, 20, 35, 0.8); border: 1px solid #2a2a3a; border-radius: 3px; padding: 2px 6px; cursor: pointer; }
+    .rs-decision-opt:hover { color: #fff; border-color: #d4a017; }
+
+    .rs-blocked-item { font-size: 9px; color: #d04040; padding: 2px 0; font-family: 'JetBrains Mono', monospace; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; cursor: pointer; }
+    .rs-blocked-item:hover { color: #ff6666; text-decoration: underline; }
+    .rs-empty { font-size: 9px; color: #444; font-style: italic; }
+
     /* Context menu */
     #context-menu {
       position: fixed;
@@ -750,10 +1095,10 @@
       vertical-align: middle;
     }
 
-    /* Minimap */
+    /* Minimap — positioned above bottom HUD bar (bd-ddj44) */
     #minimap {
       position: fixed;
-      bottom: 56px;
+      bottom: 136px;
       right: 16px;
       z-index: 100;
       width: 180px;
@@ -768,7 +1113,7 @@
     #minimap:hover { border-color: #4a9eff; }
     #minimap-label {
       position: fixed;
-      bottom: 198px;
+      bottom: 278px;
       right: 16px;
       z-index: 100;
       font-size: 9px;
@@ -946,22 +1291,17 @@
       100% { border-left-color: #4a9eff; }
     }
 
-    /* Agent activity feed windows (bd-kau4k) */
+    /* Agent activity feed windows — docked in bottom-hud-center (bd-ddj44) */
     #agent-windows {
-      position: fixed;
-      bottom: 0;
-      left: 50%;
-      transform: translateX(-50%);
-      z-index: 260;
+      flex: 1;
       display: flex;
       flex-direction: row;
-      justify-content: center;
       gap: 4px;
-      padding: 0 4px 4px;
-      pointer-events: none;
+      padding: 4px 8px;
+      pointer-events: auto;
       overflow-x: auto;
       overflow-y: hidden;
-      max-width: 95vw;
+      min-height: 0;
     }
     #agent-windows::-webkit-scrollbar { height: 3px; }
     #agent-windows::-webkit-scrollbar-thumb { background: #2a2a3a; }
@@ -980,7 +1320,7 @@
       transition: height 0.2s ease;
     }
     .agent-window.collapsed { height: 28px; overflow: hidden; }
-    .agent-window:not(.collapsed) { height: 280px; }
+    .agent-window:not(.collapsed) { height: 100%; }
 
     /* bd-9wxm9: Resize handle on top edge of agent window */
     .agent-window-resize-handle {
@@ -1504,23 +1844,77 @@
     <div id="filter-count"></div>
   </div>
 
-  <div id="legend">
-    <div class="item"><span class="dot" style="background:#2d8a4e"></span> open</div>
-    <div class="item"><span class="dot" style="background:#d4a017"></span> active</div>
-    <div class="item"><span class="dot" style="background:#8b45a6"></span> epic</div>
-    <div class="item"><span class="dot" style="background:#d04040"></span> blocked</div>
-    <div class="item"><span class="dot" style="background:#ff6b35"></span> agent</div>
-    <span style="color:#333;margin:0 4px">|</span>
-    <div class="item"><span style="color:#d04040;font-size:12px">&#x1F6E1;</span> blocks</div>
-    <div class="item"><span style="color:#d4a017;font-size:12px">&#x23F0;</span> waits</div>
-    <div class="item"><span style="color:#8b45a6;font-size:12px">&#x1F517;</span> parent</div>
-  </div>
-
   <div id="tooltip"></div>
   <span id="minimap-label">minimap</span>
   <canvas id="minimap" width="360" height="280"></canvas>
-  <div id="status">connecting...</div>
-  <div id="keyhints">/ search &middot; enter fly &middot; &uarr;&darr; cycle &middot; esc close &middot; r refresh &middot; b bloom &middot; l labels &middot; m minimap &middot; f filters &middot; g controls &middot; 1-5 layout &middot; shift+drag select &middot; A agents</div>
+
+  <!-- Bottom HUD Bar (bd-ddj44) -->
+  <div id="bottom-hud">
+    <!-- Left: quick actions + legend -->
+    <div id="bottom-hud-left">
+      <div>
+        <div class="hud-section-label">Quick Actions</div>
+        <div id="hud-quick-actions">
+          <button class="ctrl-btn" id="hud-btn-refresh" title="Refresh graph (r)">refresh</button>
+          <button class="ctrl-btn" id="hud-btn-labels" title="Toggle labels (l)">labels</button>
+          <button class="ctrl-btn" id="hud-btn-agents" title="Agents view (A)">agents</button>
+        </div>
+      </div>
+      <div id="legend">
+        <div class="item"><span class="dot" style="background:#2d8a4e"></span> open</div>
+        <div class="item"><span class="dot" style="background:#d4a017"></span> active</div>
+        <div class="item"><span class="dot" style="background:#8b45a6"></span> epic</div>
+        <div class="item"><span class="dot" style="background:#d04040"></span> blocked</div>
+        <div class="item"><span class="dot" style="background:#ff6b35"></span> agent</div>
+        <span style="color:#333;margin:0 4px">|</span>
+        <div class="item"><span style="color:#d04040;font-size:12px">&#x1F6E1;</span> blocks</div>
+        <div class="item"><span style="color:#d4a017;font-size:12px">&#x23F0;</span> waits</div>
+        <div class="item"><span style="color:#8b45a6;font-size:12px">&#x1F517;</span> parent</div>
+      </div>
+    </div>
+
+    <!-- Center: activity stream (agent windows) -->
+    <div id="bottom-hud-center">
+      <div class="hud-section-label">Activity Stream</div>
+      <div id="agent-windows"></div>
+    </div>
+
+    <!-- Right: project pulse + status -->
+    <div id="bottom-hud-right">
+      <div>
+        <div class="hud-section-label">Project Pulse</div>
+        <div id="hud-project-pulse">
+          <div id="status">connecting...</div>
+        </div>
+      </div>
+      <div id="keyhints">/ search &middot; enter fly &middot; &uarr;&darr; cycle &middot; esc close &middot; r refresh &middot; b bloom &middot; l labels &middot; m minimap &middot; f filters &middot; g controls &middot; 1-5 layout &middot; shift+drag select &middot; A agents</div>
+    </div>
+  </div>
+
+  <!-- Left Sidebar — Agent Roster & Focused Issue (bd-nnr22) -->
+  <div id="left-sidebar">
+    <div class="ls-header">
+      <span class="ls-title">Sidebar</span>
+      <button class="ls-close" id="ls-close">&times;</button>
+    </div>
+    <div id="ls-agent-roster" class="ls-section">
+      <div class="ls-section-header">
+        <span class="ls-section-label">Agent Roster</span>
+        <span class="ls-section-count" id="ls-agent-count">0</span>
+      </div>
+      <div id="ls-agent-list">
+        <div class="ls-agent-empty">No agents connected</div>
+      </div>
+    </div>
+    <div id="ls-focused-issue" class="ls-section">
+      <div class="ls-section-header">
+        <span class="ls-section-label">Focused Issue</span>
+      </div>
+      <div id="ls-focused-content">
+        <div class="ls-placeholder">Click a node to inspect</div>
+      </div>
+    </div>
+  </div>
 
   <!-- Filter dashboard slide-out panel (bd-8o2gd phase 2) -->
   <div id="filter-dashboard">
@@ -1597,6 +1991,44 @@
       <span id="fd-node-count">0/0 nodes</span>
       <button class="fd-reset" id="fd-share" title="Copy shareable URL">share</button>
       <button class="fd-reset" id="fd-reset">reset</button>
+    </div>
+  </div>
+
+  <!-- bd-inqge: Right sidebar -->
+  <div id="right-sidebar">
+    <div class="rs-header">
+      <span class="rs-title">PROJECT</span>
+      <button class="rs-collapse-btn" id="rs-collapse" title="Collapse sidebar">&#x25B6;</button>
+    </div>
+
+    <div class="rs-section" id="rs-epics">
+      <div class="rs-section-header">
+        <span class="rs-section-label">Epic Progress</span>
+        <span class="rs-section-toggle">&#9660;</span>
+      </div>
+      <div class="rs-section-body" id="rs-epics-body">
+        <div class="rs-empty">loading...</div>
+      </div>
+    </div>
+
+    <div class="rs-section" id="rs-decisions">
+      <div class="rs-section-header">
+        <span class="rs-section-label">Decisions</span>
+        <span class="rs-section-toggle">&#9660;</span>
+      </div>
+      <div class="rs-section-body" id="rs-decisions-body">
+        <div class="rs-empty">no pending decisions</div>
+      </div>
+    </div>
+
+    <div class="rs-section" id="rs-health">
+      <div class="rs-section-header">
+        <span class="rs-section-label">Dep Health</span>
+        <span class="rs-section-toggle">&#9660;</span>
+      </div>
+      <div class="rs-section-body" id="rs-health-body">
+        <div class="rs-empty">loading...</div>
+      </div>
     </div>
   </div>
 
@@ -1761,7 +2193,6 @@
   <canvas id="select-overlay"></canvas>
   <div id="bulk-menu"></div>
   <div id="agents-view"></div>
-  <div id="agent-windows"></div>
 
   <script type="module" src="/src/main.js"></script>
 </body>

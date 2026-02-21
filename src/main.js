@@ -2092,6 +2092,19 @@ function updateStats(stats, issues) {
     parts.push(`<span>${open}</span> open`);
     parts.push(`<span>${active}</span> active`);
     if (blocked) parts.push(`<span>${blocked}</span> blocked`);
+
+    // Update Bottom HUD project pulse (bd-ddj44)
+    const pulseEl = document.getElementById('hud-project-pulse');
+    if (pulseEl) {
+      const agentCount = issues.filter(n => n.issue_type === 'agent').length;
+      pulseEl.innerHTML = `
+        <div class="pulse-stat"><span class="pulse-stat-label">open</span><span class="pulse-stat-value">${open}</span></div>
+        <div class="pulse-stat"><span class="pulse-stat-label">active</span><span class="pulse-stat-value good">${active}</span></div>
+        <div class="pulse-stat"><span class="pulse-stat-label">blocked</span><span class="pulse-stat-value${blocked ? ' bad' : ''}">${blocked}</span></div>
+        <div class="pulse-stat"><span class="pulse-stat-label">agents</span><span class="pulse-stat-value${agentCount ? ' warn' : ''}">${agentCount}</span></div>
+        <div class="pulse-stat"><span class="pulse-stat-label">shown</span><span class="pulse-stat-value">${issues.length}</span></div>
+      `;
+    }
   }
   parts.push(`<span>${issues.length}</span> shown`);
   el.innerHTML = parts.join(' &middot; ');
@@ -4940,8 +4953,19 @@ function setupControls() {
   // Labels toggle (bd-1o2f7)
   document.getElementById('btn-labels').onclick = () => toggleLabels();
 
+  // Bottom HUD bar quick-action buttons (bd-ddj44)
+  const hudBtnRefresh = document.getElementById('hud-btn-refresh');
+  const hudBtnLabels = document.getElementById('hud-btn-labels');
+  const hudBtnAgents = document.getElementById('hud-btn-agents');
+  if (hudBtnRefresh) hudBtnRefresh.onclick = () => refresh();
+  if (hudBtnLabels) hudBtnLabels.onclick = () => toggleLabels();
+  if (hudBtnAgents) hudBtnAgents.onclick = () => toggleAgentsView();
+
   // bd-69y6v: Control panel toggle & wiring
   initControlPanel();
+
+  // bd-inqge: Right sidebar
+  initRightSidebar();
 
   // Search — debounced input updates filter, Enter/arrows navigate results (bd-7n4g8)
   searchInput.addEventListener('input', (e) => {
@@ -5270,6 +5294,7 @@ async function refresh() {
 
   applyFilters();
   rebuildEpicIndex();
+  updateRightSidebar(); // bd-inqge
 
   // Compute pending decision badge counts per parent node (bd-o6tgy)
   const nodeById = new Map(mergedNodes.map(n => [n.id, n]));
@@ -6055,6 +6080,151 @@ function enableTopResize(el) {
     resizing = false;
     handle.classList.remove('active');
     el.style.transition = '';
+  });
+}
+
+// --- bd-inqge: Right Sidebar ---
+
+let rightSidebarCollapsed = false;
+
+function toggleRightSidebar() {
+  const sidebar = document.getElementById('right-sidebar');
+  if (!sidebar) return;
+  rightSidebarCollapsed = !rightSidebarCollapsed;
+  sidebar.classList.toggle('collapsed', rightSidebarCollapsed);
+  const btn = document.getElementById('rs-collapse');
+  if (btn) btn.innerHTML = rightSidebarCollapsed ? '&#x25C0;' : '&#x25B6;';
+}
+
+function initRightSidebar() {
+  const sidebar = document.getElementById('right-sidebar');
+  if (!sidebar) return;
+
+  // Collapse button
+  const collapseBtn = document.getElementById('rs-collapse');
+  if (collapseBtn) collapseBtn.onclick = () => toggleRightSidebar();
+
+  // Collapsible sections
+  sidebar.querySelectorAll('.rs-section-header').forEach(header => {
+    header.onclick = () => header.parentElement.classList.toggle('collapsed');
+  });
+}
+
+function updateRightSidebar() {
+  if (!graphData || rightSidebarCollapsed) return;
+  updateEpicProgress();
+  updateDepHealth();
+  updateDecisionQueue();
+}
+
+function updateEpicProgress() {
+  const body = document.getElementById('rs-epics-body');
+  if (!body || !graphData) return;
+
+  // Find all epic nodes
+  const epics = graphData.nodes.filter(n => n.issue_type === 'epic' && !n._hidden);
+  if (epics.length === 0) { body.innerHTML = '<div class="rs-empty">no epics</div>'; return; }
+
+  // For each epic, find children via parent-child links
+  const html = epics.map(epic => {
+    const children = graphData.links
+      .filter(l => l.dep_type === 'parent-child' &&
+        (typeof l.source === 'object' ? l.source.id : l.source) === epic.id)
+      .map(l => {
+        const tgtId = typeof l.target === 'object' ? l.target.id : l.target;
+        return graphData.nodes.find(n => n.id === tgtId);
+      })
+      .filter(Boolean);
+
+    const total = children.length;
+    if (total === 0) return '';
+
+    const closed = children.filter(c => c.status === 'closed').length;
+    const active = children.filter(c => c.status === 'in_progress').length;
+    const blocked = children.filter(c => c._blocked).length;
+    const pct = Math.round((closed / total) * 100);
+
+    const closedW = (closed / total) * 100;
+    const activeW = (active / total) * 100;
+    const blockedW = (blocked / total) * 100;
+
+    const name = epic.title || epic.id.replace(/^[a-z]+-/, '');
+    return `<div class="rs-epic-item" data-node-id="${escapeHtml(epic.id)}" title="${escapeHtml(epic.id)}: ${escapeHtml(epic.title || '')}">
+      <div class="rs-epic-name">${escapeHtml(name)} <span class="rs-epic-pct">${pct}%</span></div>
+      <div class="rs-epic-bar">
+        <span style="width:${closedW}%;background:#2d8a4e"></span>
+        <span style="width:${activeW}%;background:#d4a017"></span>
+        <span style="width:${blockedW}%;background:#d04040"></span>
+      </div>
+    </div>`;
+  }).filter(Boolean).join('');
+
+  body.innerHTML = html || '<div class="rs-empty">no epics with children</div>';
+
+  // Click to fly to epic
+  body.querySelectorAll('.rs-epic-item').forEach(el => {
+    el.onclick = () => {
+      const nodeId = el.dataset.nodeId;
+      const node = graphData.nodes.find(n => n.id === nodeId);
+      if (node) handleNodeClick(node);
+    };
+  });
+}
+
+function updateDepHealth() {
+  const body = document.getElementById('rs-health-body');
+  if (!body || !graphData) return;
+
+  const blocked = graphData.nodes.filter(n => n._blocked && !n._hidden && n.status !== 'closed');
+  if (blocked.length === 0) {
+    body.innerHTML = '<div class="rs-empty">no blocked items</div>';
+    return;
+  }
+
+  const html = blocked.slice(0, 15).map(n => {
+    const name = n.title || n.id.replace(/^[a-z]+-/, '');
+    return `<div class="rs-blocked-item" data-node-id="${escapeHtml(n.id)}" title="${escapeHtml(n.id)}">${escapeHtml(name)}</div>`;
+  }).join('');
+
+  body.innerHTML = `<div style="font-size:9px;color:#d04040;margin-bottom:4px">${blocked.length} blocked</div>${html}`;
+
+  body.querySelectorAll('.rs-blocked-item').forEach(el => {
+    el.onclick = () => {
+      const node = graphData.nodes.find(n => n.id === el.dataset.nodeId);
+      if (node) handleNodeClick(node);
+    };
+  });
+}
+
+function updateDecisionQueue() {
+  const body = document.getElementById('rs-decisions-body');
+  if (!body || !graphData) return;
+
+  // Find decision/gate nodes that are pending
+  const decisions = graphData.nodes.filter(n =>
+    (n.issue_type === 'decision' || n.issue_type === 'gate') &&
+    n.status !== 'closed' && !n._hidden
+  );
+
+  if (decisions.length === 0) {
+    body.innerHTML = '<div class="rs-empty">no pending decisions</div>';
+    return;
+  }
+
+  const html = decisions.slice(0, 8).map(d => {
+    const prompt = d.title || d.id;
+    return `<div class="rs-decision-item" data-node-id="${escapeHtml(d.id)}">
+      <div class="rs-decision-prompt">${escapeHtml(prompt)}</div>
+    </div>`;
+  }).join('');
+
+  body.innerHTML = html;
+
+  body.querySelectorAll('.rs-decision-item').forEach(el => {
+    el.onclick = () => {
+      const node = graphData.nodes.find(n => n.id === el.dataset.nodeId);
+      if (node) handleNodeClick(node);
+    };
   });
 }
 
