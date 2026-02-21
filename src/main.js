@@ -6152,6 +6152,7 @@ function initControlPanel() {
 
   // Node color overrides — stored in a config object
   window.__beads3d_colorOverrides = {};
+  let _colorDebounce = null;
   const colorMap = {
     'cp-color-open': 'open',
     'cp-color-active': 'in_progress',
@@ -6164,8 +6165,11 @@ function initControlPanel() {
     if (!el) continue;
     el.addEventListener('input', () => {
       window.__beads3d_colorOverrides[key] = el.value;
-      // Force graph re-render to pick up new colors
-      if (graph) graph.nodeColor(graph.nodeColor());
+      // Debounced re-render — color pickers fire rapidly
+      clearTimeout(_colorDebounce);
+      _colorDebounce = setTimeout(() => {
+        if (graph) graph.nodeThreeObject(graph.nodeThreeObject());
+      }, 150);
     });
   }
 

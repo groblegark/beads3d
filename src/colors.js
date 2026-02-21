@@ -53,18 +53,22 @@ export const DECISION_COLORS = {
 };
 
 export function nodeColor(issue) {
+  // bd-sz1ha: check control panel color overrides
+  const ov = typeof window !== 'undefined' && window.__beads3d_colorOverrides;
+
   // Blocked nodes glow red
-  if (issue._blocked) return '#d04040';
+  if (issue._blocked) return (ov && ov.blocked) || '#d04040';
   // Agents get special orange
-  if (issue.issue_type === 'agent') return '#ff6b35';
+  if (issue.issue_type === 'agent') return (ov && ov.agent) || '#ff6b35';
   // Epics always purple
-  if (issue.issue_type === 'epic') return '#8b45a6';
+  if (issue.issue_type === 'epic') return (ov && ov.epic) || '#8b45a6';
   // Decision/gate nodes colored by decision state (bd-zr374)
   if (issue.issue_type === 'gate' || issue.issue_type === 'decision') {
     const ds = issue._decisionState || (issue.status === 'closed' ? 'resolved' : 'pending');
     return DECISION_COLORS[ds] || DECISION_COLORS.pending;
   }
-  // Otherwise by status
+  // Otherwise by status — check override for the status key
+  if (ov && ov[issue.status]) return ov[issue.status];
   return STATUS_COLORS[issue.status] || '#555';
 }
 
