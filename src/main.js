@@ -270,50 +270,17 @@ const _agentRoster = new Map(); // agent name → { status, task, tool, idleSinc
 let _epicNodes = [];       // sorted array of epic nodes, rebuilt on refresh
 let _epicCycleIndex = -1;  // current position in _epicNodes (-1 = none)
 
+// --- GPU Particle Pool + Selection VFX (bd-m9525) ---
+let _particlePool = null;  // GPU particle pool instance
+let _hoveredNode = null;   // currently hovered node for glow warmup
+let _hoverGlowTimer = 0;   // accumulator for hover glow particle emission
+let _selectionOrbitTimer = 0; // accumulator for orbit ring particle emission
+let _energyStreamTimer = 0;  // accumulator for dependency energy stream particles
+let _flyToTrailActive = false; // true during camera fly-to for particle trail
+
 // --- Event sprites: pop-up animations for status changes + new associations (bd-9qeto) ---
 const eventSprites = []; // { mesh, birth, lifetime, type, ... }
 const EVENT_SPRITE_MAX = 40;
-
-// --- GPU Particle Pool (bd-8b6ly) ---
-let _particlePool = null; // initialized in graph setup, see createParticlePool()
-
-// Effect presets — type name → particle emission config (bd-8b6ly)
-const EFFECT_PRESETS = {
-  // Status transitions
-  'status-open':        { color: 0x2d8a4e, count: 8,  velocity: [0, 3, 0],   spread: 2, lifetime: 1.5, size: 2.5 },
-  'status-in_progress': { color: 0xd4a017, count: 15, velocity: [0, 2, 0],   spread: 3, lifetime: 2.0, size: 3.0 },
-  'status-blocked':     { color: 0xd04040, count: 12, velocity: [0, -1, 0],  spread: 2, lifetime: 1.0, size: 2.0 },
-  'status-closed':      { color: 0x2d8a4e, count: 20, velocity: [0, 0, 0],   spread: 1, lifetime: 2.5, size: 1.5 },
-  'status-unblocked':   { color: 0x4a9eff, count: 15, velocity: [0, 4, 0],   spread: 3, lifetime: 2.0, size: 2.5 },
-  // Agent events
-  'agent-started':      { color: 0xff6b35, count: 20, velocity: [0, 5, 0],   spread: 2, lifetime: 3.0, size: 2.0 },
-  'agent-crashed':      { color: 0xd04040, count: 25, velocity: [0, 0, 0],   spread: 6, lifetime: 2.0, size: 3.0 },
-  'agent-idle':         { color: 0xd4a017, count: 3,  velocity: [0, 1, 0],   spread: 1, lifetime: 4.0, size: 1.5 },
-  'agent-tool':         { color: 0xff6b35, count: 5,  velocity: [0, 2, 0],   spread: 1, lifetime: 0.5, size: 1.5 },
-  'agent-tool-done':    { color: 0x2d8a4e, count: 8,  velocity: [0, 3, 0],   spread: 2, lifetime: 0.8, size: 2.0 },
-  // Decision events
-  'decision-created':   { color: 0xd4a017, count: 10, velocity: [0, 2, 0],   spread: 2, lifetime: 1.5, size: 2.5 },
-  'decision-resolved':  { color: 0x2d8a4e, count: 15, velocity: [0, 4, 0],   spread: 3, lifetime: 2.0, size: 3.0 },
-  'decision-expired':   { color: 0xd04040, count: 8,  velocity: [0, -2, 0],  spread: 2, lifetime: 1.5, size: 2.0 },
-  // Edge sparks
-  'edge-spark':         { color: 0x4a9eff, count: 8,  velocity: [0, 0, 0],   spread: 1, lifetime: 1.2, size: 1.5 },
-  // Selection
-  'select':             { color: 0x4a9eff, count: 12, velocity: [0, 2, 0],   spread: 2, lifetime: 1.0, size: 2.0 },
-};
-
-// High-level effect API: spawnEffect(type, position, overrides) (bd-8b6ly)
-function spawnEffect(type, pos, overrides = {}) {
-  if (!_particlePool) return;
-  const preset = EFFECT_PRESETS[type];
-  if (!preset) { console.warn('Unknown effect:', type); return; }
-  const opts = { ...preset, ...overrides };
-  _particlePool.emit(pos, opts.color, opts.count, {
-    velocity: opts.velocity,
-    spread: opts.spread,
-    lifetime: opts.lifetime,
-    size: opts.size,
-  });
-}
 
 // Status pulse colors by transition
 const STATUS_PULSE_COLORS = {
@@ -329,11 +296,6 @@ function spawnStatusPulse(node, oldStatus, newStatus) {
   if (!node || !graph) return;
   const color = STATUS_PULSE_COLORS[newStatus] || 0x4a9eff;
   const size = nodeSize({ priority: node.priority, issue_type: node.issue_type });
-
-  // GPU particle burst (bd-8b6ly)
-  const pos = { x: node.x || 0, y: node.y || 0, z: node.z || 0 };
-  const effectKey = (oldStatus === 'blocked' && newStatus !== 'blocked') ? 'status-unblocked' : `status-${newStatus}`;
-  spawnEffect(effectKey, pos);
 
   // Ring 1: fast expanding ring
   const ringGeo = new THREE.RingGeometry(size * 0.8, size * 1.0, 24);
@@ -378,12 +340,6 @@ function spawnStatusPulse(node, oldStatus, newStatus) {
 function spawnEdgeSpark(sourceNode, targetNode, color) {
   if (!sourceNode || !targetNode || !graph) return;
   const sparkColor = color || 0x4a9eff;
-
-  // GPU particle burst at midpoint (bd-8b6ly)
-  const midX = ((sourceNode.x || 0) + (targetNode.x || 0)) / 2;
-  const midY = ((sourceNode.y || 0) + (targetNode.y || 0)) / 2;
-  const midZ = ((sourceNode.z || 0) + (targetNode.z || 0)) / 2;
-  spawnEffect('edge-spark', { x: midX, y: midY, z: midZ }, { color: sparkColor });
 
   // Create 3 small sphere sparks that travel from source to target
   for (let i = 0; i < 3; i++) {
@@ -936,7 +892,7 @@ function initGraph() {
       // Agent: retro lunar lander — cute spaceship with landing legs (beads-yp2y)
       if (n.issue_type === 'agent') {
         group.remove(core);
-        group.remove(glow);
+        group.remove(halo);
         const s = size;
         const matOrange = new THREE.MeshBasicMaterial({ color: 0xff6b35, transparent: true, opacity: 0.85 });
         const matDark = new THREE.MeshBasicMaterial({ color: 0x2a2a3a, transparent: true, opacity: 0.9 });
@@ -1281,7 +1237,7 @@ function initGraph() {
   const stars = createStarField(1500, 500);
   scene.add(stars);
 
-  // Particle pool — GPU-instanced particles for all visual effects (bd-8b6ly)
+  // GPU particle pool for all VFX (bd-m9525)
   _particlePool = createParticlePool(2000);
   _particlePool.mesh.userData.isParticlePool = true;
   scene.add(_particlePool.mesh);
@@ -1316,6 +1272,180 @@ function initGraph() {
   return graph;
 }
 
+// --- Selection VFX (bd-m9525) ---
+// Continuous particle effects for selected/hovered nodes.
+
+// Update all selection-related VFX each frame.
+function updateSelectionVFX(t) {
+  const dt = 0.016; // ~60fps
+
+  // 1. Hover glow warmup — gentle particle emission on hovered node
+  if (_hoveredNode && _hoveredNode !== selectedNode) {
+    _hoverGlowTimer += dt;
+    if (_hoverGlowTimer > 0.15) { // emit every 150ms
+      _hoverGlowTimer = 0;
+      const pos = { x: _hoveredNode.x || 0, y: _hoveredNode.y || 0, z: _hoveredNode.z || 0 };
+      const size = nodeSize({ priority: _hoveredNode.priority, issue_type: _hoveredNode.issue_type });
+      _particlePool.emit(pos, 0x4a9eff, 2, {
+        velocity: [0, 0.5, 0],
+        spread: size * 0.6,
+        lifetime: 0.6,
+        size: 1.2,
+      });
+    }
+  }
+
+  // 2. Selection orbit ring — particles orbiting the selected node
+  if (selectedNode) {
+    _selectionOrbitTimer += dt;
+    if (_selectionOrbitTimer > 0.08) { // emit every 80ms
+      _selectionOrbitTimer = 0;
+      const pos = { x: selectedNode.x || 0, y: selectedNode.y || 0, z: selectedNode.z || 0 };
+      const size = nodeSize({ priority: selectedNode.priority, issue_type: selectedNode.issue_type });
+      const radius = size * 1.8;
+      const angle = t * 2.5; // orbit speed
+      // Emit at orbit position with tangential velocity
+      const orbitPos = {
+        x: pos.x + Math.cos(angle) * radius,
+        y: pos.y + (Math.random() - 0.5) * size * 0.5,
+        z: pos.z + Math.sin(angle) * radius,
+      };
+      _particlePool.emit(orbitPos, 0x4a9eff, 1, {
+        velocity: [-Math.sin(angle) * 1.5, 0.3, Math.cos(angle) * 1.5],
+        spread: 0.3,
+        lifetime: 0.8,
+        size: 1.5,
+      });
+      // Second particle at opposite side
+      const orbitPos2 = {
+        x: pos.x + Math.cos(angle + Math.PI) * radius,
+        y: pos.y + (Math.random() - 0.5) * size * 0.5,
+        z: pos.z + Math.sin(angle + Math.PI) * radius,
+      };
+      _particlePool.emit(orbitPos2, 0x4a9eff, 1, {
+        velocity: [-Math.sin(angle + Math.PI) * 1.5, 0.3, Math.cos(angle + Math.PI) * 1.5],
+        spread: 0.3,
+        lifetime: 0.8,
+        size: 1.5,
+      });
+    }
+  }
+
+  // 3. Dependency energy streams — particle flow along highlighted links
+  if (selectedNode && highlightLinks.size > 0) {
+    _energyStreamTimer += dt;
+    if (_energyStreamTimer > 0.12) { // emit every 120ms
+      _energyStreamTimer = 0;
+      for (const l of graphData.links) {
+        if (!highlightLinks.has(linkKey(l))) continue;
+        const src = typeof l.source === 'object' ? l.source : graphData.nodes.find(n => n.id === l.source);
+        const tgt = typeof l.target === 'object' ? l.target : graphData.nodes.find(n => n.id === l.target);
+        if (!src || !tgt) continue;
+        // Spawn particle at random point along the link
+        const progress = Math.random();
+        const pos = {
+          x: (src.x || 0) + ((tgt.x || 0) - (src.x || 0)) * progress,
+          y: (src.y || 0) + ((tgt.y || 0) - (src.y || 0)) * progress,
+          z: (src.z || 0) + ((tgt.z || 0) - (src.z || 0)) * progress,
+        };
+        // Velocity towards target
+        const dx = (tgt.x || 0) - (src.x || 0);
+        const dy = (tgt.y || 0) - (src.y || 0);
+        const dz = (tgt.z || 0) - (src.z || 0);
+        const len = Math.sqrt(dx * dx + dy * dy + dz * dz) || 1;
+        const speed = 3;
+        const linkColorHex = l.dep_type === 'blocks' ? 0xd04040 :
+                             l.dep_type === 'assigned_to' ? 0xff6b35 : 0x4a9eff;
+        _particlePool.emit(pos, linkColorHex, 1, {
+          velocity: [dx / len * speed, dy / len * speed, dz / len * speed],
+          spread: 0.5,
+          lifetime: Math.min(len / (speed * 60), 1.5),
+          size: 1.0,
+        });
+      }
+    }
+  }
+
+  // 4. Connected materia pulse — highlighted nodes pulse particles in unison
+  if (selectedNode && highlightNodes.size > 1) {
+    const pulseBeat = Math.sin(t * 3) > 0.95; // brief pulse every ~2 seconds
+    if (pulseBeat && !updateSelectionVFX._lastPulse) {
+      for (const nodeId of highlightNodes) {
+        if (nodeId === selectedNode.id) continue;
+        const node = graphData.nodes.find(n => n.id === nodeId);
+        if (!node) continue;
+        const pos = { x: node.x || 0, y: node.y || 0, z: node.z || 0 };
+        const color = nodeColor(node);
+        _particlePool.emit(pos, color, 4, {
+          velocity: [0, 1.5, 0],
+          spread: 2,
+          lifetime: 0.8,
+          size: 1.5,
+        });
+      }
+    }
+    updateSelectionVFX._lastPulse = pulseBeat;
+  }
+}
+updateSelectionVFX._lastPulse = false;
+
+// Spawn selection burst — enhanced materia intensification on click (bd-m9525)
+function spawnSelectionBurst(node) {
+  if (!_particlePool || !node) return;
+  const pos = { x: node.x || 0, y: node.y || 0, z: node.z || 0 };
+  const size = nodeSize({ priority: node.priority, issue_type: node.issue_type });
+  const color = nodeColor(node);
+
+  // Inner materia burst — bright core particles
+  _particlePool.emit(pos, 0xffffff, 6, {
+    velocity: [0, 2, 0],
+    spread: size * 0.3,
+    lifetime: 0.5,
+    size: 2.0,
+  });
+
+  // Outer colored burst — expanding ring of node-colored particles
+  for (let i = 0; i < 12; i++) {
+    const angle = (i / 12) * Math.PI * 2;
+    const ringPos = {
+      x: pos.x + Math.cos(angle) * size * 0.5,
+      y: pos.y,
+      z: pos.z + Math.sin(angle) * size * 0.5,
+    };
+    _particlePool.emit(ringPos, color, 1, {
+      velocity: [Math.cos(angle) * 3, 0.5 + Math.random(), Math.sin(angle) * 3],
+      spread: 0.2,
+      lifetime: 1.0,
+      size: 1.8,
+    });
+  }
+}
+
+// Camera fly-to particle trail (bd-m9525)
+function spawnFlyToTrail(fromPos, toPos) {
+  if (!_particlePool) return;
+  // Spawn particles along the path between camera start and target
+  const steps = 8;
+  for (let i = 0; i < steps; i++) {
+    const progress = i / steps;
+    const pos = {
+      x: fromPos.x + (toPos.x - fromPos.x) * progress,
+      y: fromPos.y + (toPos.y - fromPos.y) * progress,
+      z: fromPos.z + (toPos.z - fromPos.z) * progress,
+    };
+    // Delayed emission for trail effect
+    setTimeout(() => {
+      if (!_particlePool) return;
+      _particlePool.emit(pos, 0x4a9eff, 3, {
+        velocity: [0, 0.5, 0],
+        spread: 2,
+        lifetime: 1.2,
+        size: 1.0,
+      });
+    }, progress * 400);
+  }
+}
+
 // --- Selection logic ---
 
 // Unique key for a link (handles both object and string source/target)
@@ -1332,9 +1462,6 @@ function selectNode(node, componentIds) {
   highlightLinks.clear();
 
   if (!node) return;
-
-  // Particle burst on selection (bd-l7chu)
-  spawnEffect('select', { x: node.x || 0, y: node.y || 0, z: node.z || 0 });
 
   // If a pre-computed connected component is provided, highlight the full subgraph.
   // Otherwise fall back to direct neighbors only (e.g. for keyboard navigation).
@@ -1364,6 +1491,9 @@ function selectNode(node, componentIds) {
 
   // Force link width recalculation
   graph.linkWidth(graph.linkWidth());
+
+  // Materia selection burst VFX (bd-m9525)
+  spawnSelectionBurst(node);
 
   // bd-nnr22: update left sidebar focused issue
   if (typeof updateLeftSidebarFocus === 'function') updateLeftSidebarFocus(node);
@@ -1865,8 +1995,11 @@ function startAnimation() {
     // Update event sprites — status pulses + edge sparks (bd-9qeto)
     updateEventSprites(t);
 
-    // Update GPU particle pool (bd-8b6ly)
-    if (_particlePool) _particlePool.update(t);
+    // GPU particle pool update + selection VFX (bd-m9525)
+    if (_particlePool) {
+      _particlePool.update(t);
+      updateSelectionVFX(t);
+    }
 
     // Label anti-overlap: run every 4th frame for perf (beads-rgmh)
     if (!animate._labelFrame) animate._labelFrame = 0;
@@ -2219,6 +2352,9 @@ const tooltip = document.getElementById('tooltip');
 
 function handleNodeHover(node) {
   document.body.style.cursor = node ? 'pointer' : 'default';
+  // Track hovered node for VFX glow warmup (bd-m9525)
+  _hoveredNode = (node && !node._hidden) ? node : null;
+  _hoverGlowTimer = 0;
   if (!node || node._hidden) { hideTooltip(); return; }
 
   const pLabel = ['P0 CRIT', 'P1', 'P2', 'P3', 'P4'][node.priority] || '';
@@ -6221,6 +6357,9 @@ function toggleRightSidebar() {
   sidebar.classList.toggle('collapsed', rightSidebarCollapsed);
   const btn = document.getElementById('rs-collapse');
   if (btn) btn.innerHTML = rightSidebarCollapsed ? '&#x25C0;' : '&#x25B6;';
+  // Shift controls bar when sidebar collapses/expands (bd-kj8e5)
+  const controls = document.getElementById('controls');
+  if (controls) controls.classList.toggle('sidebar-collapsed', rightSidebarCollapsed);
 }
 
 function initRightSidebar() {
@@ -7322,10 +7461,6 @@ function connectBusStream() {
       const label = dootLabel(evt);
       if (!label) return;
 
-      // bd-9cpbc.2: always feed unified stream, even if node not found yet
-      const ufAgentId = resolveAgentIdLoose(evt);
-      if (ufAgentId) appendUnifiedEntry(ufAgentId, evt);
-
       const node = findAgentNode(evt);
       if (!node) {
         if (++_dootDrops <= 5) {
@@ -7336,18 +7471,6 @@ function connectBusStream() {
       }
 
       spawnDoot(node, label, dootColor(evt));
-
-      // Particle effects for bus events (bd-l7chu)
-      const nodePos = { x: node.x || 0, y: node.y || 0, z: node.z || 0 };
-      if (evt.type === 'AgentStarted') spawnEffect('agent-started', nodePos);
-      else if (evt.type === 'AgentCrashed') spawnEffect('agent-crashed', nodePos);
-      else if (evt.type === 'AgentIdle' || evt.type === 'OjAgentIdle') spawnEffect('agent-idle', nodePos);
-      else if (evt.type === 'PreToolUse') spawnEffect('agent-tool', nodePos);
-      else if (evt.type === 'PostToolUse') spawnEffect('agent-tool-done', nodePos);
-      else if (evt.type === 'MutationCreate') spawnEffect('status-open', nodePos);
-      else if (evt.type === 'DecisionCreated') spawnEffect('decision-created', nodePos);
-      else if (evt.type === 'DecisionResponded') spawnEffect('decision-resolved', nodePos);
-      else if (evt.type === 'DecisionExpired') spawnEffect('decision-expired', nodePos);
 
       // Event sprites: status change pulse + close burst (bd-9qeto)
       const p = evt.payload || {};
@@ -7513,9 +7636,6 @@ async function main() {
     window.__beads3d_spawnStatusPulse = spawnStatusPulse;
     window.__beads3d_spawnEdgeSpark = spawnEdgeSpark;
     window.__beads3d_eventSprites = () => eventSprites;
-    // GPU particle pool API (bd-8b6ly)
-    window.__beads3d_spawnEffect = spawnEffect;
-    window.__beads3d_particlePool = () => _particlePool;
     // Expose camera velocity system for testing (bd-zab4q)
     window.__beads3d_keysDown = _keysDown;
     window.__beads3d_camVelocity = _camVelocity;
