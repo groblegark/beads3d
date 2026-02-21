@@ -179,6 +179,229 @@ export function createSelectionRingMaterial() {
   });
 }
 
+// --- Materia Orb Shader (bd-1038x) ---
+// FFVII-inspired translucent sphere: bright inner core, absorbed edges.
+// Opposite of Fresnel rim-light — glow radiates from center outward.
+// Breathing pulse for in-progress nodes, intensity for selection.
+export function createMateriaMaterial(color, { opacity = 0.85, coreIntensity = 1.4, breathSpeed = 0.0 } = {}) {
+  return new THREE.ShaderMaterial({
+    uniforms: {
+      materiaColor: { value: new THREE.Color(color) },
+      opacity: { value: opacity },
+      coreIntensity: { value: coreIntensity },
+      breathSpeed: { value: breathSpeed },
+      time: { value: 0 },
+      selected: { value: 0.0 },
+    },
+    vertexShader: `
+      varying vec3 vNormal;
+      varying vec3 vViewDir;
+      varying vec3 vWorldPos;
+      void main() {
+        vNormal = normalize(normalMatrix * normal);
+        vec4 mvPos = modelViewMatrix * vec4(position, 1.0);
+        vViewDir = normalize(-mvPos.xyz);
+        vWorldPos = position;
+        gl_Position = projectionMatrix * mvPos;
+      }
+    `,
+    fragmentShader: `
+      uniform vec3 materiaColor;
+      uniform float opacity;
+      uniform float coreIntensity;
+      uniform float breathSpeed;
+      uniform float time;
+      uniform float selected;
+      varying vec3 vNormal;
+      varying vec3 vViewDir;
+      varying vec3 vWorldPos;
+      void main() {
+        // Core glow: brightest at center, absorbed at edges (inverted Fresnel)
+        float facing = abs(dot(vNormal, vViewDir));
+        float core = pow(facing, 0.8) * coreIntensity;
+
+        // Subsurface scattering approximation
+        float sss = 0.3 + 0.7 * facing;
+
+        // Breathing pulse (0 = no breathing, >0 = speed in Hz)
+        float breath = 1.0;
+        if (breathSpeed > 0.0) {
+          breath = 0.85 + 0.15 * sin(time * breathSpeed * 6.2832);
+        }
+
+        // Selection boost
+        float sel = 1.0 + selected * 0.8;
+
+        // Edge absorption: darken at extreme grazing angles
+        float edgeAbsorb = smoothstep(0.0, 0.15, facing);
+
+        // Inner color variation: slight hue shift toward white at core
+        vec3 innerColor = mix(materiaColor, vec3(1.0), 0.2 * core);
+
+        // Combine
+        vec3 finalColor = innerColor * sss * core * breath * sel;
+        float finalAlpha = opacity * edgeAbsorb * breath;
+
+        gl_FragColor = vec4(finalColor, finalAlpha);
+      }
+    `,
+    transparent: true,
+    depthWrite: false,
+    side: THREE.FrontSide,
+  });
+}
+
+// --- Materia Halo Sprite (bd-1038x) ---
+// Soft radial gradient billboard behind each node (replaces Fresnel shell).
+// Works with bloom pass for natural light bleed.
+export function createMateriaHaloTexture(size = 64) {
+  const canvas = document.createElement('canvas');
+  canvas.width = size;
+  canvas.height = size;
+  const ctx = canvas.getContext('2d');
+  const cx = size / 2;
+  const gradient = ctx.createRadialGradient(cx, cx, 0, cx, cx, cx);
+  gradient.addColorStop(0, 'rgba(255,255,255,0.6)');
+  gradient.addColorStop(0.3, 'rgba(255,255,255,0.15)');
+  gradient.addColorStop(0.7, 'rgba(255,255,255,0.03)');
+  gradient.addColorStop(1.0, 'rgba(255,255,255,0.0)');
+  ctx.fillStyle = gradient;
+  ctx.fillRect(0, 0, size, size);
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.needsUpdate = true;
+  return texture;
+}
+
+// --- GPU Particle Pool (bd-1038x) ---
+// Pre-allocated particle system for all visual effects.
+// Single draw call via THREE.Points. Particles managed via life attribute.
+export function createParticlePool(maxParticles = 2000) {
+  // Per-particle attributes: position(3), velocity(3), color(3), life(1), maxLife(1), size(1)
+  const positions = new Float32Array(maxParticles * 3);
+  const velocities = new Float32Array(maxParticles * 3);
+  const colors = new Float32Array(maxParticles * 3);
+  const lives = new Float32Array(maxParticles);       // current life (0 = dead)
+  const maxLives = new Float32Array(maxParticles);     // initial life (for fade calc)
+  const sizes = new Float32Array(maxParticles);
+
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+  geometry.setAttribute('aVelocity', new THREE.BufferAttribute(velocities, 3));
+  geometry.setAttribute('aColor', new THREE.BufferAttribute(colors, 3));
+  geometry.setAttribute('aLife', new THREE.BufferAttribute(lives, 1));
+  geometry.setAttribute('aMaxLife', new THREE.BufferAttribute(maxLives, 1));
+  geometry.setAttribute('aSize', new THREE.BufferAttribute(sizes, 1));
+
+  const material = new THREE.ShaderMaterial({
+    uniforms: {
+      time: { value: 0 },
+      dt: { value: 0 },
+      pointTexture: { value: null }, // set to halo texture for soft circles
+    },
+    vertexShader: `
+      attribute vec3 aVelocity;
+      attribute vec3 aColor;
+      attribute float aLife;
+      attribute float aMaxLife;
+      attribute float aSize;
+      varying vec3 vColor;
+      varying float vAlpha;
+      void main() {
+        vColor = aColor;
+        // Fade out over last 40% of lifetime
+        float progress = 1.0 - (aLife / max(aMaxLife, 0.001));
+        vAlpha = aLife > 0.0 ? smoothstep(1.0, 0.6, progress) : 0.0;
+        vec4 mvPos = modelViewMatrix * vec4(position, 1.0);
+        gl_PointSize = aLife > 0.0 ? aSize * (200.0 / -mvPos.z) : 0.0;
+        gl_Position = projectionMatrix * mvPos;
+      }
+    `,
+    fragmentShader: `
+      uniform sampler2D pointTexture;
+      varying vec3 vColor;
+      varying float vAlpha;
+      void main() {
+        if (vAlpha < 0.001) discard;
+        // Soft circular falloff
+        float d = length(gl_PointCoord - vec2(0.5));
+        float a = smoothstep(0.5, 0.1, d);
+        gl_FragColor = vec4(vColor, a * vAlpha);
+      }
+    `,
+    transparent: true,
+    depthWrite: false,
+    blending: THREE.AdditiveBlending,
+  });
+
+  const points = new THREE.Points(geometry, material);
+  points.frustumCulled = false; // particles spread everywhere
+  let nextIdx = 0;
+  let lastTime = 0;
+
+  return {
+    mesh: points,
+    // Emit particles at a position with given properties
+    emit(pos, color, count, { velocity = [0, 2, 0], spread = 1.0, lifetime = 1.5, size = 2.0 } = {}) {
+      const c = new THREE.Color(color);
+      for (let i = 0; i < count; i++) {
+        const idx = nextIdx % maxParticles;
+        nextIdx++;
+        positions[idx * 3] = pos.x + (Math.random() - 0.5) * spread;
+        positions[idx * 3 + 1] = pos.y + (Math.random() - 0.5) * spread;
+        positions[idx * 3 + 2] = pos.z + (Math.random() - 0.5) * spread;
+        velocities[idx * 3] = velocity[0] + (Math.random() - 0.5) * spread * 2;
+        velocities[idx * 3 + 1] = velocity[1] + (Math.random() - 0.5) * spread * 2;
+        velocities[idx * 3 + 2] = velocity[2] + (Math.random() - 0.5) * spread * 2;
+        colors[idx * 3] = c.r;
+        colors[idx * 3 + 1] = c.g;
+        colors[idx * 3 + 2] = c.b;
+        lives[idx] = lifetime;
+        maxLives[idx] = lifetime;
+        sizes[idx] = size * (0.5 + Math.random());
+      }
+      geometry.attributes.position.needsUpdate = true;
+      geometry.attributes.aVelocity.needsUpdate = true;
+      geometry.attributes.aColor.needsUpdate = true;
+      geometry.attributes.aLife.needsUpdate = true;
+      geometry.attributes.aMaxLife.needsUpdate = true;
+      geometry.attributes.aSize.needsUpdate = true;
+    },
+    // Call every frame with current time
+    update(t) {
+      const dt = lastTime > 0 ? Math.min(t - lastTime, 0.1) : 0.016;
+      lastTime = t;
+      material.uniforms.time.value = t;
+      material.uniforms.dt.value = dt;
+      let changed = false;
+      for (let i = 0; i < maxParticles; i++) {
+        if (lives[i] <= 0) continue;
+        lives[i] -= dt;
+        if (lives[i] <= 0) { lives[i] = 0; sizes[i] = 0; changed = true; continue; }
+        // Integrate velocity (CPU-side for simplicity; GPU upgrade later)
+        positions[i * 3] += velocities[i * 3] * dt;
+        positions[i * 3 + 1] += velocities[i * 3 + 1] * dt;
+        positions[i * 3 + 2] += velocities[i * 3 + 2] * dt;
+        // Damping
+        velocities[i * 3] *= 0.98;
+        velocities[i * 3 + 1] *= 0.98;
+        velocities[i * 3 + 2] *= 0.98;
+        changed = true;
+      }
+      if (changed) {
+        geometry.attributes.position.needsUpdate = true;
+        geometry.attributes.aLife.needsUpdate = true;
+        geometry.attributes.aSize.needsUpdate = true;
+      }
+    },
+    // Active particle count (for diagnostics)
+    get activeCount() {
+      let n = 0;
+      for (let i = 0; i < maxParticles; i++) if (lives[i] > 0) n++;
+      return n;
+    },
+  };
+}
+
 // --- Update all shader uniforms ---
 // Call this in the animation loop to advance time-based effects.
 export function updateShaderTime(scene, time) {
