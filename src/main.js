@@ -2102,15 +2102,19 @@ function updateStats(stats, issues) {
     parts.push(`<span>${active}</span> active`);
     if (blocked) parts.push(`<span>${blocked}</span> blocked`);
 
-    // Update Bottom HUD project pulse (bd-ddj44)
+    // Update Bottom HUD project pulse (bd-ddj44, bd-9ndk0.1)
     const pulseEl = document.getElementById('hud-project-pulse');
     if (pulseEl) {
       const agentCount = issues.filter(n => n.issue_type === 'agent').length;
+      const pendingDecisions = issues.filter(n =>
+        (n.issue_type === 'gate' || n.issue_type === 'decision') && n.status !== 'closed'
+      ).length;
       pulseEl.innerHTML = `
         <div class="pulse-stat"><span class="pulse-stat-label">open</span><span class="pulse-stat-value">${open}</span></div>
         <div class="pulse-stat"><span class="pulse-stat-label">active</span><span class="pulse-stat-value good">${active}</span></div>
         <div class="pulse-stat"><span class="pulse-stat-label">blocked</span><span class="pulse-stat-value${blocked ? ' bad' : ''}">${blocked}</span></div>
         <div class="pulse-stat"><span class="pulse-stat-label">agents</span><span class="pulse-stat-value${agentCount ? ' warn' : ''}">${agentCount}</span></div>
+        <div class="pulse-stat"><span class="pulse-stat-label">decisions</span><span class="pulse-stat-value${pendingDecisions ? ' warn' : ''}">${pendingDecisions}</span></div>
         <div class="pulse-stat"><span class="pulse-stat-label">shown</span><span class="pulse-stat-value">${issues.length}</span></div>
       `;
     }
@@ -4962,13 +4966,27 @@ function setupControls() {
   // Labels toggle (bd-1o2f7)
   document.getElementById('btn-labels').onclick = () => toggleLabels();
 
-  // Bottom HUD bar quick-action buttons (bd-ddj44)
+  // Bottom HUD bar quick-action buttons (bd-ddj44, bd-9ndk0.1)
   const hudBtnRefresh = document.getElementById('hud-btn-refresh');
   const hudBtnLabels = document.getElementById('hud-btn-labels');
   const hudBtnAgents = document.getElementById('hud-btn-agents');
+  const hudBtnBloom = document.getElementById('hud-btn-bloom');
+  const hudBtnSearch = document.getElementById('hud-btn-search');
+  const hudBtnMinimap = document.getElementById('hud-btn-minimap');
+  const hudBtnSidebar = document.getElementById('hud-btn-sidebar');
+  const hudBtnControls = document.getElementById('hud-btn-controls');
   if (hudBtnRefresh) hudBtnRefresh.onclick = () => refresh();
   if (hudBtnLabels) hudBtnLabels.onclick = () => toggleLabels();
   if (hudBtnAgents) hudBtnAgents.onclick = () => toggleAgentsView();
+  if (hudBtnBloom) hudBtnBloom.onclick = () => {
+    bloomEnabled = !bloomEnabled;
+    if (bloomPass) bloomPass.enabled = bloomEnabled;
+    hudBtnBloom.classList.toggle('active', bloomEnabled);
+  };
+  if (hudBtnSearch) hudBtnSearch.onclick = () => searchInput.focus();
+  if (hudBtnMinimap) hudBtnMinimap.onclick = () => toggleMinimap();
+  if (hudBtnSidebar) hudBtnSidebar.onclick = () => toggleLeftSidebar();
+  if (hudBtnControls) hudBtnControls.onclick = () => toggleControlPanel();
 
   // bd-69y6v: Control panel toggle & wiring
   initControlPanel();
