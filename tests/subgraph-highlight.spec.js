@@ -141,12 +141,28 @@ test.describe('subgraph highlight and camera (beads-cfee)', () => {
       b.graph.onNodeClick()(target, { preventDefault: () => {} });
     });
 
-    // Wait for animation loop to apply label visibility
-    await page.waitForTimeout(3000);
-    await forceRender(page);
-    await page.waitForTimeout(500);
+    // Wait for animation loop to set label visibility on highlighted nodes.
+    // Use waitForFunction instead of fixed timeout — rAF may not fire reliably
+    // in SwiftShader headless mode (bd-hh4s7).
+    await page.waitForFunction(() => {
+      const b = window.__beads3d;
+      if (!b || !b.graph) return false;
+      const hl = b.highlightNodes();
+      const nodes = b.graph.graphData().nodes;
+      for (const node of nodes) {
+        if (!hl.has(node.id)) continue;
+        const obj = node.__threeObj;
+        if (!obj) continue;
+        let found = false;
+        obj.traverse(child => {
+          if (child.userData.nodeLabel && child.visible) found = true;
+        });
+        if (found) return true;
+      }
+      return false;
+    }, { timeout: 10000 });
 
-    // Check that at least some labels on highlighted nodes are visible
+    // Now collect full label info
     const labelInfo = await page.evaluate(() => {
       const b = window.__beads3d;
       if (!b || !b.graph) return null;

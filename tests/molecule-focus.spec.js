@@ -163,9 +163,25 @@ test.describe('molecule focus view (bd-lwut6)', () => {
     await mockAPI(page);
     await page.goto('/?molecule=mol-auth');
     await waitForGraph(page);
-    await page.waitForTimeout(4000);
-    await forceRender(page);
-    await page.waitForTimeout(500);
+    // Wait for focusMolecule (2s delay) + animation, then poll for label visibility
+    // instead of fixed timeout — rAF may not fire reliably in SwiftShader (bd-hh4s7).
+    await page.waitForFunction(() => {
+      const b = window.__beads3d;
+      if (!b || !b.graph) return false;
+      const focused = b.focusedMoleculeNodes();
+      if (focused.size === 0) return false;
+      const nodes = b.graph.graphData().nodes;
+      let visCount = 0;
+      for (const node of nodes) {
+        if (!focused.has(node.id)) continue;
+        const obj = node.__threeObj;
+        if (!obj) continue;
+        obj.traverse(child => {
+          if (child.userData.nodeLabel && child.visible) visCount++;
+        });
+      }
+      return visCount >= 6;
+    }, { timeout: 15000 });
 
     const labelInfo = await page.evaluate(() => {
       const b = window.__beads3d;
