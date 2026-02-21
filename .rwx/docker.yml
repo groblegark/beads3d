@@ -88,3 +88,36 @@ tasks:
     env:
       GHCR_TOKEN: ${{ secrets.GHCR_TOKEN }}
       GITHUB_USER: ${{ secrets.GITHUB_USER }}
+
+  # ── Rollout restart to pull new image ───────────────────────────────
+  # Only runs for main/cli builds (not CalVer tags which use separate deploy).
+  - key: deploy
+    use: push
+    cache: false
+    if: ${{ init.ref-name == 'main' || init.ref-name == 'cli' }}
+    run: |
+      set -ex
+
+      # Install kubectl
+      KUBE_VERSION=$(curl -fsSL https://dl.k8s.io/release/stable.txt)
+      curl -fsSL "https://dl.k8s.io/release/${KUBE_VERSION}/bin/linux/amd64/kubectl" -o /tmp/kubectl
+      sudo install /tmp/kubectl /usr/local/bin/kubectl
+
+      # Configure kubeconfig via AWS CLI
+      curl -fsSL "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o /tmp/awscli.zip
+      unzip -q /tmp/awscli.zip -d /tmp
+      sudo /tmp/aws/install
+      aws eks update-kubeconfig --name "${EKS_CLUSTER}" --region us-east-1
+
+      # Rollout restart beads3d in gastown-next
+      NS="gastown-next"
+      DEPLOY="gastown-next-beads3d"
+      kubectl rollout restart deployment "$DEPLOY" -n "$NS"
+      kubectl rollout status deployment "$DEPLOY" -n "$NS" --timeout=120s
+
+      echo "Rolled out ${DEPLOY} in ${NS} — new :latest image will be pulled"
+    env:
+      AWS_ACCESS_KEY_ID: ${{ secrets.E2E_AWS_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.E2E_AWS_SECRET_ACCESS_KEY }}
+      AWS_DEFAULT_REGION: us-east-1
+      EKS_CLUSTER: ${{ secrets.E2E_EKS_CLUSTER }}
