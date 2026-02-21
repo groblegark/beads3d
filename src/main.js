@@ -4,7 +4,7 @@ import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPa
 import { CSS2DRenderer, CSS2DObject } from 'three/examples/jsm/renderers/CSS2DRenderer.js';
 import { BeadsAPI } from './api.js';
 import { nodeColor, nodeSize, linkColor, colorToHex, rigColor } from './colors.js';
-import { createFresnelMaterial, createPulseRingMaterial, createSelectionRingMaterial, createStarField, updateShaderTime } from './shaders.js';
+import { createFresnelMaterial, createPulseRingMaterial, createSelectionRingMaterial, createStarField, updateShaderTime, createMateriaMaterial, createMateriaHaloTexture, createParticlePool } from './shaders.js';
 
 // --- Config ---
 const params = new URLSearchParams(window.location.search);
@@ -7399,7 +7399,56 @@ async function main() {
     if (DEEP_LINK_MOLECULE) {
       setTimeout(() => focusMolecule(DEEP_LINK_MOLECULE), 2000);
     }
-    
+
+// Expose for Playwright tests
+    window.__THREE = THREE;
+    window.__beads3d = { graph, graphData: () => graphData, multiSelected: () => multiSelected, highlightNodes: () => highlightNodes, showBulkMenu, showDetail, hideDetail, selectNode, highlightSubgraph, clearSelection, focusMolecule, focusedMoleculeNodes: () => focusedMoleculeNodes, get selectedNode() { return selectedNode; }, get cameraFrozen() { return cameraFrozen; } };
+    // Expose doot internals for testing (bd-pg7vy)
+    window.__beads3d_spawnDoot = spawnDoot;
+    window.__beads3d_doots = () => doots;
+    window.__beads3d_dootLabel = dootLabel;
+    window.__beads3d_dootColor = dootColor;
+    window.__beads3d_findAgentNode = findAgentNode;
+    // Expose mutation handler for testing (bd-03b5v)
+    window.__beads3d_applyMutation = applyMutationOptimistic;
+    // Expose popup internals for testing (beads-xmix)
+    window.__beads3d_showDootPopup = showDootPopup;
+    window.__beads3d_dismissDootPopup = dismissDootPopup;
+    window.__beads3d_dootPopups = () => dootPopups;
+    // Expose agent window internals for testing (bd-kau4k)
+    window.__beads3d_showAgentWindow = showAgentWindow;
+    window.__beads3d_closeAgentWindow = closeAgentWindow;
+    window.__beads3d_appendAgentEvent = appendAgentEvent;
+    window.__beads3d_agentWindows = () => agentWindows;
+    // Expose agents view overlay for testing (bd-jgvas)
+    window.__beads3d_toggleAgentsView = toggleAgentsView;
+    window.__beads3d_openAgentsView = openAgentsView;
+    window.__beads3d_closeAgentsView = closeAgentsView;
+    window.__beads3d_agentsViewOpen = () => agentsViewOpen;
+    window.__beads3d_resolveAgentIdLoose = resolveAgentIdLoose;
+    // Expose event sprite internals for testing (bd-9qeto)
+    window.__beads3d_spawnStatusPulse = spawnStatusPulse;
+    window.__beads3d_spawnEdgeSpark = spawnEdgeSpark;
+    window.__beads3d_eventSprites = () => eventSprites;
+    // Expose camera velocity system for testing (bd-zab4q)
+    window.__beads3d_keysDown = _keysDown;
+    window.__beads3d_camVelocity = _camVelocity;
+
+    // Cleanup on page unload (bd-7n4g8): close SSE, clear intervals
+    window.addEventListener('beforeunload', () => {
+      api.destroy();
+      if (_pollIntervalId) clearInterval(_pollIntervalId);
+      if (_bloomResizeHandler) window.removeEventListener('resize', _bloomResizeHandler);
+    });
+  } catch (err) {
+    console.error('Init failed:', err);
+    document.getElementById('status').textContent = `init error: ${err.message}`;
+    document.getElementById('status').className = 'error';
+  }
+}
+
+main();
+
 // bd-5ok9s: update the agent status bar with current state
 function _updateAgentStatusBar(win) {
   if (!win.statusEl) return;
@@ -7738,52 +7787,3 @@ setInterval(() => {
     });
   }
 }, 1000);
-
-// Expose for Playwright tests
-    window.__THREE = THREE;
-    window.__beads3d = { graph, graphData: () => graphData, multiSelected: () => multiSelected, highlightNodes: () => highlightNodes, showBulkMenu, showDetail, hideDetail, selectNode, highlightSubgraph, clearSelection, focusMolecule, focusedMoleculeNodes: () => focusedMoleculeNodes, get selectedNode() { return selectedNode; }, get cameraFrozen() { return cameraFrozen; } };
-    // Expose doot internals for testing (bd-pg7vy)
-    window.__beads3d_spawnDoot = spawnDoot;
-    window.__beads3d_doots = () => doots;
-    window.__beads3d_dootLabel = dootLabel;
-    window.__beads3d_dootColor = dootColor;
-    window.__beads3d_findAgentNode = findAgentNode;
-    // Expose mutation handler for testing (bd-03b5v)
-    window.__beads3d_applyMutation = applyMutationOptimistic;
-    // Expose popup internals for testing (beads-xmix)
-    window.__beads3d_showDootPopup = showDootPopup;
-    window.__beads3d_dismissDootPopup = dismissDootPopup;
-    window.__beads3d_dootPopups = () => dootPopups;
-    // Expose agent window internals for testing (bd-kau4k)
-    window.__beads3d_showAgentWindow = showAgentWindow;
-    window.__beads3d_closeAgentWindow = closeAgentWindow;
-    window.__beads3d_appendAgentEvent = appendAgentEvent;
-    window.__beads3d_agentWindows = () => agentWindows;
-    // Expose agents view overlay for testing (bd-jgvas)
-    window.__beads3d_toggleAgentsView = toggleAgentsView;
-    window.__beads3d_openAgentsView = openAgentsView;
-    window.__beads3d_closeAgentsView = closeAgentsView;
-    window.__beads3d_agentsViewOpen = () => agentsViewOpen;
-    window.__beads3d_resolveAgentIdLoose = resolveAgentIdLoose;
-    // Expose event sprite internals for testing (bd-9qeto)
-    window.__beads3d_spawnStatusPulse = spawnStatusPulse;
-    window.__beads3d_spawnEdgeSpark = spawnEdgeSpark;
-    window.__beads3d_eventSprites = () => eventSprites;
-    // Expose camera velocity system for testing (bd-zab4q)
-    window.__beads3d_keysDown = _keysDown;
-    window.__beads3d_camVelocity = _camVelocity;
-
-    // Cleanup on page unload (bd-7n4g8): close SSE, clear intervals
-    window.addEventListener('beforeunload', () => {
-      api.destroy();
-      if (_pollIntervalId) clearInterval(_pollIntervalId);
-      if (_bloomResizeHandler) window.removeEventListener('resize', _bloomResizeHandler);
-    });
-  } catch (err) {
-    console.error('Init failed:', err);
-    document.getElementById('status').textContent = `init error: ${err.message}`;
-    document.getElementById('status').className = 'error';
-  }
-}
-
-main();
