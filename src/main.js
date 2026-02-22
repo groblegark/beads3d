@@ -803,9 +803,9 @@ function resolveOverlappingLabels() {
   // Direction is determined by relative screen-Y: if the lower-priority
   // label's center is below (or equal), push it down; otherwise push up.
   // This prevents labels from piling in one direction.
-  const PADDING = 10;
-  const MAX_OFFSET = height * 0.15; // don't push labels off-screen
-  for (let pass = 0; pass < 8; pass++) {
+  const PADDING = 14; // wider gap between labels (bd-w0hbr: agent labels)
+  const MAX_OFFSET = height * 0.3; // allow more spread to separate dense clusters
+  for (let pass = 0; pass < 12; pass++) {
     // Sort by screen X for sweep-and-prune
     visibleLabels.sort((a, b) => a.sx - b.sx);
     let anyMoved = false;
@@ -873,7 +873,13 @@ function _labelPriority(label) {
   if (multiSelected.has(n.id)) pri += 500;
   // bd-lwut6: boost labels in focused molecule — always show at full opacity
   if (focusedMoleculeNodes.has(n.id)) pri += 500;
-  if (n.issue_type === 'agent') pri += 100;
+  if (n.issue_type === 'agent') {
+    pri += 100;
+    // Spread agent priorities by name hash to break ties in overlap resolution (bd-w0hbr)
+    let h = 0;
+    for (let i = 0; i < (n.id?.length || 0); i++) h = ((h << 3) - h + n.id.charCodeAt(i)) | 0;
+    pri += (Math.abs(h) % 20);
+  }
   // In-progress beads are more important than open/closed
   if (n.status === 'in_progress') pri += 50;
   // Lower priority number = more important
