@@ -7,6 +7,7 @@
     "build": "vite build",
     "preview": "vite preview",
     "test": "npx playwright test",
+    "test:unit": "vitest run",
     "test:report": "npx playwright test && npx playwright show-report test-results/html-report",
     "test:update": "npx playwright test --update-snapshots",
     "test:ui": "npx playwright test --ui"
@@ -18,6 +19,7 @@
     "vite": "^7.3.1"
   },
   "devDependencies": {
-    "@playwright/test": "^1.58.2"
+    "@playwright/test": "^1.58.2",
+    "vitest": "^4.0.18"
   }
 }
