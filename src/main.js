@@ -3279,66 +3279,6 @@ function addRadialGuides() {
   }
 }
 
-function addTimelineGuides(nodes) {
-  const scene = graph.scene();
-  const times = nodes.map(n => new Date(n.created_at || 0).getTime()).filter(t => t > 0);
-  if (times.length === 0) return;
-  const minTime = Math.min(...times);
-  const maxTime = Math.max(...times);
-  const timeSpan = maxTime - minTime || 1;
-  const nodeCount = nodes.length || 100;
-  const spread = Math.max(nodeCount * 2, 400);
-
-  // Time axis line (X axis)
-  const axisGeo = new THREE.BufferGeometry().setFromPoints([
-    new THREE.Vector3(-spread / 2 - 20, 0, 0),
-    new THREE.Vector3(spread / 2 + 20, 0, 0),
-  ]);
-  const axisMat = new THREE.LineBasicMaterial({ color: 0x1a2a3a, transparent: true, opacity: 0.3 });
-  const axis = new THREE.Line(axisGeo, axisMat);
-  scene.add(axis);
-  layoutGuides.push(axis);
-
-  // Date tick marks — one per month (approximate)
-  const msPerMonth = 30 * 24 * 3600 * 1000;
-  const startMonth = new Date(minTime);
-  startMonth.setDate(1);
-  startMonth.setHours(0, 0, 0, 0);
-  let tickTime = startMonth.getTime();
-  while (tickTime <= maxTime + msPerMonth) {
-    const x = ((tickTime - minTime) / timeSpan - 0.5) * spread;
-    const d = new Date(tickTime);
-    const label = makeTextSprite(
-      `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`,
-      { fontSize: 16, color: '#2a3a4a', opacity: 0.35 }
-    );
-    label.position.set(x, -8, 0);
-    scene.add(label);
-    layoutGuides.push(label);
-
-    // Vertical tick
-    const tickGeo = new THREE.BufferGeometry().setFromPoints([
-      new THREE.Vector3(x, -3, 0),
-      new THREE.Vector3(x, 3, 0),
-    ]);
-    const tick = new THREE.Line(tickGeo, new THREE.LineBasicMaterial({ color: 0x1a2a3a, transparent: true, opacity: 0.2 }));
-    scene.add(tick);
-    layoutGuides.push(tick);
-
-    tickTime += msPerMonth;
-  }
-
-  // Priority zone labels on Z axis
-  const pLabels = ['P0', 'P1', 'P2', 'P3', 'P4'];
-  for (let p = 0; p <= 4; p++) {
-    const z = (p - 2) * 30;
-    const label = makeTextSprite(pLabels[p], { fontSize: 16, color: '#2a3a4a', opacity: 0.3 });
-    label.position.set(-spread / 2 - 30, 0, z);
-    scene.add(label);
-    layoutGuides.push(label);
-  }
-}
-
 function addClusterGuides(nodes) {
   const scene = graph.scene();
   const assignees = [...new Set(nodes.map(n => n.assignee || '(unassigned)'))];
@@ -3379,7 +3319,6 @@ function setLayout(mode) {
   // Clear all custom forces and visual guides
   clearLayoutGuides();
   graph.dagMode(null);
-  graph.d3Force('timeline', null);
   graph.d3Force('radialPriority', null);
   graph.d3Force('clusterAssignee', null);
   graph.d3Force('flattenY', null);
@@ -3409,41 +3348,6 @@ function setLayout(mode) {
         }
       });
       graph.cameraPosition({ x: 0, y: 0, z: 500 }, { x: 0, y: 0, z: 0 }, 1200);
-      break;
-    }
-
-    case 'timeline': {
-      // Flat plane: X = creation date, Y = 0 (flattened), Z = priority spread
-      graph.d3Force('charge').strength(-30).distanceMax(200);
-      graph.d3Force('link').distance(20);
-
-      // Compute time range for normalization
-      const times = graphData.nodes.map(n => new Date(n.created_at || 0).getTime()).filter(t => t > 0);
-      const minTime = Math.min(...times) || 0;
-      const maxTime = Math.max(...times) || 1;
-      const timeSpan = maxTime - minTime || 1;
-      const spread = Math.max(nodeCount * 2, 400);
-
-      graph.d3Force('timeline', (alpha) => {
-        for (const node of graphData.nodes) {
-          if (node._hidden) continue;
-          const t = new Date(node.created_at || 0).getTime();
-          const xTarget = ((t - minTime) / timeSpan - 0.5) * spread;
-          const zTarget = (node.priority - 2) * 30; // spread by priority on Z
-          node.vx += (xTarget - node.x) * alpha * 0.1;
-          node.vz += (zTarget - (node.z || 0)) * alpha * 0.05;
-        }
-      });
-      // Flatten Y axis
-      graph.d3Force('flattenY', (alpha) => {
-        for (const node of graphData.nodes) {
-          if (node._hidden) continue;
-          node.vy += (0 - (node.y || 0)) * alpha * 0.3;
-        }
-      });
-      addTimelineGuides(graphData.nodes);
-      // Side camera to see the timeline plane
-      graph.cameraPosition({ x: 0, y: 300, z: 200 }, { x: 0, y: 0, z: 0 }, 1200);
       break;
     }
 
@@ -4006,7 +3910,7 @@ function setupControls() {
   // Layout buttons
   document.getElementById('btn-layout-free').onclick = () => setLayout('free');
   document.getElementById('btn-layout-dag').onclick = () => setLayout('dag');
-  document.getElementById('btn-layout-timeline').onclick = () => setLayout('timeline');
+  // Timeline layout removed (bd-t9unh)
   document.getElementById('btn-layout-radial').onclick = () => setLayout('radial');
   document.getElementById('btn-layout-cluster').onclick = () => setLayout('cluster');
 
@@ -4307,7 +4211,7 @@ function setupControls() {
       return;
     }
     // 1-5 for layout modes
-    const layoutKeys = { '1': 'free', '2': 'dag', '3': 'timeline', '4': 'radial', '5': 'cluster' };
+    const layoutKeys = { '1': 'free', '2': 'dag', '3': 'radial', '4': 'cluster' };
     if (layoutKeys[e.key] && !isTextInputFocused()) {
       setLayout(layoutKeys[e.key]);
     }

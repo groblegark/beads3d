@@ -255,23 +255,7 @@
     /* Hide agent-windows when unified feed is active */
     #unified-feed.active ~ #agent-windows { display: none; }
 
-    /* Right section — project pulse & status */
-    #bottom-hud-right {
-      width: 240px;
-      min-width: 180px;
-      padding: 8px 12px;
-      display: flex;
-      flex-direction: column;
-      justify-content: space-between;
-      border-left: 1px solid #1a1a2a;
-    }
-    #bottom-hud-right .hud-section-label {
-      font-size: 8px;
-      color: #444;
-      text-transform: uppercase;
-      letter-spacing: 1.5px;
-      margin-bottom: 4px;
-    }
+    /* Right section removed — pulse moved to bottom-hud-left (bd-t9unh) */
 
     /* Quick actions row (bd-ddj44) */
     #hud-quick-actions {
@@ -303,23 +287,9 @@
     .pulse-stat-value.warn { color: #d4a017; }
     .pulse-stat-value.bad { color: #d04040; }
 
-    /* Legend — now inside bottom-hud-left (bd-ddj44) */
-    #legend {
-      font-size: 10px;
-      display: flex;
-      flex-wrap: wrap;
-      gap: 8px;
-      opacity: 0.7;
-    }
-    #legend .item { display: flex; align-items: center; gap: 5px; }
-    #legend .dot {
-      width: 8px;
-      height: 8px;
-      border-radius: 50%;
-      display: inline-block;
-    }
+    /* Legend removed — colors are self-explanatory (bd-t9unh) */
 
-    /* Connection status — now inside bottom-hud-right (bd-ddj44, bd-ki6im) */
+    /* Connection status — fixed bottom-right (bd-t9unh) */
     #status {
       font-size: 10px;
       color: #444;
@@ -1877,7 +1847,6 @@
       <div class="btn-row" id="layout-controls">
         <button class="ctrl-btn active" id="btn-layout-free">free</button>
         <button class="ctrl-btn" id="btn-layout-dag">dag</button>
-        <button class="ctrl-btn" id="btn-layout-timeline">time</button>
         <button class="ctrl-btn" id="btn-layout-radial">radial</button>
         <button class="ctrl-btn" id="btn-layout-cluster">cluster</button>
       </div>
@@ -1904,10 +1873,13 @@
 
   <!-- Bottom HUD Bar (bd-ddj44) -->
   <div id="bottom-hud">
-    <!-- Left: quick actions + legend -->
+    <!-- Left: project pulse + quick actions (bd-t9unh) -->
     <div id="bottom-hud-left">
       <div>
-        <div class="hud-section-label">Quick Actions</div>
+        <div class="hud-section-label">Project Pulse</div>
+        <div id="hud-project-pulse"></div>
+      </div>
+      <div>
         <div id="hud-quick-actions">
           <button class="ctrl-btn" id="hud-btn-refresh" title="Refresh graph (r)">refresh</button>
           <button class="ctrl-btn" id="hud-btn-labels" title="Toggle labels (l)">labels</button>
@@ -1918,17 +1890,6 @@
           <button class="ctrl-btn" id="hud-btn-sidebar" title="Toggle sidebar (f)">sidebar</button>
           <button class="ctrl-btn" id="hud-btn-controls" title="Toggle controls (g)">controls</button>
         </div>
-      </div>
-      <div id="legend">
-        <div class="item"><span class="dot" style="background:#2d8a4e"></span> open</div>
-        <div class="item"><span class="dot" style="background:#d4a017"></span> active</div>
-        <div class="item"><span class="dot" style="background:#8b45a6"></span> epic</div>
-        <div class="item"><span class="dot" style="background:#d04040"></span> blocked</div>
-        <div class="item"><span class="dot" style="background:#ff6b35"></span> agent</div>
-        <span style="color:#333;margin:0 4px">|</span>
-        <div class="item"><span style="color:#d04040;font-size:12px">&#x1F6E1;</span> blocks</div>
-        <div class="item"><span style="color:#d4a017;font-size:12px">&#x23F0;</span> waits</div>
-        <div class="item"><span style="color:#8b45a6;font-size:12px">&#x1F517;</span> parent</div>
       </div>
     </div>
 
@@ -1942,15 +1903,8 @@
       <div id="agent-windows"></div>
     </div>
 
-    <!-- Right: project pulse + status -->
-    <div id="bottom-hud-right">
-      <div>
-        <div class="hud-section-label">Project Pulse</div>
-        <div id="hud-project-pulse"></div>
-        <div id="status">connecting...</div>
-      </div>
-      <div id="keyhints">/ search &middot; enter fly &middot; &uarr;&darr; cycle &middot; esc close &middot; r refresh &middot; b bloom &middot; l labels &middot; m minimap &middot; f sidebar &middot; g controls &middot; 1-5 layout &middot; shift+drag select &middot; A agents</div>
-    </div>
+    <!-- Status indicator (connection) -->
+    <div id="status" style="position:fixed;bottom:4px;right:8px;font-size:9px;color:#555;z-index:260">connecting...</div>
   </div>
 
   <!-- Left Sidebar — Agent Roster & Focused Issue (bd-nnr22) -->
@@ -2276,7 +2230,6 @@
           <select class="cp-select" id="cp-layout-mode">
             <option value="free" selected>free</option>
             <option value="dag">dag</option>
-            <option value="timeline">timeline</option>
             <option value="radial">radial</option>
             <option value="cluster">cluster</option>
           </select>
