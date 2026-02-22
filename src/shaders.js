@@ -140,6 +140,101 @@ export function createStarField(count = 2000, radius = 600) {
   return points;
 }
 
+// --- Fairy Lights (bd-52izs) ---
+// Drifting luminous particles that float organically through the scene.
+// Replaces the old geodesic dome nucleus/membrane with living light.
+export function createFairyLights(count = 300, radius = 250) {
+  const positions = new Float32Array(count * 3);
+  const sizes = new Float32Array(count);
+  const alphas = new Float32Array(count);
+  const phases = new Float32Array(count);    // per-particle phase offset
+  const speeds = new Float32Array(count);    // drift speed multiplier
+  const hueShifts = new Float32Array(count); // slight color variation
+
+  for (let i = 0; i < count; i++) {
+    const theta = Math.random() * Math.PI * 2;
+    const phi = Math.acos(2 * Math.random() - 1);
+    const r = 20 + Math.random() * radius;
+    positions[i * 3] = r * Math.sin(phi) * Math.cos(theta);
+    positions[i * 3 + 1] = r * Math.sin(phi) * Math.sin(theta);
+    positions[i * 3 + 2] = r * Math.cos(phi);
+    sizes[i] = 1.0 + Math.random() * 3.0;
+    alphas[i] = 0.15 + Math.random() * 0.5;
+    phases[i] = Math.random() * Math.PI * 2;
+    speeds[i] = 0.3 + Math.random() * 0.7;
+    hueShifts[i] = Math.random();
+  }
+
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+  geometry.setAttribute('size', new THREE.BufferAttribute(sizes, 1));
+  geometry.setAttribute('alpha', new THREE.BufferAttribute(alphas, 1));
+  geometry.setAttribute('phase', new THREE.BufferAttribute(phases, 1));
+  geometry.setAttribute('speed', new THREE.BufferAttribute(speeds, 1));
+  geometry.setAttribute('hueShift', new THREE.BufferAttribute(hueShifts, 1));
+
+  const material = new THREE.ShaderMaterial({
+    uniforms: {
+      time: { value: 0 },
+      baseColor: { value: new THREE.Color(0x6688cc) },
+      warmColor: { value: new THREE.Color(0xcc8866) },
+      brightness: { value: 1.0 },
+    },
+    vertexShader: `
+      attribute float size;
+      attribute float alpha;
+      attribute float phase;
+      attribute float speed;
+      attribute float hueShift;
+      varying float vAlpha;
+      varying float vHue;
+      uniform float time;
+      void main() {
+        vHue = hueShift;
+        // Organic drift: each particle orbits lazily on its own path
+        float t = time * speed * 0.15;
+        float p = phase;
+        vec3 drift = vec3(
+          sin(t + p) * 8.0 + cos(t * 0.7 + p * 2.0) * 4.0,
+          cos(t * 0.9 + p * 1.3) * 6.0 + sin(t * 0.4 + p) * 3.0,
+          sin(t * 0.6 + p * 0.8) * 7.0 + cos(t * 1.1 + p * 1.5) * 3.0
+        );
+        vec3 pos = position + drift;
+        vec4 mvPos = modelViewMatrix * vec4(pos, 1.0);
+        // Pulsing brightness: slow breathe per-particle
+        float pulse = 0.6 + 0.4 * sin(time * 1.2 * speed + phase * 3.0);
+        vAlpha = alpha * pulse;
+        gl_PointSize = size * pulse * (250.0 / -mvPos.z);
+        gl_Position = projectionMatrix * mvPos;
+      }
+    `,
+    fragmentShader: `
+      uniform vec3 baseColor;
+      uniform vec3 warmColor;
+      uniform float brightness;
+      varying float vAlpha;
+      varying float vHue;
+      void main() {
+        // Soft circular glow with warm core
+        float d = length(gl_PointCoord - vec2(0.5));
+        float a = smoothstep(0.5, 0.05, d);
+        float core = smoothstep(0.3, 0.0, d); // bright center
+        vec3 col = mix(baseColor, warmColor, vHue);
+        col += vec3(core * 0.4); // white-hot center
+        gl_FragColor = vec4(col * brightness, a * vAlpha);
+      }
+    `,
+    transparent: true,
+    depthWrite: false,
+    blending: THREE.AdditiveBlending,
+  });
+
+  const points = new THREE.Points(geometry, material);
+  points.userData.isFairyLights = true;
+  points.frustumCulled = false;
+  return points;
+}
+
 // --- Selection Pulse Shader ---
 // A bright, pulsing ring for the selected node (replaces basic material).
 // Set `visible` uniform to 1.0 to show, 0.0 to hide.
