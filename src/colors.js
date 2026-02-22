@@ -39,7 +39,7 @@ export const DEP_TYPE_COLORS = {
   'waits-for':  '#d4a017',
   'relates-to': '#4a9eff88',
   'parent-child':'#8b45a688',
-  'assigned_to': '#ff6b35',
+  'assigned_to': '#ff6b3566',  // reduced opacity — high density in large graphs (bd-ld2fa)
   'rig_conflict':'#ff3030',    // bright red — agents on same rig+branch (bd-90ikf)
   default:      '#3a3a5a',
 };

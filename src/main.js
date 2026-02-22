@@ -1116,10 +1116,11 @@ function initGraph() {
     .linkWidth(l => {
       if (selectedNode) {
         const lk = linkKey(l);
-        return highlightLinks.has(lk) ? (l.dep_type === 'blocks' ? 2.0 : 1.2) : 0.2;
+        return highlightLinks.has(lk) ? (l.dep_type === 'blocks' ? 2.0 : 1.2) : 0.15;
       }
       if (l.dep_type === 'rig_conflict') return 2.5; // thick red conflict edge (bd-90ikf)
-      return l.dep_type === 'blocks' ? 1.2 : l.dep_type === 'assigned_to' ? 1.5 : 0.5;
+      // Thinner assignment edges to reduce visual clutter in dense graphs (bd-ld2fa)
+      return l.dep_type === 'blocks' ? 1.2 : l.dep_type === 'assigned_to' ? 0.6 : 0.5;
     })
     .linkDirectionalArrowLength(5)
     .linkDirectionalArrowRelPos(1)
@@ -3446,7 +3447,7 @@ function flyToSearchResult() {
 
   selectNode(node);
 
-  const distance = 80;
+  const distance = 150;
   const dx = node.x || 0, dy = node.y || 0, dz = node.z || 0;
   const distRatio = 1 + distance / (Math.hypot(dx, dy, dz) || 1);
   graph.cameraPosition(
@@ -3498,7 +3499,7 @@ function highlightEpic(epicNode) {
 
   // Select the epic and fly camera to it
   selectNode(epicNode);
-  const distance = 100;
+  const distance = 160;
   const dx = epicNode.x || 0, dy = epicNode.y || 0, dz = epicNode.z || 0;
   const distRatio = 1 + distance / (Math.hypot(dx, dy, dz) || 1);
   graph.cameraPosition(
