@@ -7139,6 +7139,13 @@ function appendUnifiedEntry(agentId, evt) {
   else if (type === 'DecisionExpired') { icon = '⏰'; text = 'decision expired'; classes = 'decision decision-expired'; }
   else if (type === 'MailSent') { icon = '✉'; text = `from ${p.from || '?'}: ${p.subject || ''}`; classes = 'mail mail-received'; }
   else if (type === 'MailRead') { icon = '✉'; text = 'mail read'; classes = 'mail'; }
+  // bd-7rk7e: Show user/system prompts and stop checkpoints
+  else if (type === 'UserPromptSubmit') {
+    const prompt = p.prompt || p.Prompt || '';
+    if (!prompt) return;
+    icon = '▸'; text = prompt.length > 120 ? prompt.slice(0, 120) + '…' : prompt; classes = 'prompt';
+  }
+  else if (type === 'Stop') { icon = '⏸'; text = 'checkpoint'; classes = 'lifecycle'; }
   else return;
 
   const entry = createUnifiedEntry(timeStr, agentName, icon, text, classes);
@@ -7299,6 +7306,18 @@ function appendAgentEvent(agentId, evt) {
     win.feedEl.appendChild(createEntry(timeStr, '⏰', 'decision expired', 'decision decision-expired'));
   } else if (type === 'DecisionEscalated') {
     win.feedEl.appendChild(createEntry(timeStr, '!', 'decision escalated', 'decision decision-escalated'));
+  }
+  // UserPromptSubmit — show what agents are being asked (bd-7rk7e)
+  else if (type === 'UserPromptSubmit') {
+    const prompt = p.prompt || p.Prompt || '';
+    if (prompt) {
+      const display = prompt.length > 120 ? prompt.slice(0, 120) + '…' : prompt;
+      win.feedEl.appendChild(createEntry(timeStr, '▸', display, 'prompt'));
+    }
+  }
+  // Stop hook events — show checkpoint
+  else if (type === 'Stop') {
+    win.feedEl.appendChild(createEntry(timeStr, '⏸', 'checkpoint', 'lifecycle'));
   }
   // Skip other event types silently
   else {
