@@ -216,15 +216,26 @@ function spawnStatusPulse(node, oldStatus, newStatus) {
   }
 }
 
+// Firework burst colors by issue type (bd-4gmot)
+const FIREWORK_COLORS = {
+  feature:  0x00e5ff, // cyan
+  bug:      0xd04040, // red
+  task:     0xd4a017, // amber
+  epic:     0x8b45a6, // purple
+  agent:    0xff6b35, // orange
+  decision: 0xd4a017, // amber
+  chore:    0x999999, // gray
+};
+
 // Spawn firework burst at a node position when a new bead is created (bd-4gmot)
 function spawnFireworkBurst(node) {
   if (!node || !_particlePool || !graph) return;
   const pos = { x: node.x || 0, y: node.y || 0, z: node.z || 0 };
-  const color = new THREE.Color(nodeColor(node)).getHex();
+  const color = FIREWORK_COLORS[node.issue_type] || 0x4a9eff;
   const size = nodeSize({ priority: node.priority, issue_type: node.issue_type });
 
-  // Wave 1: primary radial burst — 80 particles ejected spherically
-  const count1 = 80;
+  // Wave 1: primary radial burst — 80-120 particles ejected spherically
+  const count1 = 80 + Math.floor(Math.random() * 40);
   for (let i = 0; i < count1; i++) {
     const theta = Math.random() * Math.PI * 2;
     const phi = Math.acos(2 * Math.random() - 1);
@@ -260,17 +271,31 @@ function spawnFireworkBurst(node) {
     }
   }, 100);
 
-  // Center flash: bright expanding ring (reuses status pulse pattern)
-  const ringGeo = new THREE.RingGeometry(size * 0.5, size * 0.8, 24);
+  // Center flash: bright bloom spike (0.3s duration, additive blending)
+  const flashGeo = new THREE.SphereGeometry(size * 0.6, 12, 12);
+  const flashMat = new THREE.MeshBasicMaterial({
+    color: 0xffffff, transparent: true, opacity: 0.9, depthWrite: false,
+    blending: THREE.AdditiveBlending,
+  });
+  const flash = new THREE.Mesh(flashGeo, flashMat);
+  flash.position.set(pos.x, pos.y, pos.z);
+  graph.scene().add(flash);
+  eventSprites.push({
+    mesh: flash, node, birth: performance.now() / 1000, lifetime: 0.3,
+    type: 'creation-flash', startScale: 1.0, endScale: 3.0,
+  });
+
+  // Expanding ring (concentric pulse from center)
+  const ringGeo = new THREE.RingGeometry(size * 0.5, size * 0.8, 32);
   const ringMat = new THREE.MeshBasicMaterial({
-    color, transparent: true, opacity: 0.9, side: THREE.DoubleSide, depthWrite: false,
+    color, transparent: true, opacity: 0.8, side: THREE.DoubleSide, depthWrite: false,
   });
   const ring = new THREE.Mesh(ringGeo, ringMat);
   ring.position.set(pos.x, pos.y, pos.z);
   ring.lookAt(graph.camera().position);
   graph.scene().add(ring);
   eventSprites.push({
-    mesh: ring, node, birth: performance.now() / 1000, lifetime: 0.6,
+    mesh: ring, node, birth: performance.now() / 1000, lifetime: 1.5,
     type: 'status-pulse', startScale: 1.0, endScale: 6.0,
   });
 
@@ -383,6 +408,15 @@ function updateEventSprites(t) {
       const sparkScale = 1 - progress * 0.7;
       s.mesh.scale.setScalar(sparkScale);
       s.mesh.material.opacity = (1 - progress * progress) * 0.9;
+    } else if (s.type === 'creation-flash') {
+      // Bright bloom spike: rapid expand then fade (bd-4gmot)
+      const scale = s.startScale + (s.endScale - s.startScale) * progress;
+      s.mesh.scale.setScalar(scale);
+      s.mesh.material.opacity = (1 - progress * progress) * 0.9;
+      // Follow node position
+      if (s.node) {
+        s.mesh.position.set(s.node.x || 0, s.node.y || 0, s.node.z || 0);
+      }
     } else if (s.type === 'burst') {
       // Outward burst particles with gravity-like deceleration
       const decel = 1 - progress * 0.8; // slow down over time
