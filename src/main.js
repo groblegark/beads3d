@@ -241,13 +241,6 @@ let _bloomResizeHandler = null;
 let _pollIntervalId = null;
 let _searchDebounceTimer = null;
 
-// Timeline scrubber state (bd-huwyz): logarithmic time-range selection
-let timelineMinMs = 0;   // oldest bead timestamp (ms)
-let timelineMaxMs = 0;   // newest bead timestamp (ms)
-let timelineSelStart = 0; // selected range start (0..1 in log space)
-let timelineSelEnd = 1;   // selected range end (0..1 in log space)
-let timelineActive = false; // true when user has narrowed the range
-
 // Live event doots — HTML overlay elements via CSS2DRenderer (bd-bwkdk)
 const doots = []; // { css2d, el, node, birth, lifetime, jx, jz }
 let css2dRenderer = null; // CSS2DRenderer instance
@@ -3301,19 +3294,6 @@ function applyFilters() {
       }
     }
 
-    // Timeline scrubber filter (bd-huwyz): hide nodes outside the selected time range.
-    // Uses created_at mapped through the logarithmic scale. Agent nodes are exempt.
-    if (!hidden && timelineActive && n.issue_type !== 'agent') {
-      const t = new Date(n.created_at || n.updated_at || 0).getTime();
-      if (t > 0 && timelineMinMs > 0) {
-        const pos = timeToLogPos(t, timelineMinMs, timelineMaxMs);
-        if (pos < timelineSelStart || pos > timelineSelEnd) {
-          hidden = true;
-          n._ageFiltered = true;
-        }
-      }
-    }
-
     // Hide resolved/expired/closed decisions — only show pending (bd-zr374)
     if (!hidden && (n.issue_type === 'gate' || n.issue_type === 'decision')) {
       const ds = n._decisionState || (n.status === 'closed' ? 'resolved' : 'pending');
@@ -3412,263 +3392,6 @@ function applyFilters() {
   }
 
   updateFilterCount();
-  updateTimeline();
-}
-
-// --- Timeline Scrubber (bd-huwyz) ---
-// Logarithmic time-range selector. Recent time is expanded (easy to distinguish
-// today vs yesterday), while older time is compressed (months ago squish together).
-// Log transform: pos = log(1 + t/scale) / log(1 + range/scale)
-
-const TIMELINE_LOG_SCALE = 3600000; // 1 hour in ms — aggressive log curvature for fine-grained recent time
-
-function timeToLogPos(timeMs, minMs, maxMs) {
-  const range = maxMs - minMs || 1;
-  const t = timeMs - minMs;
-  return Math.log1p(t / TIMELINE_LOG_SCALE) / Math.log1p(range / TIMELINE_LOG_SCALE);
-}
-
-function logPosToTime(pos, minMs, maxMs) {
-  const range = maxMs - minMs || 1;
-  const logMax = Math.log1p(range / TIMELINE_LOG_SCALE);
-  return minMs + (Math.expm1(pos * logMax) * TIMELINE_LOG_SCALE);
-}
-
-function formatTimelineDate(ms) {
-  const d = new Date(ms);
-  const now = new Date();
-  const diffMs = now - d;
-  const diffHours = diffMs / 3600000;
-  const diffDays = diffMs / 86400000;
-  if (diffHours < 1) return `${Math.floor(diffMs / 60000)}m ago`;
-  if (diffHours < 24) return `${Math.floor(diffHours)}h ago`;
-  if (diffDays < 2) return 'yesterday';
-  if (diffDays < 7) return `${Math.floor(diffDays)}d ago`;
-  if (diffDays < 30) return `${Math.floor(diffDays / 7)}w ago`;
-  if (diffDays < 365) {
-    const months = ['jan','feb','mar','apr','may','jun','jul','aug','sep','oct','nov','dec'];
-    return `${months[d.getMonth()]} ${d.getDate()}`;
-  }
-  return `${d.getFullYear()}`;
-}
-
-function updateTimeline() {
-  const canvas = document.getElementById('timeline-canvas');
-  if (!canvas) return;
-  const ctx = canvas.getContext('2d');
-  const rangeEl = document.getElementById('timeline-range');
-  const handleL = document.getElementById('handle-left');
-  const handleR = document.getElementById('handle-right');
-  const lblOldest = document.getElementById('tl-oldest');
-  const lblNewest = document.getElementById('tl-newest');
-  const lblRange = document.getElementById('tl-range');
-
-  const times = graphData.nodes
-    .filter(n => n.issue_type !== 'agent')
-    .map(n => new Date(n.created_at || n.updated_at || 0).getTime())
-    .filter(t => t > 0);
-
-  if (times.length === 0) {
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-    lblOldest.textContent = '';
-    lblNewest.textContent = '';
-    lblRange.textContent = 'no data';
-    rangeEl.style.display = 'none';
-    handleL.style.display = 'none';
-    handleR.style.display = 'none';
-    return;
-  }
-
-  timelineMinMs = Math.min(...times);
-  timelineMaxMs = Math.max(...times);
-
-  const rect = canvas.getBoundingClientRect();
-  const dpr = window.devicePixelRatio || 1;
-  canvas.width = rect.width * dpr;
-  canvas.height = rect.height * dpr;
-  ctx.scale(dpr, dpr);
-  const W = rect.width;
-  const H = rect.height;
-
-  // Build histogram in log space
-  const BUCKETS = 40;
-  const buckets = new Array(BUCKETS).fill(0);
-  const statusBuckets = new Array(BUCKETS).fill(null).map(() => ({ open: 0, active: 0, closed: 0 }));
-  for (const node of graphData.nodes) {
-    if (node.issue_type === 'agent') continue;
-    const t = new Date(node.created_at || node.updated_at || 0).getTime();
-    if (t <= 0) continue;
-    const pos = timeToLogPos(t, timelineMinMs, timelineMaxMs);
-    const idx = Math.min(Math.floor(pos * BUCKETS), BUCKETS - 1);
-    buckets[idx]++;
-    if (node.status === 'in_progress') statusBuckets[idx].active++;
-    else if (node.status === 'closed') statusBuckets[idx].closed++;
-    else statusBuckets[idx].open++;
-  }
-  const maxBucket = Math.max(...buckets, 1);
-
-  ctx.clearRect(0, 0, W, H);
-  const barW = W / BUCKETS;
-  for (let i = 0; i < BUCKETS; i++) {
-    if (buckets[i] === 0) continue;
-    const barH = (buckets[i] / maxBucket) * (H - 4);
-    const x = i * barW;
-    const y = H - 2 - barH;
-    const inRange = (i / BUCKETS) >= timelineSelStart && ((i + 1) / BUCKETS) <= timelineSelEnd;
-    const total = statusBuckets[i].open + statusBuckets[i].active + statusBuckets[i].closed;
-    if (total > 0) {
-      let cy = y;
-      if (statusBuckets[i].active > 0) {
-        const h = (statusBuckets[i].active / total) * barH;
-        ctx.fillStyle = inRange ? 'rgba(212, 160, 23, 0.8)' : 'rgba(212, 160, 23, 0.3)';
-        ctx.fillRect(x + 1, cy, barW - 2, h);
-        cy += h;
-      }
-      if (statusBuckets[i].open > 0) {
-        const h = (statusBuckets[i].open / total) * barH;
-        ctx.fillStyle = inRange ? 'rgba(45, 138, 78, 0.8)' : 'rgba(45, 138, 78, 0.3)';
-        ctx.fillRect(x + 1, cy, barW - 2, h);
-        cy += h;
-      }
-      if (statusBuckets[i].closed > 0) {
-        const h = (statusBuckets[i].closed / total) * barH;
-        ctx.fillStyle = inRange ? 'rgba(100, 100, 120, 0.6)' : 'rgba(100, 100, 120, 0.2)';
-        ctx.fillRect(x + 1, cy, barW - 2, h);
-      }
-    }
-  }
-
-  // Position range highlight and handles
-  const selLeftPx = timelineSelStart * W;
-  const selRightPx = timelineSelEnd * W;
-  rangeEl.style.display = 'block';
-  rangeEl.style.left = selLeftPx + 'px';
-  rangeEl.style.width = (selRightPx - selLeftPx) + 'px';
-  handleL.style.display = 'block';
-  handleL.style.left = (selLeftPx - 4) + 'px';
-  handleR.style.display = 'block';
-  handleR.style.left = (selRightPx - 4) + 'px';
-
-  lblOldest.textContent = formatTimelineDate(timelineMinMs);
-  lblNewest.textContent = formatTimelineDate(timelineMaxMs);
-  if (timelineSelStart > 0.001 || timelineSelEnd < 0.999) {
-    const startDate = logPosToTime(timelineSelStart, timelineMinMs, timelineMaxMs);
-    const endDate = logPosToTime(timelineSelEnd, timelineMinMs, timelineMaxMs);
-    lblRange.textContent = `${formatTimelineDate(startDate)} \u2013 ${formatTimelineDate(endDate)}`;
-    timelineActive = true;
-  } else {
-    lblRange.textContent = 'all time';
-    timelineActive = false;
-  }
-}
-
-function initTimelineScrubber() {
-  const canvas = document.getElementById('timeline-canvas');
-  if (!canvas) return;
-  let dragging = null; // 'left', 'right', or 'range'
-  let dragStartX = 0;
-  let dragStartSelStart = 0;
-  let dragStartSelEnd = 0;
-
-  function posFromEvent(e) {
-    const rect = canvas.getBoundingClientRect();
-    return Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
-  }
-
-  document.getElementById('handle-left').addEventListener('mousedown', (e) => {
-    e.preventDefault();
-    e.stopPropagation();
-    dragging = 'left';
-    dragStartX = posFromEvent(e);
-  });
-
-  document.getElementById('handle-right').addEventListener('mousedown', (e) => {
-    e.preventDefault();
-    e.stopPropagation();
-    dragging = 'right';
-    dragStartX = posFromEvent(e);
-  });
-
-  canvas.addEventListener('mousedown', (e) => {
-    const pos = posFromEvent(e);
-    if (pos >= timelineSelStart + 0.005 && pos <= timelineSelEnd - 0.005) {
-      dragging = 'range';
-      dragStartX = pos;
-      dragStartSelStart = timelineSelStart;
-      dragStartSelEnd = timelineSelEnd;
-    } else {
-      const distToLeft = Math.abs(pos - timelineSelStart);
-      const distToRight = Math.abs(pos - timelineSelEnd);
-      if (distToLeft < distToRight) {
-        timelineSelStart = pos;
-        dragging = 'left';
-      } else {
-        timelineSelEnd = pos;
-        dragging = 'right';
-      }
-      updateTimeline();
-      applyFilters();
-    }
-  });
-
-  document.addEventListener('mousemove', (e) => {
-    if (!dragging) return;
-    const pos = posFromEvent(e);
-    if (dragging === 'left') {
-      timelineSelStart = Math.min(pos, timelineSelEnd - 0.005);
-    } else if (dragging === 'right') {
-      timelineSelEnd = Math.max(pos, timelineSelStart + 0.005);
-    } else if (dragging === 'range') {
-      const delta = pos - dragStartX;
-      const width = dragStartSelEnd - dragStartSelStart;
-      let newStart = dragStartSelStart + delta;
-      let newEnd = dragStartSelEnd + delta;
-      if (newStart < 0) { newStart = 0; newEnd = width; }
-      if (newEnd > 1) { newEnd = 1; newStart = 1 - width; }
-      timelineSelStart = newStart;
-      timelineSelEnd = newEnd;
-    }
-    updateTimeline();
-  });
-
-  document.addEventListener('mouseup', () => {
-    if (dragging) {
-      dragging = null;
-      applyFilters();
-    }
-  });
-
-  canvas.addEventListener('dblclick', () => {
-    timelineSelStart = 0;
-    timelineSelEnd = 1;
-    updateTimeline();
-    applyFilters();
-  });
-
-  // Scroll wheel zoom: zoom in/out around cursor position (bd-or8t1)
-  canvas.addEventListener('wheel', (e) => {
-    e.preventDefault();
-    const pos = posFromEvent(e);
-    const width = timelineSelEnd - timelineSelStart;
-    const zoomFactor = e.deltaY > 0 ? 1.15 : 0.85; // scroll down = zoom out
-    const newWidth = Math.max(0.005, Math.min(1, width * zoomFactor));
-
-    // Anchor zoom around cursor position within selection
-    const anchor = (pos - timelineSelStart) / (width || 1);
-    let newStart = pos - anchor * newWidth;
-    let newEnd = newStart + newWidth;
-
-    // Clamp to [0, 1]
-    if (newStart < 0) { newEnd -= newStart; newStart = 0; }
-    if (newEnd > 1) { newStart -= (newEnd - 1); newEnd = 1; }
-    newStart = Math.max(0, newStart);
-    newEnd = Math.min(1, newEnd);
-
-    timelineSelStart = newStart;
-    timelineSelEnd = newEnd;
-    updateTimeline();
-    applyFilters();
-  }, { passive: false });
 }
 
 // Navigate search results: fly camera to the current match
@@ -4027,8 +3750,6 @@ function _applyFilterState(state) {
   syncToolbarControls();
   _syncAllRigPills();
   // Age changes need re-fetch; for simplicity always refresh
-  timelineSelStart = 0;
-  timelineSelEnd = 1;
   refresh();
 }
 
@@ -4091,8 +3812,6 @@ async function loadFilterProfile(name) {
     syncFilterDashboard();
     syncToolbarControls();
     _syncAllRigPills();
-    timelineSelStart = 0;
-    timelineSelEnd = 1;
     localStorage.removeItem('beads3d-filter-profile');
     refresh();
     return;
@@ -4256,8 +3975,6 @@ function initFilterDashboard() {
       panel.querySelectorAll('.fd-age').forEach(b => b.classList.remove('active'));
       btn.classList.add('active');
       activeAgeDays = newDays;
-      timelineSelStart = 0;
-      timelineSelEnd = 1;
       syncToolbarControls();
       refresh();
     });
@@ -4312,8 +4029,6 @@ function initFilterDashboard() {
     const excludeInput = document.getElementById('fd-agent-exclude');
     if (excludeInput) excludeInput.value = '';
     activeAgeDays = 7;
-    timelineSelStart = 0;
-    timelineSelEnd = 1;
     syncFilterDashboard();
     syncToolbarControls();
     _syncAllRigPills();
@@ -5314,16 +5029,10 @@ function setupControls() {
       document.querySelectorAll('.filter-age').forEach(b => b.classList.remove('active'));
       btn.classList.add('active');
       activeAgeDays = newDays;
-      // Reset timeline scrubber to full range when age filter changes (bd-huwyz)
-      timelineSelStart = 0;
-      timelineSelEnd = 1;
       syncFilterDashboard();
       refresh(); // re-fetch with new age cutoff (bd-uc0mw)
     });
   });
-
-  // Timeline scrubber (bd-huwyz)
-  initTimelineScrubber();
 
   // Filter dashboard panel (bd-8o2gd phase 2)
   initFilterDashboard();
