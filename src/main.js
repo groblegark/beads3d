@@ -120,8 +120,9 @@ const dootPopups = new Map(); // nodeId → { el, timer, node, lastDoot }
 // bd-5ok9s: enhanced status: lastStatus, lastTool, idleSince, crashError
 const agentWindows = new Map();
 
-// Agents View overlay state (bd-jgvas)
+// Agents View overlay state (bd-jgvas, bd-bwi52: tabbed)
 let agentsViewOpen = false;
+let _selectedAgentTab = null; // currently selected agent ID in tabbed view
 
 // Left Sidebar state (bd-nnr22)
 // leftSidebarOpen, _agentRoster moved to left-sidebar.js (bd-7t6nt)
@@ -4090,6 +4091,15 @@ function setupControls() {
   setDetailDeps({
     api,
     showAgentWindow,
+    openAgentTab: (node) => {
+      // bd-bwi52: open agents view + select tab for this agent
+      if (agentsViewOpen) {
+        selectAgentTab(node.id);
+      } else {
+        openAgentsView();
+        selectAgentTab(node.id);
+      }
+    },
     showStatusToast,
     getGraph: () => graph,
   });
@@ -5009,11 +5019,11 @@ function togglePopout(agentId) {
     el.style.height = '';
     btn.innerHTML = '&#x2197;';
     btn.title = 'Pop out to floating window';
-    // Move back to original container
+    // Move back to original container (bd-bwi52: use tab content area)
     const tray = document.getElementById('agent-windows');
-    const grid = document.querySelector('.agents-view-grid');
-    if (grid && document.getElementById('agents-view')?.style.display !== 'none') {
-      grid.appendChild(el);
+    const tabContent = document.querySelector('.agents-tab-content');
+    if (tabContent && document.getElementById('agents-view')?.classList.contains('open')) {
+      tabContent.appendChild(el);
     } else if (tray) {
       tray.appendChild(el);
     }
@@ -5723,6 +5733,7 @@ function openAgentsView() {
     else if (n.status === 'crashed') counts.crashed++;
   }
 
+  // bd-bwi52: Tabbed single-panel interface (replaces grid)
   overlay.innerHTML = `
     <div class="agents-view-header">
       <span class="agents-view-title">AGENTS</span>
@@ -5735,202 +5746,65 @@ function openAgentsView() {
       </div>
       <button class="agents-view-close">ESC close</button>
     </div>
-    <div class="agents-view-grid"></div>
+    <div class="agents-tab-bar"></div>
+    <div class="agents-tab-content"></div>
   `;
 
   overlay.querySelector('.agents-view-close').onclick = () => closeAgentsView();
 
-  // Filter/search agent windows by name (bd-jgvas Phase 2)
+  // Filter/search: filter tabs by name (bd-jgvas Phase 2, bd-bwi52)
   const searchEl = overlay.querySelector('.agents-view-search');
   searchEl.addEventListener('input', () => {
     const q = searchEl.value.toLowerCase().trim();
-    for (const [, win] of agentWindows) {
-      const name = (win.node.title || win.node.id).toLowerCase();
-      win.el.style.display = (!q || name.includes(q)) ? '' : 'none';
+    const tabBar = overlay.querySelector('.agents-tab-bar');
+    if (!tabBar) return;
+    for (const tab of tabBar.children) {
+      const name = (tab.dataset.agentName || '').toLowerCase();
+      tab.style.display = (!q || name.includes(q)) ? '' : 'none';
     }
   });
-  // Focus search on open, but don't steal from Escape handler
   setTimeout(() => searchEl.focus(), 100);
 
-  const grid = overlay.querySelector('.agents-view-grid');
+  const tabBar = overlay.querySelector('.agents-tab-bar');
+  const contentArea = overlay.querySelector('.agents-tab-content');
 
-  // Open agent windows inside the overlay grid
+  // Ensure agent windows exist for all agents
   for (const node of agentNodes) {
-    // If window already exists (from bottom tray), move it into the grid
-    const existing = agentWindows.get(node.id);
-    if (existing) {
-      existing.collapsed = false;
-      existing.el.classList.remove('collapsed');
-      grid.appendChild(existing.el);
-      continue;
-    }
-
-    // Create new window in the grid (reuse showAgentWindow logic inline)
-    const el = document.createElement('div');
-    el.className = 'agent-window';
-    el.dataset.agentId = node.id;
-
+    _ensureAgentWindow(node, contentArea);
+    // Create tab button
     const agentName = node.title || node.id.replace('agent:', '');
     const agentStatus = (node.status || '').toLowerCase();
-    const statusColor = agentStatus === 'active' ? '#2d8a4e' :
-                         agentStatus === 'idle' ? '#d4a017' :
-                         agentStatus === 'crashed' ? '#d04040' : '#666';
-
-    // bd-tgg70: Use shared helpers for beads list
-    const assigned = getAssignedBeads(node.id);
-    const beadsList = renderBeadsListHtml(assigned);
-
-    const avRigBadge = node.rig
-      ? `<span class="agent-window-rig" style="color:${rigColor(node.rig)};border-color:${rigColor(node.rig)}33">${escapeHtml(node.rig)}</span>`
-      : '';
-
-    const avStatusClass = agentStatus === 'active' ? 'status-active' : agentStatus === 'idle' ? 'status-idle' : agentStatus === 'crashed' ? 'status-crashed' : '';
-
-    el.innerHTML = `
-      <div class="agent-window-resize-handle"></div>
-      <div class="agent-window-header">
-        <span class="agent-window-name" style="cursor:pointer" title="Click to zoom to agent">${escapeHtml(agentName)}</span>
-        ${avRigBadge}
-        <span class="agent-window-badge" style="color:${statusColor}">${agentStatus || '?'}</span>
-        <span class="agent-window-badge">${assigned.length}</span>
-        <button class="agent-window-popout" title="Pop out to floating window">&#x2197;</button>
-        <button class="agent-window-close">&times;</button>
-      </div>
-      <div class="agent-status-bar">
-        <span><span class="status-label">Status:</span> <span class="agent-status-state ${avStatusClass}">${agentStatus || '?'}</span></span>
-        <span class="agent-status-idle-dur"></span>
-        <span class="agent-status-tool"></span>
-      </div>
-      ${beadsList ? `<div class="agent-window-beads">${beadsList}</div>` : ''}
-      <div class="agent-feed"><div class="agent-window-empty">waiting for events...</div></div>
-      <div class="agent-mail-compose">
-        <input class="agent-mail-input" type="text" placeholder="Send message to ${escapeHtml(agentName)}..." />
-        <button class="agent-mail-send">&#x2709;</button>
-      </div>
-    `;
-
-    // bd-2ysfj: Click agent name to highlight + zoom to agent node in 3D scene
-    el.querySelector('.agent-window-name').onclick = (e) => {
-      e.stopPropagation();
-      const agentNode = graphData.nodes.find(n => n.id === node.id);
-      if (agentNode) handleNodeClick(agentNode);
-    };
-
-    // bd-xm78e: Click assigned bead to highlight + zoom to bead node in 3D scene
-    const beadsContainer = el.querySelector('.agent-window-beads');
-    if (beadsContainer) {
-      beadsContainer.onclick = (e) => {
-        const beadEl = e.target.closest('.agent-window-bead');
-        if (!beadEl) return;
-        const beadId = beadEl.dataset.beadId;
-        if (!beadId) return;
-        e.stopPropagation();
-        const beadNode = graphData.nodes.find(n => n.id === beadId);
-        if (beadNode) handleNodeClick(beadNode);
-      };
-    }
-
-    const header = el.querySelector('.agent-window-header');
-    header.onclick = (e) => {
-      if (e.target.classList.contains('agent-window-close')) return;
-      if (e.target.classList.contains('agent-window-name')) return; // bd-2ysfj: name has its own handler
-      const win = agentWindows.get(node.id);
-      if (win) {
-        win.collapsed = !win.collapsed;
-        el.classList.toggle('collapsed', win.collapsed);
-      }
-    };
-
-    el.querySelector('.agent-window-close').onclick = () => closeAgentWindow(node.id);
-
-    // bd-dqe6k: Pop-out / dock-back
-    el.querySelector('.agent-window-popout').onclick = (e) => {
-      e.stopPropagation();
-      togglePopout(node.id);
-    };
-
-    // Mail compose
-    const mailInput = el.querySelector('.agent-mail-input');
-    const mailSend = el.querySelector('.agent-mail-send');
-    const doSend = async () => {
-      const text = mailInput.value.trim();
-      if (!text) return;
-      mailInput.value = '';
-      mailInput.disabled = true;
-      mailSend.disabled = true;
-      try {
-        await api.sendMail(agentName, text);
-        const win = agentWindows.get(node.id);
-        if (win) {
-          const empty = win.feedEl.querySelector('.agent-window-empty');
-          if (empty) empty.remove();
-          const ts = new Date().toTimeString().slice(0, 8);
-          win.feedEl.appendChild(createEntry(ts, '\u25b6', `sent: ${text}`, 'mail mail-sent'));
-          autoScroll(win);
-        }
-      } catch (err) {
-        console.error('[beads3d] mail send failed:', err);
-        mailInput.value = text;
-        const compose = el.querySelector('.agent-mail-compose');
-        compose.classList.add('send-error');
-        setTimeout(() => compose.classList.remove('send-error'), 2000);
-      }
-      mailInput.disabled = false;
-      mailSend.disabled = false;
-      mailInput.focus();
-    };
-    mailSend.onclick = doSend;
-    mailInput.onkeydown = (e) => { if (e.key === 'Enter') doSend(); };
-
-    grid.appendChild(el);
-
-    const feedEl = el.querySelector('.agent-feed');
-    const statusEl = el.querySelector('.agent-status-bar');
-    agentWindows.set(node.id, {
-      el, feedEl, statusEl, node,
-      entries: [],
-      pendingTool: null,
-      collapsed: false,
-      lastStatus: agentStatus || null,
-      lastTool: null,
-      idleSince: agentStatus === 'idle' ? Date.now() : null,
-      crashError: null,
-    });
-    enableTopResize(el); // bd-9wxm9
+    const tab = document.createElement('button');
+    tab.className = 'agent-tab';
+    tab.dataset.agentId = node.id;
+    tab.dataset.agentName = agentName;
+    const dotColor = agentStatus === 'active' ? '#2d8a4e' :
+                     agentStatus === 'idle' ? '#d4a017' :
+                     agentStatus === 'crashed' ? '#d04040' : '#666';
+    tab.innerHTML = `<span class="agent-tab-dot" style="background:${dotColor}"></span>${escapeHtml(agentName)}`;
+    tab.onclick = () => selectAgentTab(node.id);
+    tabBar.appendChild(tab);
   }
+
+  // Select first agent or previously selected
+  const firstId = (_selectedAgentTab && agentNodes.find(n => n.id === _selectedAgentTab))
+    ? _selectedAgentTab : agentNodes[0].id;
+  selectAgentTab(firstId);
 
   overlay.classList.add('open');
   agentsViewOpen = true;
 }
 
-function closeAgentsView() {
-  const overlay = document.getElementById('agents-view');
-  if (!overlay) return;
-
-  // Move windows back to bottom tray (don't destroy — preserves event history)
-  const tray = document.getElementById('agent-windows');
-  if (tray) {
-    for (const [, win] of agentWindows) {
-      if (win.el.parentElement !== tray) {
-        win.collapsed = true;
-        win.el.classList.add('collapsed');
-        tray.appendChild(win.el);
-      }
-    }
+// bd-bwi52: Ensure an agent window (data + DOM) exists, placing it in contentArea
+function _ensureAgentWindow(node, contentArea) {
+  const existing = agentWindows.get(node.id);
+  if (existing) {
+    // Move into content area (from bottom tray or previous location)
+    existing.collapsed = false;
+    existing.el.classList.remove('collapsed');
+    contentArea.appendChild(existing.el);
+    return;
   }
-
-  overlay.classList.remove('open');
-  overlay.innerHTML = '';
-  agentsViewOpen = false;
-}
-
-// Create an agent window inside the agents-view grid (bd-jgvas Phase 2: auto-open)
-function createAgentWindowInGrid(node) {
-  if (!node || agentWindows.has(node.id)) return;
-  const overlay = document.getElementById('agents-view');
-  if (!overlay) return;
-  const grid = overlay.querySelector('.agents-view-grid');
-  if (!grid) return;
 
   const el = document.createElement('div');
   el.className = 'agent-window';
@@ -5942,23 +5816,24 @@ function createAgentWindowInGrid(node) {
                        agentStatus === 'idle' ? '#d4a017' :
                        agentStatus === 'crashed' ? '#d04040' : '#666';
 
-  // bd-tgg70: Use shared helpers for beads list
   const assigned = getAssignedBeads(node.id);
   const beadsList = renderBeadsListHtml(assigned);
 
-  const ciwStatusClass = agentStatus === 'active' ? 'status-active' : agentStatus === 'idle' ? 'status-idle' : agentStatus === 'crashed' ? 'status-crashed' : '';
+  const avRigBadge = node.rig
+    ? `<span class="agent-window-rig" style="color:${rigColor(node.rig)};border-color:${rigColor(node.rig)}33">${escapeHtml(node.rig)}</span>`
+    : '';
+
+  const avStatusClass = agentStatus === 'active' ? 'status-active' : agentStatus === 'idle' ? 'status-idle' : agentStatus === 'crashed' ? 'status-crashed' : '';
 
   el.innerHTML = `
-    <div class="agent-window-resize-handle"></div>
     <div class="agent-window-header">
       <span class="agent-window-name" style="cursor:pointer" title="Click to zoom to agent">${escapeHtml(agentName)}</span>
+      ${avRigBadge}
       <span class="agent-window-badge" style="color:${statusColor}">${agentStatus || '?'}</span>
       <span class="agent-window-badge">${assigned.length}</span>
-      <button class="agent-window-popout" title="Pop out to floating window">&#x2197;</button>
-      <button class="agent-window-close">&times;</button>
     </div>
     <div class="agent-status-bar">
-      <span><span class="status-label">Status:</span> <span class="agent-status-state ${ciwStatusClass}">${agentStatus || '?'}</span></span>
+      <span><span class="status-label">Status:</span> <span class="agent-status-state ${avStatusClass}">${agentStatus || '?'}</span></span>
       <span class="agent-status-idle-dur"></span>
       <span class="agent-status-tool"></span>
     </div>
@@ -5970,14 +5845,12 @@ function createAgentWindowInGrid(node) {
     </div>
   `;
 
-  // bd-2ysfj: Click agent name to highlight + zoom to agent node in 3D scene
   el.querySelector('.agent-window-name').onclick = (e) => {
     e.stopPropagation();
     const agentNode = graphData.nodes.find(n => n.id === node.id);
     if (agentNode) handleNodeClick(agentNode);
   };
 
-  // bd-xm78e: Click assigned bead to highlight + zoom to bead node in 3D scene
   const beadsContainer = el.querySelector('.agent-window-beads');
   if (beadsContainer) {
     beadsContainer.onclick = (e) => {
@@ -5990,25 +5863,6 @@ function createAgentWindowInGrid(node) {
       if (beadNode) handleNodeClick(beadNode);
     };
   }
-
-  const header = el.querySelector('.agent-window-header');
-  header.onclick = (e) => {
-    if (e.target.classList.contains('agent-window-close')) return;
-    if (e.target.classList.contains('agent-window-name')) return; // bd-2ysfj: name has its own handler
-    const win = agentWindows.get(node.id);
-    if (win) {
-      win.collapsed = !win.collapsed;
-      el.classList.toggle('collapsed', win.collapsed);
-    }
-  };
-
-  el.querySelector('.agent-window-close').onclick = () => closeAgentWindow(node.id);
-
-  // bd-dqe6k: Pop-out / dock-back
-  el.querySelector('.agent-window-popout').onclick = (e) => {
-    e.stopPropagation();
-    togglePopout(node.id);
-  };
 
   // Mail compose
   const mailInput = el.querySelector('.agent-mail-input');
@@ -6043,7 +5897,7 @@ function createAgentWindowInGrid(node) {
   mailSend.onclick = doSend;
   mailInput.onkeydown = (e) => { if (e.key === 'Enter') doSend(); };
 
-  grid.appendChild(el);
+  contentArea.appendChild(el);
 
   const feedEl = el.querySelector('.agent-feed');
   const statusEl = el.querySelector('.agent-status-bar');
@@ -6057,9 +5911,88 @@ function createAgentWindowInGrid(node) {
     idleSince: agentStatus === 'idle' ? Date.now() : null,
     crashError: null,
   });
-  enableTopResize(el); // bd-9wxm9
+}
 
-  // Update the header stats count
+// bd-bwi52: Switch to an agent's tab
+function selectAgentTab(agentId) {
+  _selectedAgentTab = agentId;
+  const overlay = document.getElementById('agents-view');
+  if (!overlay) return;
+
+  // Update tab bar active state
+  const tabs = overlay.querySelectorAll('.agent-tab');
+  for (const tab of tabs) {
+    tab.classList.toggle('active', tab.dataset.agentId === agentId);
+  }
+
+  // Show only the selected agent's window
+  const contentArea = overlay.querySelector('.agents-tab-content');
+  if (contentArea) {
+    for (const child of contentArea.children) {
+      child.style.display = (child.dataset.agentId === agentId) ? '' : 'none';
+    }
+  }
+
+  // Scroll feed to bottom
+  const win = agentWindows.get(agentId);
+  if (win) autoScroll(win);
+}
+
+function closeAgentsView() {
+  const overlay = document.getElementById('agents-view');
+  if (!overlay) return;
+
+  // Move windows back to bottom tray (don't destroy — preserves event history)
+  const tray = document.getElementById('agent-windows');
+  if (tray) {
+    for (const [, win] of agentWindows) {
+      if (win.el.parentElement !== tray) {
+        win.collapsed = true;
+        win.el.classList.add('collapsed');
+        win.el.style.display = ''; // unhide (tabbed view hides non-selected)
+        tray.appendChild(win.el);
+      }
+    }
+  }
+
+  overlay.classList.remove('open');
+  overlay.innerHTML = '';
+  agentsViewOpen = false;
+}
+
+// bd-bwi52: Create agent window inside tabbed view + add tab button
+function createAgentWindowInGrid(node) {
+  if (!node || agentWindows.has(node.id)) return;
+  const overlay = document.getElementById('agents-view');
+  if (!overlay) return;
+  const contentArea = overlay.querySelector('.agents-tab-content');
+  if (!contentArea) return;
+
+  _ensureAgentWindow(node, contentArea);
+
+  // Add tab button
+  const tabBar = overlay.querySelector('.agents-tab-bar');
+  if (tabBar) {
+    const agentName = node.title || node.id.replace('agent:', '');
+    const agentStatus = (node.status || '').toLowerCase();
+    const dotColor = agentStatus === 'active' ? '#2d8a4e' :
+                     agentStatus === 'idle' ? '#d4a017' :
+                     agentStatus === 'crashed' ? '#d04040' : '#666';
+    const tab = document.createElement('button');
+    tab.className = 'agent-tab';
+    tab.dataset.agentId = node.id;
+    tab.dataset.agentName = agentName;
+    tab.innerHTML = `<span class="agent-tab-dot" style="background:${dotColor}"></span>${escapeHtml(agentName)}`;
+    tab.onclick = () => selectAgentTab(node.id);
+    tabBar.appendChild(tab);
+  }
+
+  // Hide if not currently selected
+  const win = agentWindows.get(node.id);
+  if (win && _selectedAgentTab && _selectedAgentTab !== node.id) {
+    win.el.style.display = 'none';
+  }
+
   updateAgentsViewStats();
 }
 
@@ -6480,13 +6413,15 @@ function connectBusStream() {
         }
         if (agentWindows.has(agentId)) {
           appendAgentEvent(agentId, evt);
-          // Scroll-to-agent and flash highlight in overlay (bd-jgvas Phase 2)
-          if (agentsViewOpen) {
-            const win = agentWindows.get(agentId);
-            if (win && win.el) {
-              win.el.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-              win.el.classList.add('agent-window-flash');
-              setTimeout(() => win.el.classList.remove('agent-window-flash'), 600);
+          // bd-bwi52: Flash tab for non-selected agents when events arrive
+          if (agentsViewOpen && agentId !== _selectedAgentTab) {
+            const overlay = document.getElementById('agents-view');
+            if (overlay) {
+              const tab = overlay.querySelector(`.agent-tab[data-agent-id="${agentId}"]`);
+              if (tab && !tab.classList.contains('active')) {
+                tab.classList.add('tab-flash');
+                setTimeout(() => tab.classList.remove('tab-flash'), 800);
+              }
             }
           }
         }
@@ -6586,6 +6521,8 @@ async function main() {
     window.__beads3d_openAgentsView = openAgentsView;
     window.__beads3d_closeAgentsView = closeAgentsView;
     window.__beads3d_agentsViewOpen = () => agentsViewOpen;
+    window.__beads3d_selectAgentTab = selectAgentTab;
+    window.__beads3d_selectedAgentTab = () => _selectedAgentTab;
     window.__beads3d_resolveAgentIdLoose = resolveAgentIdLoose;
     // Expose event sprite internals for testing (bd-9qeto)
     window.__beads3d_spawnStatusPulse = spawnStatusPulse;

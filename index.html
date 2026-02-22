@@ -1689,36 +1689,78 @@
     }
     .agents-view-close:hover { color: #fff; border-color: #666; }
 
-    .agents-view-grid {
-      flex: 1;
+    /* bd-bwi52: Tab bar (replaces grid) */
+    .agents-tab-bar {
       display: flex;
-      flex-wrap: wrap;
-      gap: 4px;
-      padding: 8px;
+      gap: 2px;
+      padding: 4px 8px;
+      background: rgba(10, 10, 20, 0.9);
+      border-bottom: 1px solid #2a2a3a;
+      overflow-x: auto;
+      overflow-y: hidden;
+      flex-shrink: 0;
+      scrollbar-width: thin;
+    }
+    .agents-tab-bar::-webkit-scrollbar { height: 3px; }
+    .agents-tab-bar::-webkit-scrollbar-thumb { background: #2a2a3a; border-radius: 2px; }
+
+    .agent-tab {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      padding: 4px 10px;
+      background: rgba(20, 20, 35, 0.6);
+      border: 1px solid #1a1a2a;
+      border-bottom: none;
+      border-radius: 4px 4px 0 0;
+      color: #777;
+      font-size: 11px;
+      font-family: 'JetBrains Mono', monospace;
+      cursor: pointer;
+      white-space: nowrap;
+      transition: background 0.15s, color 0.15s;
+    }
+    .agent-tab:hover { background: rgba(30, 30, 50, 0.8); color: #aaa; }
+    .agent-tab.active {
+      background: rgba(40, 40, 60, 0.95);
+      color: #ff6b35;
+      border-color: #ff6b35;
+      border-bottom: 2px solid transparent;
+    }
+    .agent-tab-dot {
+      width: 6px; height: 6px;
+      border-radius: 50%;
+      display: inline-block;
+      flex-shrink: 0;
+    }
+    .agent-tab.tab-flash {
+      animation: tab-flash-anim 0.8s ease-out;
+    }
+    @keyframes tab-flash-anim {
+      0% { background: rgba(255, 107, 53, 0.3); color: #ff6b35; }
+      100% { background: rgba(20, 20, 35, 0.6); }
+    }
+
+    /* bd-bwi52: Tab content area — full height single agent view */
+    .agents-tab-content {
+      flex: 1;
+      overflow: hidden;
+      position: relative;
+    }
+    .agents-tab-content .agent-window {
+      width: 100%;
+      height: 100%;
+      border: none;
+      border-radius: 0;
+      display: flex;
+      flex-direction: column;
+    }
+    .agents-tab-content .agent-feed {
+      flex: 1;
       overflow-y: auto;
-      align-content: flex-start;
     }
-    .agents-view-grid::-webkit-scrollbar { width: 4px; }
-    .agents-view-grid::-webkit-scrollbar-thumb { background: #2a2a3a; border-radius: 2px; }
 
-    .agents-view-grid .agent-window {
-      width: 320px;
-      min-width: 280px;
-      flex: 1 1 320px;
-      max-width: 420px;
-      border-radius: 4px;
-    }
-    .agents-view-grid .agent-window:not(.collapsed) { height: 300px; }
-    .agents-view-grid .agent-window.collapsed { height: 28px; }
-
-    /* Flash animation for scroll-to-agent (bd-jgvas Phase 2) */
-    .agent-window-flash {
-      animation: agent-flash 0.6s ease-out;
-    }
-    @keyframes agent-flash {
-      0% { border-color: #ff6b35; box-shadow: 0 0 12px rgba(255, 107, 53, 0.4); }
-      100% { border-color: #2a2a3a; box-shadow: none; }
-    }
+    /* Legacy grid support removed — agent-window-flash no longer used */
 
     /* Search input in agents view header (bd-jgvas Phase 2) */
     .agents-view-search {

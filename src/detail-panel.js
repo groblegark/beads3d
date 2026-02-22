@@ -6,14 +6,16 @@ import { rigColor } from './colors.js';
 // Callbacks set by main.js to avoid circular imports
 let _api = null;
 let _showAgentWindow = null;
+let _openAgentTab = null; // bd-bwi52: open tabbed agents view for a node
 let _showStatusToast = null;
 let _getGraph = null;
 
 const openPanels = new Map(); // beadId → panel element
 
-export function setDetailDeps({ api, showAgentWindow, showStatusToast, getGraph }) {
+export function setDetailDeps({ api, showAgentWindow, openAgentTab, showStatusToast, getGraph }) {
   _api = api;
   _showAgentWindow = showAgentWindow;
+  _openAgentTab = openAgentTab;
   _showStatusToast = showStatusToast;
   _getGraph = getGraph;
 }
@@ -74,11 +76,11 @@ export async function showDetail(node) {
   // Animate open
   requestAnimationFrame(() => panel.classList.add('open'));
 
-  // Agent nodes: open activity feed window instead of detail panel (bd-kau4k)
+  // Agent nodes: open tabbed agents view (bd-kau4k, bd-bwi52)
   if (node.issue_type === 'agent' && node.id.startsWith('agent:')) {
-    // Remove the detail panel we just created — agent windows live in the bottom tray
     closeDetailPanel(node.id);
-    if (_showAgentWindow) _showAgentWindow(node);
+    if (_openAgentTab) _openAgentTab(node);
+    else if (_showAgentWindow) _showAgentWindow(node);
     return;
   }
 
