@@ -848,11 +848,20 @@ function resolveOverlappingLabels() {
     if (!anyMoved) break;
   }
 
-  // Apply offsets back to sprite positions
+  // Apply offsets back to sprite world positions (bd-5rwn3).
+  // Since sizeAttenuation=false, sprite.scale is in viewport fractions but
+  // sprite.position is in the parent group's world space. We must convert
+  // screen-pixel offsets to world-space Y offsets using the camera projection.
   for (const l of visibleLabels) {
     if (l.offsetY === 0) continue;
-    const pixToLocal = l.sprite.scale.y / l.lh;
-    l.sprite.position.y += l.offsetY * pixToLocal;
+    // Compute world-to-screen Y scale at this sprite's depth
+    const worldPos = new THREE.Vector3();
+    l.sprite.getWorldPosition(worldPos);
+    const camDist = camera.position.distanceTo(worldPos);
+    // For perspective camera: world units per pixel = 2 * dist * tan(fov/2) / height
+    const fovRad = camera.fov * Math.PI / 180;
+    const worldPerPx = 2 * camDist * Math.tan(fovRad / 2) / height;
+    l.sprite.position.y -= l.offsetY * worldPerPx; // screen Y is inverted vs world Y
   }
 }
 
@@ -2396,6 +2405,8 @@ function handleNodeHover(node) {
     </div>
     <div class="hint">click for details</div>
   `;
+  // Respect HUD visibility toggle (bd-4hggh)
+  if (window.__beads3d_hudHidden && window.__beads3d_hudHidden['tooltip']) return;
   tooltip.style.display = 'block';
   document.addEventListener('mousemove', positionTooltip);
 }
@@ -4309,6 +4320,8 @@ function setLayout(mode) {
   document.querySelectorAll('#layout-controls button').forEach(b => b.classList.remove('active'));
   const btn = document.getElementById(`btn-layout-${mode}`);
   if (btn) btn.classList.add('active');
+  const layoutSel = document.getElementById('cp-layout-mode');
+  if (layoutSel && layoutSel.value !== mode) layoutSel.value = mode;
 
   // Clear all custom forces and visual guides
   clearLayoutGuides();
@@ -6367,14 +6380,34 @@ function initControlPanel() {
   wireSlider('cp-label-size', v => { window.__beads3d_labelSize = v; });
   wireSlider('cp-label-opacity', v => { window.__beads3d_labelOpacity = v; });
 
-  // Animation controls
-  wireSlider('cp-fly-speed', v => { window.__beads3d_flySpeed = v; });
-  wireSlider('cp-force-strength', v => {
+  // Layout controls (bd-a1odd)
+  wireSlider('cp-force-strength', v => { if (graph) { graph.d3Force('charge')?.strength(-v); graph.d3ReheatSimulation(); } });
+  wireSlider('cp-link-distance', v => { if (graph) { graph.d3Force('link')?.distance(v); graph.d3ReheatSimulation(); } });
+  wireSlider('cp-center-force', v => { if (graph) { graph.d3Force('center')?.strength(v); graph.d3ReheatSimulation(); } });
+  wireSlider('cp-collision-radius', v => {
     if (graph) {
-      graph.d3Force('charge')?.strength(-v);
+      if (v > 0) {
+        graph.d3Force('collision', (alpha) => {
+          const nodes = graphData.nodes;
+          for (let i = 0; i < nodes.length; i++) { for (let j = i + 1; j < nodes.length; j++) {
+            const a = nodes[i], b = nodes[j]; if (a._hidden || b._hidden) continue;
+            const dx = (b.x||0)-(a.x||0), dy = (b.y||0)-(a.y||0), dz = (b.z||0)-(a.z||0);
+            const dist = Math.sqrt(dx*dx+dy*dy+dz*dz) || 1;
+            if (dist < v*2) { const f = ((v*2-dist)/dist)*alpha*0.5;
+              a.vx-=dx*f; a.vy-=dy*f; a.vz-=dz*f; b.vx+=dx*f; b.vy+=dy*f; b.vz+=dz*f; }
+          }}
+        });
+      } else { graph.d3Force('collision', null); }
       graph.d3ReheatSimulation();
     }
   });
+  wireSlider('cp-alpha-decay', v => { if (graph) graph.d3AlphaDecay(v); });
+  // Layout mode dropdown (bd-a1odd)
+  { const sel = document.getElementById('cp-layout-mode');
+    if (sel) sel.addEventListener('change', () => setLayout(sel.value)); }
+
+  // Animation controls
+  wireSlider('cp-fly-speed', v => { window.__beads3d_flySpeed = v; });
 
   // Particles / VFX controls (bd-hr5om)
   wireSlider('cp-orbit-speed', v => { _vfxConfig.orbitSpeed = v; });
@@ -6386,6 +6419,83 @@ function initControlPanel() {
   wireSlider('cp-particle-lifetime', v => { _vfxConfig.particleLifetime = v; });
   wireSlider('cp-selection-glow', v => { _vfxConfig.selectionGlow = v; });
 
+  // Camera controls (bd-bz1ba)
+  wireSlider('cp-camera-fov', v => {
+    if (!graph) return;
+    const camera = graph.camera();
+    camera.fov = v;
+    camera.updateProjectionMatrix();
+  });
+  wireSlider('cp-camera-rotate-speed', v => {
+    if (!graph) return;
+    const controls = graph.controls();
+    if (controls) controls.autoRotateSpeed = v;
+  });
+  wireSlider('cp-camera-zoom-speed', v => {
+    if (!graph) return;
+    const controls = graph.controls();
+    if (controls) controls.zoomSpeed = v;
+  });
+  wireSlider('cp-camera-near', v => {
+    if (!graph) return;
+    const camera = graph.camera();
+    camera.near = v;
+    camera.updateProjectionMatrix();
+  });
+  wireSlider('cp-camera-far', v => {
+    if (!graph) return;
+    const camera = graph.camera();
+    camera.far = v;
+    camera.updateProjectionMatrix();
+  });
+  // Auto-rotate toggle
+  const autoRotateToggle = document.getElementById('cp-camera-autorotate');
+  if (autoRotateToggle) {
+    autoRotateToggle.onclick = () => {
+      autoRotateToggle.classList.toggle('on');
+      if (!graph) return;
+      const controls = graph.controls();
+      if (controls) controls.autoRotate = autoRotateToggle.classList.contains('on');
+    };
+  }
+
+  // bd-4hggh: HUD Visibility toggles
+  // Track which HUD elements the user has hidden via toggles (prevents
+  // other code from re-showing them, e.g. tooltip on hover).
+  const _hudHidden = {};
+
+  panel.querySelectorAll('.cp-toggle[data-target]').forEach(toggle => {
+    const targetId = toggle.dataset.target;
+    toggle.addEventListener('click', () => {
+      const isOn = toggle.classList.toggle('on');
+      _hudHidden[targetId] = !isOn;
+      const el = document.getElementById(targetId);
+      if (!el) return;
+
+      if (targetId === 'minimap') {
+        // Minimap has both canvas and label
+        el.style.display = isOn ? 'block' : 'none';
+        const label = document.getElementById('minimap-label');
+        if (label) label.style.display = isOn ? 'block' : 'none';
+        minimapVisible = isOn;
+      } else if (targetId === 'left-sidebar') {
+        if (isOn) { el.classList.add('open'); leftSidebarOpen = true; }
+        else { el.classList.remove('open'); leftSidebarOpen = false; }
+      } else if (targetId === 'right-sidebar') {
+        if (isOn) { el.classList.remove('collapsed'); rightSidebarCollapsed = false; }
+        else { el.classList.add('collapsed'); rightSidebarCollapsed = true; }
+        // Shift controls bar
+        const controls = document.getElementById('controls');
+        if (controls) controls.classList.toggle('sidebar-collapsed', !isOn);
+      } else {
+        el.style.display = isOn ? '' : 'none';
+      }
+    });
+  });
+
+  // Expose _hudHidden so tooltip code can check it
+  window.__beads3d_hudHidden = _hudHidden;
+
   // bd-krh7y: Theme presets
   const BUILT_IN_PRESETS = {
     'Default Dark': {
@@ -6396,10 +6506,15 @@ function initControlPanel() {
       'cp-color-open': '#2d8a4e', 'cp-color-active': '#d4a017',
       'cp-color-blocked': '#d04040', 'cp-color-agent': '#ff6b35', 'cp-color-epic': '#8b45a6',
       'cp-label-size': 11, 'cp-label-opacity': 0.8,
-      'cp-fly-speed': 1000, 'cp-force-strength': 60,
+      'cp-force-strength': 60, 'cp-link-distance': 60, 'cp-center-force': 1, 'cp-collision-radius': 0, 'cp-alpha-decay': 0.023,
+      'cp-fly-speed': 1000,
       'cp-orbit-speed': 2.5, 'cp-orbit-rate': 0.08, 'cp-orbit-size': 1.5,
       'cp-hover-rate': 0.15, 'cp-stream-rate': 0.12, 'cp-stream-speed': 3.0,
       'cp-particle-lifetime': 0.8, 'cp-selection-glow': 1.0,
+      'cp-camera-fov': 75, 'cp-camera-rotate-speed': 2.0, 'cp-camera-zoom-speed': 1.0,
+      'cp-camera-near': 0.1, 'cp-camera-far': 50000,
+      'cp-hud-stats': 1, 'cp-hud-bottom': 1, 'cp-hud-controls': 1,
+      'cp-hud-left-sidebar': 1, 'cp-hud-right-sidebar': 1, 'cp-hud-minimap': 1, 'cp-hud-tooltip': 1,
     },
     'Neon': {
       'cp-bloom-threshold': 0.15, 'cp-bloom-strength': 1.8, 'cp-bloom-radius': 0.6,
@@ -6413,6 +6528,10 @@ function initControlPanel() {
       'cp-orbit-speed': 4.0, 'cp-orbit-rate': 0.05, 'cp-orbit-size': 2.0,
       'cp-hover-rate': 0.08, 'cp-stream-rate': 0.06, 'cp-stream-speed': 5.0,
       'cp-particle-lifetime': 1.2, 'cp-selection-glow': 1.5,
+      'cp-camera-fov': 60, 'cp-camera-rotate-speed': 3.0, 'cp-camera-zoom-speed': 1.5,
+      'cp-camera-near': 0.1, 'cp-camera-far': 50000,
+      'cp-hud-stats': 1, 'cp-hud-bottom': 1, 'cp-hud-controls': 1,
+      'cp-hud-left-sidebar': 1, 'cp-hud-right-sidebar': 1, 'cp-hud-minimap': 1, 'cp-hud-tooltip': 1,
     },
     'High Contrast': {
       'cp-bloom-threshold': 0.8, 'cp-bloom-strength': 0.3, 'cp-bloom-radius': 0.2,
@@ -6426,6 +6545,10 @@ function initControlPanel() {
       'cp-orbit-speed': 1.5, 'cp-orbit-rate': 0.15, 'cp-orbit-size': 1.0,
       'cp-hover-rate': 0.25, 'cp-stream-rate': 0.2, 'cp-stream-speed': 2.0,
       'cp-particle-lifetime': 0.5, 'cp-selection-glow': 0.6,
+      'cp-camera-fov': 75, 'cp-camera-rotate-speed': 2.0, 'cp-camera-zoom-speed': 1.0,
+      'cp-camera-near': 0.1, 'cp-camera-far': 50000,
+      'cp-hud-stats': 1, 'cp-hud-bottom': 1, 'cp-hud-controls': 1,
+      'cp-hud-left-sidebar': 1, 'cp-hud-right-sidebar': 1, 'cp-hud-minimap': 1, 'cp-hud-tooltip': 1,
     },
   };
 
@@ -6433,8 +6556,16 @@ function initControlPanel() {
     for (const [id, val] of Object.entries(settings)) {
       const el = document.getElementById(id);
       if (!el) continue;
-      el.value = val;
-      el.dispatchEvent(new Event('input')); // triggers all wired handlers
+      if (el.classList.contains('cp-toggle')) {
+        // HUD visibility toggle: val=1 means on, val=0 means off
+        const shouldBeOn = val === 1 || val === true;
+        if (el.classList.contains('on') !== shouldBeOn) {
+          el.click(); // triggers the toggle handler
+        }
+      } else {
+        el.value = val;
+        el.dispatchEvent(new Event('input')); // triggers all wired handlers
+      }
     }
   }
 
@@ -6443,7 +6574,12 @@ function initControlPanel() {
     const ids = Object.keys(BUILT_IN_PRESETS['Default Dark']);
     for (const id of ids) {
       const el = document.getElementById(id);
-      if (el) settings[id] = el.type === 'color' ? el.value : parseFloat(el.value);
+      if (!el) continue;
+      if (el.classList.contains('cp-toggle')) {
+        settings[id] = el.classList.contains('on') ? 1 : 0;
+      } else {
+        settings[id] = el.type === 'color' ? el.value : parseFloat(el.value);
+      }
     }
     return settings;
   }
@@ -6494,6 +6630,57 @@ function initControlPanel() {
     renderPresetButtons();
   }
 
+
+  // --- Preset import/export (bd-n0g9q) ---
+  const exportBtn = document.getElementById('cp-preset-export');
+  if (exportBtn) {
+    exportBtn.onclick = () => {
+      const settings = getCurrentSettings();
+      const blob = new Blob([JSON.stringify(settings, null, 2)], { type: 'application/json' });
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = 'beads3d-theme.json';
+      a.click();
+      URL.revokeObjectURL(a.href);
+    };
+  }
+  const importBtn = document.getElementById('cp-preset-import');
+  const fileInput = document.getElementById('cp-preset-file-input');
+  if (importBtn && fileInput) {
+    importBtn.onclick = () => fileInput.click();
+    fileInput.onchange = () => {
+      const file = fileInput.files?.[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = () => {
+        try {
+          const settings = JSON.parse(reader.result);
+          if (settings && typeof settings === 'object') applyPreset(settings);
+        } catch { console.warn('[beads3d] failed to import preset'); }
+      };
+      reader.readAsText(file);
+      fileInput.value = '';
+    };
+  }
+  const copyUrlBtn = document.getElementById('cp-preset-copy-url');
+  if (copyUrlBtn) {
+    copyUrlBtn.onclick = () => {
+      const settings = getCurrentSettings();
+      const encoded = btoa(JSON.stringify(settings));
+      const url = `${location.origin}${location.pathname}#preset=${encoded}`;
+      navigator.clipboard.writeText(url).then(() => {
+        copyUrlBtn.textContent = 'copied!';
+        setTimeout(() => { copyUrlBtn.textContent = 'copy URL'; }, 1500);
+      }).catch(() => { prompt('Copy this URL:', url); });
+    };
+  }
+  // Apply preset from URL fragment on load
+  if (location.hash.startsWith('#preset=')) {
+    try {
+      const settings = JSON.parse(atob(location.hash.slice('#preset='.length)));
+      if (settings && typeof settings === 'object') applyPreset(settings);
+    } catch { /* ignore invalid fragment */ }
+  }
   // --- Config bead persistence (bd-ljy5v) ---
   // Load saved settings from daemon on startup, save changes back with debounce.
   const CONFIG_KEY = 'beads3d-control-panel-settings';

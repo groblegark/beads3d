@@ -900,6 +900,21 @@
       min-width: 28px;
       text-align: right;
     }
+    .cp-select {
+      flex: 1;
+      background: #1a1a2a;
+      color: #aaa;
+      border: 1px solid #2a2a3a;
+      border-radius: 3px;
+      font-size: 10px;
+      font-family: 'JetBrains Mono', monospace;
+      padding: 2px 4px;
+      outline: none;
+      cursor: pointer;
+    }
+    .cp-select:focus {
+      border-color: #39c5cf;
+    }
     .cp-color-input {
       width: 28px;
       height: 20px;
@@ -928,6 +943,31 @@
     }
     .cp-preset-btn:hover { color: #fff; border-color: #39c5cf; }
     .cp-preset-btn.active { color: #39c5cf; border-color: #39c5cf; }
+
+    /* Toggle switch for HUD visibility (bd-4hggh) */
+    .cp-toggle {
+      position: relative;
+      width: 28px;
+      height: 14px;
+      background: #2a2a3a;
+      border-radius: 7px;
+      cursor: pointer;
+      transition: background 0.2s;
+      flex-shrink: 0;
+    }
+    .cp-toggle.on { background: #39c5cf; }
+    .cp-toggle::after {
+      content: '';
+      position: absolute;
+      top: 2px;
+      left: 2px;
+      width: 10px;
+      height: 10px;
+      background: #ccc;
+      border-radius: 50%;
+      transition: transform 0.2s;
+    }
+    .cp-toggle.on::after { transform: translateX(14px); background: #fff; }
 
     /* Gear icon button for opening control panel */
     #btn-control-panel {
@@ -2146,6 +2186,50 @@
       </div>
     </div>
 
+    <div class="cp-section" id="cp-layout">
+      <div class="cp-section-header">
+        <span class="cp-section-label">Layout</span>
+        <span class="cp-section-toggle">&#9660;</span>
+      </div>
+      <div class="cp-section-body">
+        <div class="cp-row">
+          <span class="cp-label">layout mode</span>
+          <select class="cp-select" id="cp-layout-mode">
+            <option value="free" selected>free</option>
+            <option value="dag">dag</option>
+            <option value="timeline">timeline</option>
+            <option value="radial">radial</option>
+            <option value="cluster">cluster</option>
+          </select>
+        </div>
+        <div class="cp-row">
+          <span class="cp-label">charge strength</span>
+          <input type="range" class="cp-slider" id="cp-force-strength" min="0" max="300" step="5" value="60">
+          <span class="cp-value" id="cp-force-strength-val">60</span>
+        </div>
+        <div class="cp-row">
+          <span class="cp-label">link distance</span>
+          <input type="range" class="cp-slider" id="cp-link-distance" min="5" max="200" step="5" value="60">
+          <span class="cp-value" id="cp-link-distance-val">60</span>
+        </div>
+        <div class="cp-row">
+          <span class="cp-label">center force</span>
+          <input type="range" class="cp-slider" id="cp-center-force" min="0" max="2" step="0.05" value="1">
+          <span class="cp-value" id="cp-center-force-val">1.00</span>
+        </div>
+        <div class="cp-row">
+          <span class="cp-label">collision radius</span>
+          <input type="range" class="cp-slider" id="cp-collision-radius" min="0" max="30" step="1" value="0">
+          <span class="cp-value" id="cp-collision-radius-val">0</span>
+        </div>
+        <div class="cp-row">
+          <span class="cp-label">alpha decay</span>
+          <input type="range" class="cp-slider" id="cp-alpha-decay" min="0" max="0.1" step="0.002" value="0.023">
+          <span class="cp-value" id="cp-alpha-decay-val">0.023</span>
+        </div>
+      </div>
+    </div>
+
     <div class="cp-section" id="cp-animation">
       <div class="cp-section-header">
         <span class="cp-section-label">Animation</span>
@@ -2156,11 +2240,6 @@
           <span class="cp-label">fly speed</span>
           <input type="range" class="cp-slider" id="cp-fly-speed" min="200" max="3000" step="100" value="1000">
           <span class="cp-value" id="cp-fly-speed-val">1000</span>
-        </div>
-        <div class="cp-row">
-          <span class="cp-label">force strength</span>
-          <input type="range" class="cp-slider" id="cp-force-strength" min="0" max="200" step="5" value="60">
-          <span class="cp-value" id="cp-force-strength-val">60</span>
         </div>
       </div>
     </div>
@@ -2214,6 +2293,81 @@
       </div>
     </div>
 
+    <div class="cp-section" id="cp-hud">
+      <div class="cp-section-header">
+        <span class="cp-section-label">HUD Visibility</span>
+        <span class="cp-section-toggle">&#9660;</span>
+      </div>
+      <div class="cp-section-body">
+        <div class="cp-row">
+          <span class="cp-label">stats overlay</span>
+          <div class="cp-toggle on" id="cp-hud-stats" data-target="hud"></div>
+        </div>
+        <div class="cp-row">
+          <span class="cp-label">bottom bar</span>
+          <div class="cp-toggle on" id="cp-hud-bottom" data-target="bottom-hud"></div>
+        </div>
+        <div class="cp-row">
+          <span class="cp-label">controls</span>
+          <div class="cp-toggle on" id="cp-hud-controls" data-target="controls"></div>
+        </div>
+        <div class="cp-row">
+          <span class="cp-label">left sidebar</span>
+          <div class="cp-toggle on" id="cp-hud-left-sidebar" data-target="left-sidebar"></div>
+        </div>
+        <div class="cp-row">
+          <span class="cp-label">right sidebar</span>
+          <div class="cp-toggle on" id="cp-hud-right-sidebar" data-target="right-sidebar"></div>
+        </div>
+        <div class="cp-row">
+          <span class="cp-label">minimap</span>
+          <div class="cp-toggle on" id="cp-hud-minimap" data-target="minimap"></div>
+        </div>
+        <div class="cp-row">
+          <span class="cp-label">tooltip</span>
+          <div class="cp-toggle on" id="cp-hud-tooltip" data-target="tooltip"></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="cp-section" id="cp-camera">
+      <div class="cp-section-header">
+        <span class="cp-section-label">Camera</span>
+        <span class="cp-section-toggle">&#9660;</span>
+      </div>
+      <div class="cp-section-body">
+        <div class="cp-row">
+          <span class="cp-label">field of view</span>
+          <input type="range" class="cp-slider" id="cp-camera-fov" min="20" max="120" step="5" value="75">
+          <span class="cp-value" id="cp-camera-fov-val">75</span>
+        </div>
+        <div class="cp-row">
+          <span class="cp-label">auto-rotate</span>
+          <div class="cp-toggle" id="cp-camera-autorotate"></div>
+        </div>
+        <div class="cp-row">
+          <span class="cp-label">rotate speed</span>
+          <input type="range" class="cp-slider" id="cp-camera-rotate-speed" min="0.5" max="10" step="0.5" value="2.0">
+          <span class="cp-value" id="cp-camera-rotate-speed-val">2.0</span>
+        </div>
+        <div class="cp-row">
+          <span class="cp-label">zoom speed</span>
+          <input type="range" class="cp-slider" id="cp-camera-zoom-speed" min="0.1" max="5" step="0.1" value="1.0">
+          <span class="cp-value" id="cp-camera-zoom-speed-val">1.0</span>
+        </div>
+        <div class="cp-row">
+          <span class="cp-label">near clip</span>
+          <input type="range" class="cp-slider" id="cp-camera-near" min="0.1" max="10" step="0.1" value="0.1">
+          <span class="cp-value" id="cp-camera-near-val">0.1</span>
+        </div>
+        <div class="cp-row">
+          <span class="cp-label">far clip</span>
+          <input type="range" class="cp-slider" id="cp-camera-far" min="1000" max="100000" step="1000" value="50000">
+          <span class="cp-value" id="cp-camera-far-val">50000</span>
+        </div>
+      </div>
+    </div>
+
     <div class="cp-section" id="cp-presets">
       <div class="cp-section-header">
         <span class="cp-section-label">Presets</span>
@@ -2221,6 +2375,12 @@
       </div>
       <div class="cp-section-body">
         <div class="cp-preset-row" id="cp-preset-buttons"></div>
+        <div class="cp-preset-row" style="margin-top:6px; gap:6px; display:flex;">
+          <button class="cp-preset-btn" id="cp-preset-export" style="color:#39c5cf;">export</button>
+          <button class="cp-preset-btn" id="cp-preset-import" style="color:#39c5cf;">import</button>
+          <button class="cp-preset-btn" id="cp-preset-copy-url" style="color:#39c5cf;">copy URL</button>
+          <input type="file" id="cp-preset-file-input" accept=".json" style="display:none;">
+        </div>
       </div>
     </div>
   </div>
