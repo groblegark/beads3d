@@ -74,12 +74,12 @@ export function nodeColor(issue) {
 
 export function nodeSize(issue) {
   const base = PRIORITY_SIZES[issue.priority] ?? 4;
-  // Epics are bigger
-  if (issue.issue_type === 'epic') return base * 1.8;
-  // Agents are the dominant visual element — largest nodes (bd-t1g9o)
-  // Floor of 8 ensures agents always stand out; 2.5x makes them bigger than epics
-  if (issue.issue_type === 'agent') return Math.max(base, 8) * 2.5;
-  return base;
+  // Epics are the largest — prominent organizers (bd-7iju8)
+  if (issue.issue_type === 'epic') return base * 2.2;
+  // Agents are smaller — supporting elements, not the focus (bd-7iju8)
+  if (issue.issue_type === 'agent') return Math.max(base, 6) * 1.2;
+  // Beads (work items) are the visual focus — boosted 1.5x (bd-7iju8)
+  return base * 1.5;
 }
 
 export function linkColor(dep) {
