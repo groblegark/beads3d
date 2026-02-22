@@ -246,6 +246,8 @@
     .uf-entry.decision-pending .uf-entry-text { color: #d4a017; }
     .uf-entry.decision-resolved .uf-entry-text { color: #2d8a4e; }
     .uf-entry.mail-received .uf-entry-text { color: #d2a6ff; }
+    .uf-entry.assistant-msg .uf-entry-icon { color: #5dade2; }
+    .uf-entry.assistant-msg .uf-entry-text { color: #aec6cf; font-style: italic; white-space: pre-wrap; max-height: 3em; overflow: hidden; }
     .uf-entry.running .uf-entry-icon { color: #d4a017; }
     .uf-entry .uf-entry-dur { color: #555; flex-shrink: 0; margin-left: auto; }
     #unified-feed .uf-empty { color: #333; padding: 8px 0; text-align: center; }
@@ -1655,6 +1657,17 @@
     /* Prompt events — user/system input to agents (bd-7rk7e) */
     .agent-entry.prompt .agent-entry-icon { color: #9b59b6; }
     .agent-entry.prompt .agent-entry-text { color: #9b59b6; font-style: italic; }
+
+    /* Agent reasoning / assistant messages (bd-at94i) */
+    .agent-entry.assistant-msg .agent-entry-icon { color: #5dade2; }
+    .agent-entry.assistant-msg .agent-entry-text {
+      color: #aec6cf;
+      font-style: italic;
+      white-space: pre-wrap;
+      max-height: 4.5em;
+      overflow: hidden;
+      line-height: 1.3;
+    }
 
     /* Agents View overlay — Shift+A (bd-jgvas) */
     #agents-view {

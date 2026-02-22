@@ -6562,7 +6562,17 @@ function appendUnifiedEntry(agentId, evt) {
     if (!prompt) return;
     icon = '▸'; text = prompt.length > 120 ? prompt.slice(0, 120) + '…' : prompt; classes = 'prompt';
   }
-  else if (type === 'Stop') { icon = '⏸'; text = 'checkpoint'; classes = 'lifecycle'; }
+  else if (type === 'Stop') {
+    // bd-at94i: Show agent reasoning from last_assistant_message
+    const msg = p.last_assistant_message || '';
+    if (msg) {
+      const msgDisplay = msg.length > 200 ? msg.slice(0, 200) + '…' : msg;
+      const msgEntry = createUnifiedEntry(timeStr, agentName, '💬', msgDisplay, 'assistant-msg');
+      _unifiedFeed.el.appendChild(msgEntry);
+      _unifiedFeed.entries.push(msgEntry);
+    }
+    icon = '⏸'; text = 'checkpoint'; classes = 'lifecycle';
+  }
   else return;
 
   const entry = createUnifiedEntry(timeStr, agentName, icon, text, classes);
@@ -6732,8 +6742,14 @@ function appendAgentEvent(agentId, evt) {
       win.feedEl.appendChild(createEntry(timeStr, '▸', display, 'prompt'));
     }
   }
-  // Stop hook events — show checkpoint
+  // Stop hook events — show agent reasoning/last output (bd-at94i)
   else if (type === 'Stop') {
+    const msg = p.last_assistant_message || '';
+    if (msg) {
+      // Show the assistant's last message (truncated) as agent reasoning
+      const display = msg.length > 200 ? msg.slice(0, 200) + '…' : msg;
+      win.feedEl.appendChild(createEntry(timeStr, '💬', display, 'assistant-msg'));
+    }
     win.feedEl.appendChild(createEntry(timeStr, '⏸', 'checkpoint', 'lifecycle'));
   }
   // Skip other event types silently
