@@ -2037,12 +2037,11 @@ async function fetchGraphData() {
 }
 
 async function fetchViaGraph(statusEl) {
-  // Include closed issues so age filter can work; server-side max_age_days
-  // limits the query to recently-updated closed beads only (bd-uc0mw).
+  // bd-a0vbd: default to active statuses only — no closed beads.
+  // Closed beads add noise and bridge separate clusters into one hairball.
   const graphArgs = {
     limit: MAX_NODES,
-    status: ['open', 'in_progress', 'blocked', 'hooked', 'deferred', 'closed'], // bd-7haep: include all active statuses
-    max_age_days: activeAgeDays || 0,
+    status: ['open', 'in_progress', 'blocked', 'hooked', 'deferred'], // bd-a0vbd: no closed by default
     include_deps: true,
     include_body: true,
     include_agents: true,
