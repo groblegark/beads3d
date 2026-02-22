@@ -5919,10 +5919,15 @@ function selectAgentTab(agentId) {
   const overlay = document.getElementById('agents-view');
   if (!overlay) return;
 
-  // Update tab bar active state
+  // Update tab bar active state + clear unread badge on selected tab (bd-hubs7)
   const tabs = overlay.querySelectorAll('.agent-tab');
   for (const tab of tabs) {
-    tab.classList.toggle('active', tab.dataset.agentId === agentId);
+    const isActive = tab.dataset.agentId === agentId;
+    tab.classList.toggle('active', isActive);
+    if (isActive) {
+      const badge = tab.querySelector('.agent-tab-unread');
+      if (badge) badge.remove();
+    }
   }
 
   // Show only the selected agent's window
@@ -5936,6 +5941,41 @@ function selectAgentTab(agentId) {
   // Scroll feed to bottom
   const win = agentWindows.get(agentId);
   if (win) autoScroll(win);
+}
+
+// bd-hubs7: Update tab status dot color from lifecycle events
+function _updateTabStatus(agentId, status) {
+  if (!agentsViewOpen) return;
+  const overlay = document.getElementById('agents-view');
+  if (!overlay) return;
+  const tab = overlay.querySelector(`.agent-tab[data-agent-id="${agentId}"]`);
+  if (!tab) return;
+  const dot = tab.querySelector('.agent-tab-dot');
+  if (dot) {
+    const color = status === 'active' ? '#2d8a4e' :
+                  status === 'idle' ? '#d4a017' :
+                  status === 'crashed' ? '#d04040' : '#666';
+    dot.style.background = color;
+  }
+}
+
+// bd-hubs7: Increment unread badge on non-selected tabs
+function _incrementTabUnread(agentId) {
+  if (!agentsViewOpen || agentId === _selectedAgentTab) return;
+  const overlay = document.getElementById('agents-view');
+  if (!overlay) return;
+  const tab = overlay.querySelector(`.agent-tab[data-agent-id="${agentId}"]`);
+  if (!tab) return;
+  let badge = tab.querySelector('.agent-tab-unread');
+  if (!badge) {
+    badge = document.createElement('span');
+    badge.className = 'agent-tab-unread';
+    badge.textContent = '1';
+    tab.appendChild(badge);
+  } else {
+    const count = parseInt(badge.textContent || '0', 10) + 1;
+    badge.textContent = count > 99 ? '99+' : String(count);
+  }
 }
 
 function closeAgentsView() {
@@ -6288,6 +6328,9 @@ function appendAgentEvent(agentId, evt) {
 
   // bd-5ok9s: update status bar after any lifecycle event
   _updateAgentStatusBar(win);
+  // bd-hubs7: update tab status dot + unread badge
+  _updateTabStatus(agentId, win.lastStatus);
+  _incrementTabUnread(agentId);
   autoScroll(win);
 }
 
