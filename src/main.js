@@ -797,12 +797,18 @@ function resolveOverlappingLabels() {
 
   if (visibleLabels.length < 2) return;
 
-  // --- Phase 4: Multi-pass overlap resolution (beads-bu3r) ---
-  // Run 3 passes to resolve cascading overlaps.
-  const PADDING = 4;
-  for (let pass = 0; pass < 3; pass++) {
+  // --- Phase 4: Multi-pass overlap resolution (beads-bu3r, bd-5rwn3) ---
+  // Run up to 8 passes of pairwise repulsion. Higher-priority labels hold
+  // position; lower-priority labels are pushed away from the overlap.
+  // Direction is determined by relative screen-Y: if the lower-priority
+  // label's center is below (or equal), push it down; otherwise push up.
+  // This prevents labels from piling in one direction.
+  const PADDING = 10;
+  const MAX_OFFSET = height * 0.15; // don't push labels off-screen
+  for (let pass = 0; pass < 8; pass++) {
     // Sort by screen X for sweep-and-prune
     visibleLabels.sort((a, b) => a.sx - b.sx);
+    let anyMoved = false;
 
     for (let i = 0; i < visibleLabels.length; i++) {
       const a = visibleLabels[i];
@@ -813,19 +819,33 @@ function resolveOverlappingLabels() {
         const bLeft = b.sx - b.lw / 2;
         if (bLeft > aRight + PADDING) break;
 
-        const aTop = a.sy - a.lh / 2 + a.offsetY;
-        const aBot = a.sy + a.lh / 2 + a.offsetY;
-        const bTop = b.sy - b.lh / 2 + b.offsetY;
-        const bBot = b.sy + b.lh / 2 + b.offsetY;
+        const aCy = a.sy + a.offsetY;
+        const bCy = b.sy + b.offsetY;
+        const aTop = aCy - a.lh / 2;
+        const aBot = aCy + a.lh / 2;
+        const bTop = bCy - b.lh / 2;
+        const bBot = bCy + b.lh / 2;
 
         if (aTop > bBot + PADDING || bTop > aBot + PADDING) continue;
 
-        // Push the lower-priority label down
-        const pushTarget = a.pri >= b.pri ? b : a;
+        // Full separation needed to clear the overlap + padding
         const overlapY = Math.min(aBot, bBot) - Math.max(aTop, bTop) + PADDING;
-        pushTarget.offsetY += overlapY;
+        // Push the lower-priority label away from the higher-priority one
+        if (a.pri >= b.pri) {
+          // Push b away from a: if b is below or same, push down; else up
+          const dir = bCy >= aCy ? 1 : -1;
+          b.offsetY += overlapY * dir;
+          if (Math.abs(b.offsetY) > MAX_OFFSET) b.offsetY = MAX_OFFSET * Math.sign(b.offsetY);
+        } else {
+          const dir = aCy >= bCy ? 1 : -1;
+          a.offsetY += overlapY * dir;
+          if (Math.abs(a.offsetY) > MAX_OFFSET) a.offsetY = MAX_OFFSET * Math.sign(a.offsetY);
+        }
+        anyMoved = true;
       }
     }
+    // Early exit if no overlaps remain
+    if (!anyMoved) break;
   }
 
   // Apply offsets back to sprite positions
@@ -6473,6 +6493,43 @@ function initControlPanel() {
     }
     renderPresetButtons();
   }
+
+  // --- Config bead persistence (bd-ljy5v) ---
+  // Load saved settings from daemon on startup, save changes back with debounce.
+  const CONFIG_KEY = 'beads3d-control-panel-settings';
+  let _persistDebounce = null;
+
+  function persistSettings() {
+    clearTimeout(_persistDebounce);
+    _persistDebounce = setTimeout(() => {
+      const settings = getCurrentSettings();
+      api.configSet(CONFIG_KEY, JSON.stringify(settings)).catch(err => {
+        console.warn('[beads3d] failed to persist settings:', err.message);
+      });
+    }, 1000);
+  }
+
+  // Wire persistence to all control panel inputs
+  panel.querySelectorAll('.cp-slider, input[type="color"]').forEach(input => {
+    input.addEventListener('input', persistSettings);
+  });
+
+  // Load saved settings from config bead
+  api.configGet(CONFIG_KEY).then(resp => {
+    const val = resp?.value;
+    if (!val) return;
+    try {
+      const settings = JSON.parse(val);
+      if (settings && typeof settings === 'object') {
+        applyPreset(settings);
+        console.log('[beads3d] loaded control panel settings from config bead');
+      }
+    } catch {
+      console.warn('[beads3d] failed to parse saved settings');
+    }
+  }).catch(() => {
+    // Config bead not available — silently fall back to defaults
+  });
 }
 
 // --- Agents View overlay — Shift+A (bd-jgvas) ---
