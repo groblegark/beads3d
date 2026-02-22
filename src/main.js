@@ -223,6 +223,7 @@ let agentFilterNameExclude = []; // glob patterns to hide agents by name (bd-8o2
 
 // Edge type filter (bd-a0vbd): hide specific edge types to reduce graph density
 let depTypeHidden = new Set(['rig_conflict']); // default: hide rig conflict edges
+let maxEdgesPerNode = 0; // 0 = unlimited; cap edges per node to reduce hub hairballs (bd-ke2xc)
 
 // Simple glob matcher: supports * (any chars) and ? (single char) (bd-8o2gd phase 4)
 function globMatch(pattern, str) {
@@ -2142,6 +2143,36 @@ async function fetchViaGraph(statusEl) {
   const connectedIds = new Set();
   for (const l of links) { connectedIds.add(l.source); connectedIds.add(l.target); }
   nodes = nodes.filter(n => !LINKED_ONLY.has(n.issue_type) || connectedIds.has(n.id));
+
+  // Max-edges-per-node cap: prune low-priority edges from hub nodes (bd-ke2xc)
+  if (maxEdgesPerNode > 0) {
+    const DEP_RANK = { 'blocks': 0, 'parent-child': 1, 'waits-for': 2, 'relates-to': 3, 'assigned_to': 4, 'rig_conflict': 5 };
+    // Count edges per node
+    const edgeCounts = new Map(); // nodeId → [link, ...]
+    for (const l of links) {
+      const src = typeof l.source === 'object' ? l.source.id : l.source;
+      const tgt = typeof l.target === 'object' ? l.target.id : l.target;
+      if (!edgeCounts.has(src)) edgeCounts.set(src, []);
+      if (!edgeCounts.has(tgt)) edgeCounts.set(tgt, []);
+      edgeCounts.get(src).push(l);
+      edgeCounts.get(tgt).push(l);
+    }
+    // Find over-connected nodes and mark edges for removal
+    const removedLinks = new Set();
+    for (const [, nodeLinks] of edgeCounts) {
+      if (nodeLinks.length <= maxEdgesPerNode) continue;
+      // Sort by priority (keep high-priority edges)
+      nodeLinks.sort((a, b) => (DEP_RANK[a.dep_type] ?? 3) - (DEP_RANK[b.dep_type] ?? 3));
+      for (let i = maxEdgesPerNode; i < nodeLinks.length; i++) {
+        removedLinks.add(nodeLinks[i]);
+      }
+    }
+    if (removedLinks.size > 0) {
+      const before = links.length;
+      links.splice(0, links.length, ...links.filter(l => !removedLinks.has(l)));
+      console.log(`[beads3d] Edge cap: pruned ${before - links.length} edges (max ${maxEdgesPerNode}/node)`);
+    }
+  }
 
   statusEl.textContent = `graph api · ${nodes.length} beads · ${links.length} links`;
   statusEl.className = 'connected';
@@ -6470,6 +6501,21 @@ function initControlPanel() {
     });
   }
 
+  // Max edges per node slider (bd-ke2xc)
+  let _edgeCapDebounce;
+  const edgeCapSlider = document.getElementById('cp-edge-max-per-node');
+  const edgeCapVal = document.getElementById('cp-edge-max-per-node-val');
+  if (edgeCapSlider) {
+    edgeCapSlider.addEventListener('input', () => {
+      const v = parseInt(edgeCapSlider.value, 10);
+      maxEdgesPerNode = v;
+      if (edgeCapVal) edgeCapVal.textContent = v === 0 ? 'off' : String(v);
+      // Debounced re-fetch to apply edge cap
+      clearTimeout(_edgeCapDebounce);
+      _edgeCapDebounce = setTimeout(() => refresh(), 500);
+    });
+  }
+
   // Layout controls (bd-a1odd)
   wireSlider('cp-force-strength', v => { if (graph) { graph.d3Force('charge')?.strength(-v); graph.d3ReheatSimulation(); } });
   wireSlider('cp-link-distance', v => { if (graph) { graph.d3Force('link')?.distance(v); graph.d3ReheatSimulation(); } });
@@ -6610,7 +6656,7 @@ function initControlPanel() {
       'cp-camera-fov': 75, 'cp-camera-rotate-speed': 2.0, 'cp-camera-zoom-speed': 1.0,
       'cp-camera-near': 0.1, 'cp-camera-far': 50000,
       'cp-hud-stats': 1, 'cp-hud-bottom': 1, 'cp-hud-controls': 1,
-      'cp-hud-left-sidebar': 1, 'cp-hud-right-sidebar': 1, 'cp-hud-minimap': 1, 'cp-hud-tooltip': 1, 'cp-edge-blocks': 1, 'cp-edge-parent-child': 1, 'cp-edge-waits-for': 1, 'cp-edge-relates-to': 1, 'cp-edge-assigned-to': 1, 'cp-edge-rig-conflict': 0,
+      'cp-hud-left-sidebar': 1, 'cp-hud-right-sidebar': 1, 'cp-hud-minimap': 1, 'cp-hud-tooltip': 1, 'cp-edge-blocks': 1, 'cp-edge-parent-child': 1, 'cp-edge-waits-for': 1, 'cp-edge-relates-to': 1, 'cp-edge-assigned-to': 1, 'cp-edge-rig-conflict': 0, 'cp-edge-max-per-node': 0,
     },
     'Neon': {
       'cp-bloom-threshold': 0.15, 'cp-bloom-strength': 1.8, 'cp-bloom-radius': 0.6,
@@ -6629,7 +6675,7 @@ function initControlPanel() {
       'cp-camera-fov': 60, 'cp-camera-rotate-speed': 3.0, 'cp-camera-zoom-speed': 1.5,
       'cp-camera-near': 0.1, 'cp-camera-far': 50000,
       'cp-hud-stats': 1, 'cp-hud-bottom': 1, 'cp-hud-controls': 1,
-      'cp-hud-left-sidebar': 1, 'cp-hud-right-sidebar': 1, 'cp-hud-minimap': 1, 'cp-hud-tooltip': 1, 'cp-edge-blocks': 1, 'cp-edge-parent-child': 1, 'cp-edge-waits-for': 1, 'cp-edge-relates-to': 1, 'cp-edge-assigned-to': 1, 'cp-edge-rig-conflict': 0,
+      'cp-hud-left-sidebar': 1, 'cp-hud-right-sidebar': 1, 'cp-hud-minimap': 1, 'cp-hud-tooltip': 1, 'cp-edge-blocks': 1, 'cp-edge-parent-child': 1, 'cp-edge-waits-for': 1, 'cp-edge-relates-to': 1, 'cp-edge-assigned-to': 1, 'cp-edge-rig-conflict': 0, 'cp-edge-max-per-node': 0,
     },
     'High Contrast': {
       'cp-bloom-threshold': 0.8, 'cp-bloom-strength': 0.3, 'cp-bloom-radius': 0.2,
@@ -6648,7 +6694,7 @@ function initControlPanel() {
       'cp-camera-fov': 75, 'cp-camera-rotate-speed': 2.0, 'cp-camera-zoom-speed': 1.0,
       'cp-camera-near': 0.1, 'cp-camera-far': 50000,
       'cp-hud-stats': 1, 'cp-hud-bottom': 1, 'cp-hud-controls': 1,
-      'cp-hud-left-sidebar': 1, 'cp-hud-right-sidebar': 1, 'cp-hud-minimap': 1, 'cp-hud-tooltip': 1, 'cp-edge-blocks': 1, 'cp-edge-parent-child': 1, 'cp-edge-waits-for': 1, 'cp-edge-relates-to': 1, 'cp-edge-assigned-to': 1, 'cp-edge-rig-conflict': 0,
+      'cp-hud-left-sidebar': 1, 'cp-hud-right-sidebar': 1, 'cp-hud-minimap': 1, 'cp-hud-tooltip': 1, 'cp-edge-blocks': 1, 'cp-edge-parent-child': 1, 'cp-edge-waits-for': 1, 'cp-edge-relates-to': 1, 'cp-edge-assigned-to': 1, 'cp-edge-rig-conflict': 0, 'cp-edge-max-per-node': 0,
     },
   };
 
