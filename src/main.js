@@ -1776,7 +1776,7 @@ function centerCameraOnSelection() {
   }
 
   // Camera distance: enough to see the whole cluster with some padding
-  const distance = Math.max(maxDist * 2.5, 60);
+  const distance = Math.max(maxDist * 2.5, 120);
   const lookAt = { x: cx, y: cy, z: cz };
   // Position camera along the current camera direction, but at the right distance
   const cam = graph.camera();
@@ -2499,7 +2499,7 @@ function zoomToNodes(nodeIds) {
 
   // For single-node components, use the original close-up zoom
   if (count === 1) {
-    const distance = 80;
+    const distance = 150;
     const distRatio = 1 + distance / Math.hypot(cx, cy, cz);
     const camFrom = graph.camera().position.clone();
     const camTo = { x: cx * distRatio, y: cy * distRatio, z: cz * distRatio };
@@ -2519,7 +2519,7 @@ function zoomToNodes(nodeIds) {
     if (d > maxDist) maxDist = d;
   }
 
-  const distance = Math.max(maxDist * 2.5, 80);
+  const distance = Math.max(maxDist * 2.5, 150);
   const lookAt = { x: cx, y: cy, z: cz };
   const cam = graph.camera();
   const dir = new THREE.Vector3(
@@ -4206,7 +4206,7 @@ function makeTextSprite(text, opts = {}) {
 
 function addRadialGuides() {
   const scene = graph.scene();
-  const radiusScale = 60;
+  const radiusScale = 80; // match radial layout force (bd-22dga)
   const labels = ['P0', 'P1', 'P2', 'P3', 'P4'];
   for (let p = 0; p <= 4; p++) {
     const r = (p + 0.5) * radiusScale;
@@ -4341,11 +4341,23 @@ function setLayout(mode) {
       graph.d3Force('link').distance(nodeCount > 200 ? 40 : 60);
       break;
 
-    case 'dag':
+    case 'dag': {
+      // Hierarchical top-down: dagMode positions Y by depth.
+      // Add stronger charge repulsion in X/Z to spread nodes within layers. (bd-22dga)
       graph.dagMode('td');
-      graph.d3Force('charge').strength(-40).distanceMax(300);
-      graph.d3Force('link').distance(30);
+      graph.d3Force('charge').strength(-80).distanceMax(500);
+      graph.d3Force('link').distance(50);
+      graph.dagLevelDistance(60);
+      // Flatten Z so layers are clearly visible in the X-Y plane.
+      graph.d3Force('flattenZ', (alpha) => {
+        for (const node of graphData.nodes) {
+          if (node._hidden) continue;
+          node.vz += (0 - (node.z || 0)) * alpha * 0.3;
+        }
+      });
+      graph.cameraPosition({ x: 0, y: 0, z: 500 }, { x: 0, y: 0, z: 0 }, 1200);
       break;
+    }
 
     case 'timeline': {
       // Flat plane: X = creation date, Y = 0 (flattened), Z = priority spread
@@ -4383,11 +4395,12 @@ function setLayout(mode) {
     }
 
     case 'radial': {
-      // Radial: distance from center = priority (P0 center, P4 outer)
-      graph.d3Force('charge').strength(-20).distanceMax(200);
+      // Radial: distance from center = priority (P0 center, P4 outer). (bd-22dga)
+      // Weaker charge so radial force dominates; stronger damping for distinct rings.
+      graph.d3Force('charge').strength(-8).distanceMax(120);
       graph.d3Force('link').distance(15);
 
-      const radiusScale = 60; // pixels per priority level
+      const radiusScale = 80; // pixels per priority level (wider rings)
       graph.d3Force('radialPriority', (alpha) => {
         for (const node of graphData.nodes) {
           if (node._hidden) continue;
@@ -4395,7 +4408,7 @@ function setLayout(mode) {
           const x = node.x || 0;
           const z = node.z || 0;
           const currentR = Math.sqrt(x * x + z * z) || 1;
-          const factor = (targetR / currentR - 1) * alpha * 0.08;
+          const factor = (targetR / currentR - 1) * alpha * 0.5;
           node.vx += x * factor;
           node.vz += z * factor;
         }
@@ -4404,7 +4417,7 @@ function setLayout(mode) {
       graph.d3Force('flattenY', (alpha) => {
         for (const node of graphData.nodes) {
           if (node._hidden) continue;
-          node.vy += (0 - (node.y || 0)) * alpha * 0.2;
+          node.vy += (0 - (node.y || 0)) * alpha * 0.5;
         }
       });
       addRadialGuides();
@@ -4414,14 +4427,15 @@ function setLayout(mode) {
     }
 
     case 'cluster': {
-      // Cluster by assignee: each assignee gets an anchor point
-      graph.d3Force('charge').strength(-25).distanceMax(200);
-      graph.d3Force('link').distance(20);
+      // Cluster by assignee: each assignee gets an anchor point on a circle. (bd-22dga)
+      // Weaker charge within clusters; stronger anchor damping for distinct grouping.
+      graph.d3Force('charge').strength(-10).distanceMax(100);
+      graph.d3Force('link').distance(15);
 
-      // Build assignee → anchor position map
+      // Build assignee → anchor position map (wider circle for clear separation)
       const assignees = [...new Set(graphData.nodes.map(n => n.assignee || '(unassigned)'))];
       const anchorMap = {};
-      const clusterRadius = Math.max(assignees.length * 40, 150);
+      const clusterRadius = Math.max(assignees.length * 60, 200);
       assignees.forEach((a, i) => {
         const angle = (i / assignees.length) * Math.PI * 2;
         anchorMap[a] = {
@@ -4435,15 +4449,15 @@ function setLayout(mode) {
           if (node._hidden) continue;
           const anchor = anchorMap[node.assignee || '(unassigned)'];
           if (!anchor) continue;
-          node.vx += (anchor.x - (node.x || 0)) * alpha * 0.06;
-          node.vz += (anchor.z - (node.z || 0)) * alpha * 0.06;
+          node.vx += (anchor.x - (node.x || 0)) * alpha * 0.4;
+          node.vz += (anchor.z - (node.z || 0)) * alpha * 0.4;
         }
       });
       // Flatten Y for a disc layout
       graph.d3Force('flattenY', (alpha) => {
         for (const node of graphData.nodes) {
           if (node._hidden) continue;
-          node.vy += (0 - (node.y || 0)) * alpha * 0.15;
+          node.vy += (0 - (node.y || 0)) * alpha * 0.5;
         }
       });
       addClusterGuides(graphData.nodes);
