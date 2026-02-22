@@ -271,6 +271,19 @@ let _selectionOrbitTimer = 0; // accumulator for orbit ring particle emission
 let _energyStreamTimer = 0;  // accumulator for dependency energy stream particles
 let _flyToTrailActive = false; // true during camera fly-to for particle trail
 
+// --- VFX Control Panel settings (bd-hr5om) ---
+const _vfxConfig = {
+  orbitSpeed: 2.5,          // orbit ring angular speed
+  orbitRate: 0.08,          // orbit ring emission interval (seconds)
+  orbitSize: 1.5,           // orbit ring particle size
+  hoverRate: 0.15,          // hover glow emission interval (seconds)
+  hoverSize: 1.2,           // hover glow particle size
+  streamRate: 0.12,         // dependency energy stream emission interval (seconds)
+  streamSpeed: 3.0,         // energy stream particle velocity
+  particleLifetime: 0.8,    // base particle lifetime (seconds)
+  selectionGlow: 1.0,       // selection glow intensity multiplier
+};
+
 // --- Event sprites: pop-up animations for status changes + new associations (bd-9qeto) ---
 const eventSprites = []; // { mesh, birth, lifetime, type, ... }
 const EVENT_SPRITE_MAX = 40;
@@ -1275,15 +1288,15 @@ function updateSelectionVFX(t) {
   // 1. Hover glow warmup — gentle particle emission on hovered node
   if (_hoveredNode && _hoveredNode !== selectedNode) {
     _hoverGlowTimer += dt;
-    if (_hoverGlowTimer > 0.15) { // emit every 150ms
+    if (_hoverGlowTimer > _vfxConfig.hoverRate) {
       _hoverGlowTimer = 0;
       const pos = { x: _hoveredNode.x || 0, y: _hoveredNode.y || 0, z: _hoveredNode.z || 0 };
       const size = nodeSize({ priority: _hoveredNode.priority, issue_type: _hoveredNode.issue_type });
       _particlePool.emit(pos, 0x4a9eff, 2, {
         velocity: [0, 0.5, 0],
         spread: size * 0.6,
-        lifetime: 0.6,
-        size: 1.2,
+        lifetime: _vfxConfig.particleLifetime * 0.75,
+        size: _vfxConfig.hoverSize,
       });
     }
   }
@@ -1291,12 +1304,12 @@ function updateSelectionVFX(t) {
   // 2. Selection orbit ring — particles orbiting the selected node
   if (selectedNode) {
     _selectionOrbitTimer += dt;
-    if (_selectionOrbitTimer > 0.08) { // emit every 80ms
+    if (_selectionOrbitTimer > _vfxConfig.orbitRate) {
       _selectionOrbitTimer = 0;
       const pos = { x: selectedNode.x || 0, y: selectedNode.y || 0, z: selectedNode.z || 0 };
       const size = nodeSize({ priority: selectedNode.priority, issue_type: selectedNode.issue_type });
       const radius = size * 1.8;
-      const angle = t * 2.5; // orbit speed
+      const angle = t * _vfxConfig.orbitSpeed;
       // Emit at orbit position with tangential velocity
       const orbitPos = {
         x: pos.x + Math.cos(angle) * radius,
@@ -1306,8 +1319,8 @@ function updateSelectionVFX(t) {
       _particlePool.emit(orbitPos, 0x4a9eff, 1, {
         velocity: [-Math.sin(angle) * 1.5, 0.3, Math.cos(angle) * 1.5],
         spread: 0.3,
-        lifetime: 0.8,
-        size: 1.5,
+        lifetime: _vfxConfig.particleLifetime,
+        size: _vfxConfig.orbitSize,
       });
       // Second particle at opposite side
       const orbitPos2 = {
@@ -1318,8 +1331,8 @@ function updateSelectionVFX(t) {
       _particlePool.emit(orbitPos2, 0x4a9eff, 1, {
         velocity: [-Math.sin(angle + Math.PI) * 1.5, 0.3, Math.cos(angle + Math.PI) * 1.5],
         spread: 0.3,
-        lifetime: 0.8,
-        size: 1.5,
+        lifetime: _vfxConfig.particleLifetime,
+        size: _vfxConfig.orbitSize,
       });
     }
   }
@@ -1327,7 +1340,7 @@ function updateSelectionVFX(t) {
   // 3. Dependency energy streams — particle flow along highlighted links
   if (selectedNode && highlightLinks.size > 0) {
     _energyStreamTimer += dt;
-    if (_energyStreamTimer > 0.12) { // emit every 120ms
+    if (_energyStreamTimer > _vfxConfig.streamRate) {
       _energyStreamTimer = 0;
       for (const l of graphData.links) {
         if (!highlightLinks.has(linkKey(l))) continue;
@@ -1346,13 +1359,13 @@ function updateSelectionVFX(t) {
         const dy = (tgt.y || 0) - (src.y || 0);
         const dz = (tgt.z || 0) - (src.z || 0);
         const len = Math.sqrt(dx * dx + dy * dy + dz * dz) || 1;
-        const speed = 3;
+        const speed = _vfxConfig.streamSpeed;
         const linkColorHex = l.dep_type === 'blocks' ? 0xd04040 :
                              l.dep_type === 'assigned_to' ? 0xff6b35 : 0x4a9eff;
         _particlePool.emit(pos, linkColorHex, 1, {
           velocity: [dx / len * speed, dy / len * speed, dz / len * speed],
           spread: 0.5,
-          lifetime: Math.min(len / (speed * 60), 1.5),
+          lifetime: Math.min(len / (speed * 60), _vfxConfig.particleLifetime * 1.9),
           size: 1.0,
         });
       }
@@ -1372,8 +1385,8 @@ function updateSelectionVFX(t) {
         _particlePool.emit(pos, color, 4, {
           velocity: [0, 1.5, 0],
           spread: 2,
-          lifetime: 0.8,
-          size: 1.5,
+          lifetime: _vfxConfig.particleLifetime,
+          size: _vfxConfig.orbitSize,
         });
       }
     }
@@ -1390,11 +1403,11 @@ function spawnSelectionBurst(node) {
   const color = nodeColor(node);
 
   // Inner materia burst — bright core particles
-  _particlePool.emit(pos, 0xffffff, 6, {
+  _particlePool.emit(pos, 0xffffff, Math.round(6 * _vfxConfig.selectionGlow), {
     velocity: [0, 2, 0],
     spread: size * 0.3,
-    lifetime: 0.5,
-    size: 2.0,
+    lifetime: 0.5 * _vfxConfig.selectionGlow,
+    size: 2.0 * _vfxConfig.selectionGlow,
   });
 
   // Outer colored burst — expanding ring of node-colored particles
@@ -6343,6 +6356,16 @@ function initControlPanel() {
     }
   });
 
+  // Particles / VFX controls (bd-hr5om)
+  wireSlider('cp-orbit-speed', v => { _vfxConfig.orbitSpeed = v; });
+  wireSlider('cp-orbit-rate', v => { _vfxConfig.orbitRate = v; });
+  wireSlider('cp-orbit-size', v => { _vfxConfig.orbitSize = v; });
+  wireSlider('cp-hover-rate', v => { _vfxConfig.hoverRate = v; });
+  wireSlider('cp-stream-rate', v => { _vfxConfig.streamRate = v; });
+  wireSlider('cp-stream-speed', v => { _vfxConfig.streamSpeed = v; });
+  wireSlider('cp-particle-lifetime', v => { _vfxConfig.particleLifetime = v; });
+  wireSlider('cp-selection-glow', v => { _vfxConfig.selectionGlow = v; });
+
   // bd-krh7y: Theme presets
   const BUILT_IN_PRESETS = {
     'Default Dark': {
@@ -6354,6 +6377,9 @@ function initControlPanel() {
       'cp-color-blocked': '#d04040', 'cp-color-agent': '#ff6b35', 'cp-color-epic': '#8b45a6',
       'cp-label-size': 11, 'cp-label-opacity': 0.8,
       'cp-fly-speed': 1000, 'cp-force-strength': 60,
+      'cp-orbit-speed': 2.5, 'cp-orbit-rate': 0.08, 'cp-orbit-size': 1.5,
+      'cp-hover-rate': 0.15, 'cp-stream-rate': 0.12, 'cp-stream-speed': 3.0,
+      'cp-particle-lifetime': 0.8, 'cp-selection-glow': 1.0,
     },
     'Neon': {
       'cp-bloom-threshold': 0.15, 'cp-bloom-strength': 1.8, 'cp-bloom-radius': 0.6,
@@ -6364,6 +6390,9 @@ function initControlPanel() {
       'cp-color-blocked': '#ff2050', 'cp-color-agent': '#ff8800', 'cp-color-epic': '#cc44ff',
       'cp-label-size': 12, 'cp-label-opacity': 0.9,
       'cp-fly-speed': 800, 'cp-force-strength': 80,
+      'cp-orbit-speed': 4.0, 'cp-orbit-rate': 0.05, 'cp-orbit-size': 2.0,
+      'cp-hover-rate': 0.08, 'cp-stream-rate': 0.06, 'cp-stream-speed': 5.0,
+      'cp-particle-lifetime': 1.2, 'cp-selection-glow': 1.5,
     },
     'High Contrast': {
       'cp-bloom-threshold': 0.8, 'cp-bloom-strength': 0.3, 'cp-bloom-radius': 0.2,
@@ -6374,6 +6403,9 @@ function initControlPanel() {
       'cp-color-blocked': '#ff0000', 'cp-color-agent': '#ff8844', 'cp-color-epic': '#aa44cc',
       'cp-label-size': 13, 'cp-label-opacity': 1.0,
       'cp-fly-speed': 1000, 'cp-force-strength': 60,
+      'cp-orbit-speed': 1.5, 'cp-orbit-rate': 0.15, 'cp-orbit-size': 1.0,
+      'cp-hover-rate': 0.25, 'cp-stream-rate': 0.2, 'cp-stream-speed': 2.0,
+      'cp-particle-lifetime': 0.5, 'cp-selection-glow': 0.6,
     },
   };
 
