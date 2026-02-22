@@ -641,8 +641,9 @@ function createNodeLabelSprite(node) {
   canvas.width = Math.ceil(textW + padding * 2);
   canvas.height = Math.ceil(lineHeight * lines.length + padding * 2);
 
-  // Background with rounded corners
-  ctx.fillStyle = 'rgba(10, 10, 18, 0.85)';
+  // Background with rounded corners (bd-j8ala: configurable bg opacity)
+  const bgOpacity = window.__beads3d_labelBgOpacity ?? 0.85;
+  ctx.fillStyle = `rgba(10, 10, 18, ${bgOpacity})`;
   const r = 6, cw = canvas.width, ch = canvas.height;
   ctx.beginPath();
   ctx.moveTo(r, 0);
@@ -653,10 +654,12 @@ function createNodeLabelSprite(node) {
   ctx.closePath();
   ctx.fill();
 
-  // Border
-  ctx.strokeStyle = 'rgba(74, 158, 255, 0.3)';
-  ctx.lineWidth = 1;
-  ctx.stroke();
+  // Border (bd-j8ala: configurable)
+  if (window.__beads3d_labelBorder !== false) {
+    ctx.strokeStyle = 'rgba(74, 158, 255, 0.3)';
+    ctx.lineWidth = 1;
+    ctx.stroke();
+  }
 
   // Render each visible line
   for (let i = 0; i < lines.length; i++) {
@@ -6425,6 +6428,25 @@ function initControlPanel() {
     });
   }
 
+  // Label style controls (bd-j8ala) — background opacity and border
+  wireSlider('cp-label-bg-opacity', v => {
+    window.__beads3d_labelBgOpacity = v;
+    clearTimeout(_labelContentDebounce);
+    _labelContentDebounce = setTimeout(() => {
+      if (graph) graph.nodeThreeObject(graph.nodeThreeObject());
+    }, 200);
+  });
+  { const borderToggle = document.getElementById('cp-label-border');
+    if (borderToggle) borderToggle.addEventListener('click', () => {
+      borderToggle.classList.toggle('on');
+      window.__beads3d_labelBorder = borderToggle.classList.contains('on');
+      clearTimeout(_labelContentDebounce);
+      _labelContentDebounce = setTimeout(() => {
+        if (graph) graph.nodeThreeObject(graph.nodeThreeObject());
+      }, 200);
+    });
+  }
+
   // Edge type toggles (bd-a0vbd): show/hide specific edge types to reduce graph density
   const EDGE_TOGGLE_MAP = {
     'cp-edge-blocks': 'blocks',
@@ -6579,7 +6601,7 @@ function initControlPanel() {
       'cp-color-open': '#2d8a4e', 'cp-color-active': '#d4a017',
       'cp-color-blocked': '#d04040', 'cp-color-agent': '#ff6b35', 'cp-color-epic': '#8b45a6',
       'cp-label-toggle': 1, 'cp-label-size': 11, 'cp-label-opacity': 0.8,
-      'cp-label-show-id': 1, 'cp-label-show-title': 1, 'cp-label-show-status': 1,
+      'cp-label-show-id': 1, 'cp-label-show-title': 1, 'cp-label-show-status': 1, 'cp-label-bg-opacity': 0.85, 'cp-label-border': 1,
       'cp-force-strength': 60, 'cp-link-distance': 60, 'cp-center-force': 1, 'cp-collision-radius': 0, 'cp-alpha-decay': 0.023, 'cp-agent-tether': 0.5,
       'cp-fly-speed': 1000,
       'cp-orbit-speed': 2.5, 'cp-orbit-rate': 0.08, 'cp-orbit-size': 1.5,
@@ -6598,7 +6620,7 @@ function initControlPanel() {
       'cp-color-open': '#00ff88', 'cp-color-active': '#ffee00',
       'cp-color-blocked': '#ff2050', 'cp-color-agent': '#ff8800', 'cp-color-epic': '#cc44ff',
       'cp-label-toggle': 1, 'cp-label-size': 12, 'cp-label-opacity': 0.9,
-      'cp-label-show-id': 1, 'cp-label-show-title': 1, 'cp-label-show-status': 1,
+      'cp-label-show-id': 1, 'cp-label-show-title': 1, 'cp-label-show-status': 1, 'cp-label-bg-opacity': 0.85, 'cp-label-border': 1,
       'cp-force-strength': 80, 'cp-link-distance': 50, 'cp-center-force': 1, 'cp-collision-radius': 0, 'cp-alpha-decay': 0.023, 'cp-agent-tether': 0.5,
       'cp-fly-speed': 800,
       'cp-orbit-speed': 4.0, 'cp-orbit-rate': 0.05, 'cp-orbit-size': 2.0,
@@ -6617,7 +6639,7 @@ function initControlPanel() {
       'cp-color-open': '#00cc44', 'cp-color-active': '#ffcc00',
       'cp-color-blocked': '#ff0000', 'cp-color-agent': '#ff8844', 'cp-color-epic': '#aa44cc',
       'cp-label-toggle': 1, 'cp-label-size': 13, 'cp-label-opacity': 1.0,
-      'cp-label-show-id': 1, 'cp-label-show-title': 1, 'cp-label-show-status': 1,
+      'cp-label-show-id': 1, 'cp-label-show-title': 1, 'cp-label-show-status': 1, 'cp-label-bg-opacity': 0.85, 'cp-label-border': 1,
       'cp-force-strength': 60, 'cp-link-distance': 60, 'cp-center-force': 1, 'cp-collision-radius': 0, 'cp-alpha-decay': 0.023, 'cp-agent-tether': 0.5,
       'cp-fly-speed': 1000,
       'cp-orbit-speed': 1.5, 'cp-orbit-rate': 0.15, 'cp-orbit-size': 1.0,
