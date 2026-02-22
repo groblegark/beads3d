@@ -7,6 +7,8 @@ import { nodeColor, nodeSize, linkColor, colorToHex, rigColor } from './colors.j
 import { createFresnelMaterial, createStarField, updateShaderTime, createMateriaMaterial, createMateriaHaloTexture, createParticlePool, createFairyLights } from './shaders.js';
 import { LINK_ICON_MATERIALS, LINK_ICON_DEFAULT, LINK_ICON_SCALE } from './link-icons.js';
 import { initRightSidebar, updateRightSidebar, updateEpicProgress, updateDepHealth, updateDecisionQueue, setOnNodeClick } from './right-sidebar.js';
+import { dootLabel, dootColor, formatToolLabel, resolveAgentIdLoose, TOOL_ICONS } from './event-format.js';
+import { setFilterDeps, toggleFilterDashboard, syncFilterDashboard, updateAssigneeButtons, initFilterDashboard, updateFilterCount } from './filter-dashboard.js';
 
 // --- Config ---
 const params = new URLSearchParams(window.location.search);
@@ -3507,510 +3509,7 @@ function updateRigPills(nodes) {
   _buildRigPillsIn(document.getElementById('fd-rig-pills'), nodes);
 }
 
-// ── Filter Dashboard (bd-8o2gd phase 2) ─────────────────────────────────────
-
-function toggleFilterDashboard() {
-  const panel = document.getElementById('filter-dashboard');
-  if (!panel) return;
-  filterDashboardOpen = !filterDashboardOpen;
-  panel.classList.toggle('open', filterDashboardOpen);
-  if (filterDashboardOpen) syncFilterDashboard();
-}
-
-// Sync dashboard button states to match current filter state
-function syncFilterDashboard() {
-  // Status buttons
-  document.querySelectorAll('.fd-status').forEach(btn => {
-    const status = btn.dataset.status;
-    const STATUS_GROUPS = { in_progress: ['in_progress', 'blocked', 'hooked', 'deferred'] };
-    const group = STATUS_GROUPS[status] || [status];
-    btn.classList.toggle('active', group.some(s => statusFilter.has(s)));
-  });
-
-  // Type buttons
-  document.querySelectorAll('.fd-type').forEach(btn => {
-    btn.classList.toggle('active', typeFilter.has(btn.dataset.type));
-  });
-
-  // Priority buttons
-  document.querySelectorAll('.fd-priority').forEach(btn => {
-    btn.classList.toggle('active', priorityFilter.has(btn.dataset.priority));
-  });
-
-  // Age buttons
-  document.querySelectorAll('.fd-age').forEach(btn => {
-    const days = parseInt(btn.dataset.days, 10);
-    btn.classList.toggle('active', days === activeAgeDays);
-  });
-
-  // Agent toggles
-  const fdShow = document.getElementById('fd-agent-show');
-  const fdOrph = document.getElementById('fd-agent-orphaned');
-  if (fdShow) fdShow.classList.toggle('active', agentFilterShow);
-  if (fdOrph) fdOrph.classList.toggle('active', agentFilterOrphaned);
-
-  // Assignee buttons
-  updateAssigneeButtons();
-}
-
-// Sync toolbar controls to match dashboard changes
-function syncToolbarControls() {
-  // Status
-  const STATUS_GROUPS = { in_progress: ['in_progress', 'blocked', 'hooked', 'deferred'] };
-  document.querySelectorAll('.filter-status').forEach(btn => {
-    const status = btn.dataset.status;
-    const group = STATUS_GROUPS[status] || [status];
-    btn.classList.toggle('active', group.some(s => statusFilter.has(s)));
-  });
-  // Type
-  document.querySelectorAll('.filter-type').forEach(btn => {
-    btn.classList.toggle('active', typeFilter.has(btn.dataset.type));
-  });
-  // Age
-  document.querySelectorAll('.filter-age').forEach(btn => {
-    const days = parseInt(btn.dataset.days, 10);
-    btn.classList.toggle('active', days === activeAgeDays);
-  });
-  // Agent toggles
-  const btnShow = document.getElementById('btn-agent-show');
-  const btnOrph = document.getElementById('btn-agent-orphaned');
-  if (btnShow) btnShow.classList.toggle('active', agentFilterShow);
-  if (btnOrph) btnOrph.classList.toggle('active', agentFilterOrphaned);
-}
-
-function updateAssigneeButtons() {
-  const body = document.getElementById('fd-assignee-body');
-  if (!body) return;
-
-  // Collect unique assignees from visible graph data
-  const assignees = new Set();
-  for (const n of graphData.nodes) {
-    if (n.assignee && n.issue_type !== 'agent') assignees.add(n.assignee);
-  }
-  const sorted = [...assignees].sort();
-
-  // Only rebuild if set changed
-  const current = [...body.querySelectorAll('.fd-btn')].map(b => b.dataset.assignee);
-  if (current.length === sorted.length && current.every((a, i) => a === sorted[i])) {
-    body.querySelectorAll('.fd-btn').forEach(btn => {
-      btn.classList.toggle('active', assigneeFilter === btn.dataset.assignee);
-    });
-    return;
-  }
-
-  body.innerHTML = '';
-  for (const name of sorted) {
-    const btn = document.createElement('button');
-    btn.className = 'fd-btn';
-    btn.dataset.assignee = name;
-    btn.textContent = name;
-    if (assigneeFilter === name) btn.classList.add('active');
-    btn.addEventListener('click', () => {
-      if (assigneeFilter === name) {
-        assigneeFilter = '';
-      } else {
-        assigneeFilter = name;
-      }
-      body.querySelectorAll('.fd-btn').forEach(b => {
-        b.classList.toggle('active', assigneeFilter === b.dataset.assignee);
-      });
-      applyFilters();
-    });
-    body.appendChild(btn);
-  }
-}
-
-// ── Filter profile persistence (bd-8o2gd phase 3) ───────────────────────────
-
-const PROFILE_KEY_PREFIX = 'beads3d.view.';
-let _profilesLoaded = false;
-
-function _currentFilterState() {
-  return {
-    status: [...statusFilter],
-    types: [...typeFilter],
-    priority: [...priorityFilter],
-    age_days: activeAgeDays,
-    assignee: assigneeFilter,
-    agents: {
-      show: agentFilterShow,
-      orphaned: agentFilterOrphaned,
-      rig_exclude: [...agentFilterRigExclude],
-      name_exclude: agentFilterNameExclude.length > 0 ? [...agentFilterNameExclude] : [],
-    },
-  };
-}
-
-function _applyFilterState(state) {
-  statusFilter.clear();
-  (state.status || []).forEach(s => statusFilter.add(s));
-  typeFilter.clear();
-  (state.types || []).forEach(t => typeFilter.add(t));
-  priorityFilter.clear();
-  (state.priority || []).forEach(p => priorityFilter.add(String(p)));
-  activeAgeDays = state.age_days ?? 7;
-  assigneeFilter = state.assignee || '';
-  if (state.agents) {
-    agentFilterShow = state.agents.show !== false;
-    agentFilterOrphaned = !!state.agents.orphaned;
-    agentFilterRigExclude.clear();
-    (state.agents.rig_exclude || []).forEach(r => agentFilterRigExclude.add(r));
-    agentFilterNameExclude = state.agents.name_exclude || [];
-    // Update the exclude input field
-    const excludeInput = document.getElementById('fd-agent-exclude');
-    if (excludeInput) excludeInput.value = agentFilterNameExclude.join(', ');
-  }
-  syncFilterDashboard();
-  syncToolbarControls();
-  _syncAllRigPills();
-  // Age changes need re-fetch; for simplicity always refresh
-  refresh();
-}
-
-async function loadFilterProfiles() {
-  const select = document.getElementById('fd-profile-select');
-  if (!select) return;
-
-  try {
-    const resp = await api.configList();
-    const config = resp.config || {};
-    // Clear existing options except default
-    select.innerHTML = '<option value="">— default —</option>';
-    const profiles = Object.keys(config)
-      .filter(k => k.startsWith(PROFILE_KEY_PREFIX))
-      .map(k => k.slice(PROFILE_KEY_PREFIX.length))
-      .sort();
-    for (const name of profiles) {
-      const opt = document.createElement('option');
-      opt.value = name;
-      opt.textContent = name;
-      select.appendChild(opt);
-    }
-    // Restore last selected profile from localStorage
-    const lastProfile = localStorage.getItem('beads3d-filter-profile');
-    if (lastProfile && profiles.includes(lastProfile)) {
-      select.value = lastProfile;
-    }
-    _profilesLoaded = true;
-  } catch (e) {
-    console.warn('[beads3d] failed to load filter profiles:', e);
-  }
-}
-
-async function saveFilterProfile(name) {
-  if (!name) return;
-  const state = _currentFilterState();
-  try {
-    await api.configSet(PROFILE_KEY_PREFIX + name, JSON.stringify(state));
-    localStorage.setItem('beads3d-filter-profile', name);
-    await loadFilterProfiles();
-    const select = document.getElementById('fd-profile-select');
-    if (select) select.value = name;
-    console.log(`[beads3d] saved filter profile: ${name}`);
-  } catch (e) {
-    console.warn('[beads3d] failed to save filter profile:', e);
-  }
-}
-
-async function loadFilterProfile(name) {
-  if (!name) {
-    // Default profile — clear all filters
-    statusFilter.clear();
-    typeFilter.clear();
-    priorityFilter.clear();
-    assigneeFilter = '';
-    agentFilterShow = true;
-    agentFilterOrphaned = false;
-    agentFilterRigExclude.clear();
-    activeAgeDays = 7;
-    syncFilterDashboard();
-    syncToolbarControls();
-    _syncAllRigPills();
-    localStorage.removeItem('beads3d-filter-profile');
-    refresh();
-    return;
-  }
-
-  try {
-    const resp = await api.configGet(PROFILE_KEY_PREFIX + name);
-    const state = JSON.parse(resp.value);
-    _applyFilterState(state);
-    localStorage.setItem('beads3d-filter-profile', name);
-    console.log(`[beads3d] loaded filter profile: ${name}`);
-  } catch (e) {
-    console.warn(`[beads3d] failed to load profile ${name}:`, e);
-  }
-}
-
-async function deleteFilterProfile(name) {
-  if (!name) return;
-  try {
-    await api.configUnset(PROFILE_KEY_PREFIX + name);
-    localStorage.removeItem('beads3d-filter-profile');
-    await loadFilterProfiles();
-    const select = document.getElementById('fd-profile-select');
-    if (select) select.value = '';
-    console.log(`[beads3d] deleted filter profile: ${name}`);
-  } catch (e) {
-    console.warn(`[beads3d] failed to delete profile ${name}:`, e);
-  }
-}
-
-// Apply URL query params to filter state (bd-8o2gd phase 4)
-async function applyUrlFilterParams() {
-  let needRefresh = false;
-
-  // ?profile=<name> — load a named profile
-  if (URL_PROFILE) {
-    await loadFilterProfile(URL_PROFILE);
-    const select = document.getElementById('fd-profile-select');
-    if (select) select.value = URL_PROFILE;
-    return; // profile applies all settings; skip individual params
-  }
-
-  // ?status=open,in_progress — comma-separated status filter
-  if (URL_STATUS) {
-    statusFilter.clear();
-    URL_STATUS.split(',').forEach(s => statusFilter.add(s.trim()));
-    needRefresh = true;
-  }
-
-  // ?types=epic,bug — comma-separated type filter
-  if (URL_TYPES) {
-    typeFilter.clear();
-    URL_TYPES.split(',').forEach(t => typeFilter.add(t.trim()));
-    needRefresh = true;
-  }
-
-  // ?assignee=cool-trout — filter by assignee
-  if (URL_ASSIGNEE) {
-    assigneeFilter = URL_ASSIGNEE;
-    needRefresh = true;
-  }
-
-  if (needRefresh) {
-    syncFilterDashboard();
-    syncToolbarControls();
-    applyFilters();
-  }
-}
-
-// Generate a shareable URL with current filter state (bd-8o2gd phase 4)
-function getShareableUrl() {
-  const url = new URL(window.location.href);
-  // Clear old filter params
-  url.searchParams.delete('profile');
-  url.searchParams.delete('status');
-  url.searchParams.delete('types');
-  url.searchParams.delete('assignee');
-
-  // Check if current state matches a saved profile
-  const select = document.getElementById('fd-profile-select');
-  if (select?.value) {
-    url.searchParams.set('profile', select.value);
-  } else {
-    // Encode individual filter params
-    if (statusFilter.size > 0) url.searchParams.set('status', [...statusFilter].join(','));
-    if (typeFilter.size > 0) url.searchParams.set('types', [...typeFilter].join(','));
-    if (assigneeFilter) url.searchParams.set('assignee', assigneeFilter);
-  }
-
-  return url.toString();
-}
-
-function initFilterDashboard() {
-  const panel = document.getElementById('filter-dashboard');
-  if (!panel) return;
-
-  // Close button
-  document.getElementById('fd-close')?.addEventListener('click', toggleFilterDashboard);
-
-  // Collapsible sections
-  panel.querySelectorAll('.fd-section-header').forEach(header => {
-    header.addEventListener('click', () => {
-      header.parentElement.classList.toggle('collapsed');
-    });
-  });
-
-  const STATUS_GROUPS = {
-    in_progress: ['in_progress', 'blocked', 'hooked', 'deferred'],
-  };
-
-  // Status buttons — sync with toolbar
-  panel.querySelectorAll('.fd-status').forEach(btn => {
-    btn.addEventListener('click', () => {
-      const status = btn.dataset.status;
-      const group = STATUS_GROUPS[status] || [status];
-      btn.classList.toggle('active');
-      if (statusFilter.has(status)) {
-        group.forEach(s => statusFilter.delete(s));
-      } else {
-        group.forEach(s => statusFilter.add(s));
-      }
-      syncToolbarControls();
-      applyFilters();
-    });
-  });
-
-  // Type buttons — sync with toolbar
-  panel.querySelectorAll('.fd-type').forEach(btn => {
-    btn.addEventListener('click', () => {
-      const type = btn.dataset.type;
-      btn.classList.toggle('active');
-      if (typeFilter.has(type)) {
-        typeFilter.delete(type);
-      } else {
-        typeFilter.add(type);
-      }
-      syncToolbarControls();
-      applyFilters();
-    });
-  });
-
-  // Priority buttons (bd-8o2gd phase 2)
-  panel.querySelectorAll('.fd-priority').forEach(btn => {
-    btn.addEventListener('click', () => {
-      const p = btn.dataset.priority;
-      btn.classList.toggle('active');
-      if (priorityFilter.has(p)) {
-        priorityFilter.delete(p);
-      } else {
-        priorityFilter.add(p);
-      }
-      applyFilters();
-    });
-  });
-
-  // Age buttons — sync with toolbar (triggers re-fetch)
-  panel.querySelectorAll('.fd-age').forEach(btn => {
-    btn.addEventListener('click', () => {
-      const newDays = parseInt(btn.dataset.days, 10);
-      if (newDays === activeAgeDays) return;
-      panel.querySelectorAll('.fd-age').forEach(b => b.classList.remove('active'));
-      btn.classList.add('active');
-      activeAgeDays = newDays;
-      syncToolbarControls();
-      refresh();
-    });
-  });
-
-  // Agent show/orphaned toggles — sync with toolbar
-  document.getElementById('fd-agent-show')?.addEventListener('click', () => {
-    agentFilterShow = !agentFilterShow;
-    document.getElementById('fd-agent-show')?.classList.toggle('active', agentFilterShow);
-    syncToolbarControls();
-    applyFilters();
-  });
-
-  document.getElementById('fd-agent-orphaned')?.addEventListener('click', () => {
-    agentFilterOrphaned = !agentFilterOrphaned;
-    document.getElementById('fd-agent-orphaned')?.classList.toggle('active', agentFilterOrphaned);
-    syncToolbarControls();
-    applyFilters();
-  });
-
-  // Agent name exclusion input — glob patterns, comma-separated (bd-8o2gd phase 4)
-  const agentExcludeInput = document.getElementById('fd-agent-exclude');
-  if (agentExcludeInput) {
-    agentExcludeInput.addEventListener('input', () => {
-      const val = agentExcludeInput.value.trim();
-      agentFilterNameExclude = val ? val.split(',').map(p => p.trim().toLowerCase()).filter(Boolean) : [];
-      applyFilters();
-    });
-  }
-
-  // Share button — copy shareable URL to clipboard (bd-8o2gd phase 4)
-  document.getElementById('fd-share')?.addEventListener('click', () => {
-    const url = getShareableUrl();
-    navigator.clipboard.writeText(url).then(() => {
-      const btn = document.getElementById('fd-share');
-      if (btn) { btn.textContent = 'copied!'; setTimeout(() => { btn.textContent = 'share'; }, 1500); }
-    }).catch(() => {
-      prompt('Copy this URL:', url);
-    });
-  });
-
-  // Reset button
-  document.getElementById('fd-reset')?.addEventListener('click', () => {
-    statusFilter.clear();
-    typeFilter.clear();
-    priorityFilter.clear();
-    assigneeFilter = '';
-    agentFilterShow = true;
-    agentFilterOrphaned = false;
-    agentFilterRigExclude.clear();
-    agentFilterNameExclude = [];
-    const excludeInput = document.getElementById('fd-agent-exclude');
-    if (excludeInput) excludeInput.value = '';
-    activeAgeDays = 7;
-    syncFilterDashboard();
-    syncToolbarControls();
-    _syncAllRigPills();
-    refresh();
-  });
-
-  // ── Profile persistence (bd-8o2gd phase 3) ──────────────────────────────
-
-  const profileSelect = document.getElementById('fd-profile-select');
-  const btnSave = document.getElementById('fd-profile-save');
-  const btnSaveAs = document.getElementById('fd-profile-save-as');
-  const btnDelete = document.getElementById('fd-profile-delete');
-
-  // Load profile list, then apply URL params (bd-8o2gd phase 4)
-  loadFilterProfiles().then(() => {
-    applyUrlFilterParams();
-  });
-
-  // Profile dropdown change — load selected profile
-  profileSelect?.addEventListener('change', () => {
-    loadFilterProfile(profileSelect.value);
-  });
-
-  // Save — overwrite currently selected profile
-  btnSave?.addEventListener('click', () => {
-    const name = profileSelect?.value;
-    if (!name) {
-      // No profile selected — prompt for name
-      const newName = prompt('Profile name:');
-      if (newName) saveFilterProfile(newName.trim());
-    } else {
-      saveFilterProfile(name);
-    }
-  });
-
-  // Save As — always prompt for new name
-  btnSaveAs?.addEventListener('click', () => {
-    const newName = prompt('New profile name:');
-    if (newName) saveFilterProfile(newName.trim());
-  });
-
-  // Delete — remove currently selected profile
-  btnDelete?.addEventListener('click', () => {
-    const name = profileSelect?.value;
-    if (!name) return;
-    if (confirm(`Delete profile "${name}"?`)) {
-      deleteFilterProfile(name);
-    }
-  });
-}
-
-function updateFilterCount() {
-  const visible = graphData.nodes.filter(n => !n._hidden).length;
-  const total = graphData.nodes.length;
-  const el = document.getElementById('filter-count');
-  if (el) {
-    if (searchResults.length > 0) {
-      el.textContent = `${searchResultIdx + 1}/${searchResults.length} matches · ${visible}/${total}`;
-    } else if (visible < total) {
-      el.textContent = `${visible}/${total}`;
-    } else {
-      el.textContent = `${total}`;
-    }
-  }
-  // Update filter dashboard node count (bd-8o2gd phase 2)
-  const fdCount = document.getElementById('fd-node-count');
-  if (fdCount) fdCount.textContent = `${visible}/${total} nodes`;
-}
+// Filter Dashboard moved to filter-dashboard.js (bd-7t6nt)
 
 // --- Layout modes ---
 let currentLayout = 'free';
@@ -4971,7 +4470,32 @@ function setupControls() {
     });
   });
 
-  // Filter dashboard panel (bd-8o2gd phase 2)
+  // Filter dashboard panel (bd-8o2gd phase 2) — wire dependencies
+  setFilterDeps({
+    applyFilters, refresh, syncAllRigPills: _syncAllRigPills, api,
+    state: {
+      get filterDashboardOpen() { return filterDashboardOpen; },
+      set filterDashboardOpen(v) { filterDashboardOpen = v; },
+      get statusFilter() { return statusFilter; },
+      get typeFilter() { return typeFilter; },
+      get priorityFilter() { return priorityFilter; },
+      get activeAgeDays() { return activeAgeDays; },
+      set activeAgeDays(v) { activeAgeDays = v; },
+      get assigneeFilter() { return assigneeFilter; },
+      set assigneeFilter(v) { assigneeFilter = v; },
+      get agentFilterShow() { return agentFilterShow; },
+      set agentFilterShow(v) { agentFilterShow = v; },
+      get agentFilterOrphaned() { return agentFilterOrphaned; },
+      set agentFilterOrphaned(v) { agentFilterOrphaned = v; },
+      get agentFilterRigExclude() { return agentFilterRigExclude; },
+      get agentFilterNameExclude() { return agentFilterNameExclude; },
+      set agentFilterNameExclude(v) { agentFilterNameExclude = v; },
+      get graphData() { return graphData; },
+      get searchResults() { return searchResults; },
+      get searchResultIdx() { return searchResultIdx; },
+      URL_PROFILE, URL_STATUS, URL_TYPES, URL_ASSIGNEE,
+    },
+  });
   initFilterDashboard();
 
   // Keyboard shortcuts
@@ -5434,111 +4958,7 @@ function initCSS2DRenderer() {
   });
 }
 
-// Short human-readable label for a bus event
-function dootLabel(evt) {
-  const type = evt.type || '';
-  const p = evt.payload || {};
-
-  // Agent lifecycle
-  if (type === 'AgentStarted') return 'started';
-  if (type === 'AgentStopped') return 'stopped';
-  if (type === 'AgentCrashed') return 'crashed!';
-  if (type === 'AgentIdle') return 'idle';
-  if (type === 'AgentHeartbeat') return null; // too noisy
-
-  // Hook events (tool use, session, etc.) — show full command context (bd-wn5he)
-  if (type === 'PreToolUse' || type === 'PostToolUse') {
-    const tool = p.tool_name || p.toolName || '';
-    const input = p.tool_input || {};
-    if (tool === 'Bash' || tool === 'bash') {
-      const cmd = input.command || input.cmd || '';
-      const short = cmd.replace(/^cd [^ ]+ && /, '').split('\n')[0].slice(0, 60);
-      return short || 'bash';
-    }
-    if (tool === 'Read' || tool === 'read') {
-      const fp = input.file_path || input.path || '';
-      return fp ? `read ${fp.split('/').pop()}` : 'read';
-    }
-    if (tool === 'Edit' || tool === 'edit') {
-      const fp = input.file_path || input.path || '';
-      return fp ? `edit ${fp.split('/').pop()}` : 'edit';
-    }
-    if (tool === 'Write' || tool === 'write') {
-      const fp = input.file_path || input.path || '';
-      return fp ? `write ${fp.split('/').pop()}` : 'write';
-    }
-    if (tool === 'Grep' || tool === 'grep') {
-      const pat = input.pattern || '';
-      return pat ? `grep ${pat.slice(0, 30)}` : 'grep';
-    }
-    if (tool === 'Glob' || tool === 'glob') {
-      const pat = input.pattern || '';
-      return pat ? `glob ${pat.slice(0, 30)}` : 'glob';
-    }
-    if (tool === 'Task' || tool === 'task') {
-      const desc = input.description || '';
-      return desc ? `task: ${desc.slice(0, 40)}` : 'task';
-    }
-    return tool ? tool.toLowerCase() : 'tool';
-  }
-  if (type === 'SessionStart') return 'session start';
-  if (type === 'SessionEnd') return 'session end';
-  if (type === 'Stop') return 'stop';
-  if (type === 'UserPromptSubmit') return 'prompt';
-  if (type === 'PreCompact') return 'compacting...';
-
-  // OddJobs
-  if (type === 'OjJobCreated') return 'job created';
-  if (type === 'OjStepAdvanced') return 'step';
-  if (type === 'OjAgentSpawned') return 'spawned';
-  if (type === 'OjAgentIdle') return 'idle';
-  if (type === 'OjJobCompleted') return 'job done';
-  if (type === 'OjJobFailed') return 'job failed!';
-
-  // Mail events (bd-t76aw)
-  if (type === 'MailSent') return `✉ ${(p.subject || 'mail').slice(0, 40)}`;
-  if (type === 'MailRead') return '✉ read';
-
-  // Mutations (bd-wn5he: rate-limit noisy heartbeat updates, show meaningful ones)
-  if (type === 'MutationCreate') return `new: ${(p.title || p.issue_id || 'bead').slice(0, 40)}`;
-  if (type === 'MutationUpdate') {
-    if (p.type === 'rpc_audit') return null; // daemon-token bookkeeping noise
-    // Rate-limit agent heartbeats: one doot per agent per 10s
-    if (p.agent_state && !p.new_status) {
-      const key = p.issue_id || p.actor || '';
-      const now = Date.now();
-      if (!dootLabel._lastHeartbeat) dootLabel._lastHeartbeat = {};
-      if (now - (dootLabel._lastHeartbeat[key] || 0) < 10000) return null;
-      dootLabel._lastHeartbeat[key] = now;
-      return p.agent_state; // "working", "idle", etc.
-    }
-    // Show assignee claims
-    if (p.assignee && p.type === 'update') return `claimed by ${p.assignee}`;
-    return p.title ? p.title.slice(0, 50) : 'updated';
-  }
-  if (type === 'MutationStatus') return p.new_status || 'status';
-  if (type === 'MutationClose') return 'closed';
-
-  // Decisions (bd-0j7hr: show decision events as doots + graph updates)
-  if (type === 'DecisionCreated') return `? ${(p.question || 'decision').slice(0, 35)}`;
-  if (type === 'DecisionResponded') return `✓ ${(p.chosen_label || 'resolved').slice(0, 35)}`;
-  if (type === 'DecisionEscalated') return 'escalated';
-  if (type === 'DecisionExpired') return 'expired';
-
-  return type.replace(/([A-Z])/g, ' $1').trim().toLowerCase().slice(0, 20);
-}
-
-// Color based on event type
-function dootColor(evt) {
-  const type = evt.type || '';
-  if (type.includes('Crash') || type.includes('Failed')) return '#ff3333';
-  if (type.includes('Decision')) return '#d4a017'; // before Created check — DecisionCreated is yellow
-  if (type.includes('Stop') || type.includes('End')) return '#888888';
-  if (type.includes('Started') || type.includes('Spawned') || type.includes('Created')) return '#2d8a4e';
-  if (type.includes('Tool')) return '#4a9eff';
-  if (type.includes('Idle')) return '#666666';
-  return '#ff6b35'; // agent orange default
-}
+// dootLabel, dootColor moved to event-format.js (bd-7t6nt)
 
 // Find a graph node to attach a doot to for a bus event (bd-5knqx).
 // Pass 1: Prefer dedicated agent nodes (issue_type=agent) — works with mock data.
@@ -5763,10 +5183,7 @@ function createDootPopupContainer() {
 
 // --- Agent activity feed windows (bd-kau4k) ---
 
-const TOOL_ICONS = {
-  Read: 'R', Edit: 'E', Bash: '$', Grep: '?', Write: 'W', Task: 'T',
-  Glob: 'G', WebFetch: 'F', WebSearch: 'S', NotebookEdit: 'N',
-};
+// TOOL_ICONS moved to event-format.js (bd-7t6nt)
 
 // bd-tgg70: Shared helpers for agent window beads lists (avoids stale snapshots)
 function getAssignedBeads(agentId) {
@@ -7329,30 +6746,7 @@ function appendAgentEvent(agentId, evt) {
   autoScroll(win);
 }
 
-function formatToolLabel(payload) {
-  const toolName = payload.tool_name || 'tool';
-  const input = payload.tool_input || {};
-  if (toolName === 'Bash' && input.command) {
-    const cmd = input.command.length > 40 ? input.command.slice(0, 40) + '…' : input.command;
-    return cmd;
-  }
-  if (toolName === 'Read' && input.file_path) {
-    return `read ${input.file_path.split('/').pop()}`;
-  }
-  if (toolName === 'Edit' && input.file_path) {
-    return `edit ${input.file_path.split('/').pop()}`;
-  }
-  if (toolName === 'Write' && input.file_path) {
-    return `write ${input.file_path.split('/').pop()}`;
-  }
-  if (toolName === 'Grep' && input.pattern) {
-    return `grep ${input.pattern.length > 30 ? input.pattern.slice(0, 30) + '…' : input.pattern}`;
-  }
-  if (toolName === 'Task' && input.description) {
-    return `task: ${input.description.length > 30 ? input.description.slice(0, 30) + '…' : input.description}`;
-  }
-  return toolName.toLowerCase();
-}
+// formatToolLabel moved to event-format.js (bd-7t6nt)
 
 function createEntry(time, icon, text, classes) {
   const el = document.createElement('div');
@@ -7375,24 +6769,7 @@ function autoScroll(win) {
   }
 }
 
-// Map a bus event to the agent node ID it belongs to (bd-kau4k, bd-t76aw, bd-jgvas).
-// Returns the agent node ID (e.g. "agent:cool-trout") or null.
-// Does NOT require a window to already exist — used for auto-open (bd-jgvas Phase 2).
-function resolveAgentIdLoose(evt) {
-  const p = evt.payload || {};
-
-  if (evt.type === 'MailSent' || evt.type === 'MailRead') {
-    const to = (p.to || '').replace(/^@/, '');
-    return to ? `agent:${to}` : null;
-  }
-
-  if (evt.type && evt.type.startsWith('Decision') && p.requested_by) {
-    return `agent:${p.requested_by}`;
-  }
-
-  const actor = p.actor;
-  return actor && actor !== 'daemon' ? `agent:${actor}` : null;
-}
+// resolveAgentIdLoose moved to event-format.js (bd-7t6nt)
 
 function connectBusStream() {
   try {
