@@ -4,7 +4,7 @@ import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPa
 import { CSS2DRenderer, CSS2DObject } from 'three/examples/jsm/renderers/CSS2DRenderer.js';
 import { BeadsAPI } from './api.js';
 import { nodeColor, nodeSize, linkColor, colorToHex, rigColor } from './colors.js';
-import { createFresnelMaterial, createStarField, updateShaderTime, createMateriaMaterial, createMateriaHaloTexture, createParticlePool } from './shaders.js';
+import { createFresnelMaterial, createStarField, updateShaderTime, createMateriaMaterial, createMateriaHaloTexture, createParticlePool, createFairyLights } from './shaders.js';
 
 // --- Config ---
 const params = new URLSearchParams(window.location.search);
@@ -25,7 +25,6 @@ const GEO = {
   sphereHi:   new THREE.SphereGeometry(1, 12, 12),   // unit sphere, scaled per-node
   sphereLo:   new THREE.SphereGeometry(1, 6, 6),      // low-poly glow shell
   torus:      new THREE.TorusGeometry(1, 0.15, 6, 20), // unit torus for rings
-  icosa:      new THREE.IcosahedronGeometry(1, 1),     // epic shell
   octa:       new THREE.OctahedronGeometry(1, 0),      // blocked spikes
   box:        new THREE.BoxGeometry(1, 1, 1),           // descent stage, general purpose
 };
@@ -205,7 +204,7 @@ let focusedMoleculeNodes = new Set(); // node IDs in the focused molecule (bd-lw
 let isBoxSelecting = false;
 let boxSelectStart = null; // {x, y} screen coords
 let cameraFrozen = false; // true when multi-select has locked orbit controls (bd-casin)
-let labelsVisible = false; // true when persistent info labels are shown on all nodes (bd-1o2f7)
+let labelsVisible = true; // true when persistent info labels are shown on all nodes (bd-1o2f7, bd-oypa2: default on)
 
 // Quake-style smooth camera movement (bd-zab4q)
 const _keysDown = new Set(); // currently held arrow keys
@@ -614,9 +613,11 @@ function createNodeLabelSprite(node) {
 
   const canvas = document.createElement('canvas');
   const ctx = canvas.getContext('2d');
-  const fontSize = 28;
+  // Scale canvas font from control panel slider (6-24 → canvas px via 2.5x multiplier)
+  const userSize = window.__beads3d_labelSize || 11;
+  const fontSize = Math.round(userSize * 2.5);
   const lineHeight = fontSize * 1.3;
-  const padding = 14;
+  const padding = Math.round(fontSize * 0.5);
 
   ctx.font = `bold ${fontSize}px "SF Mono", "Fira Code", monospace`;
   const w1 = ctx.measureText(line1).width;
@@ -671,8 +672,10 @@ function createNodeLabelSprite(node) {
   const sprite = new THREE.Sprite(material);
 
   // Scale in screen pixels (sizeAttenuation=false) — constant size regardless of zoom
+  // bd-oypa2: read label size from control panel slider (default 11 → spriteH 0.06)
   const aspect = canvas.width / canvas.height;
-  const spriteH = 0.06;  // fraction of viewport height (~60px on 1000px screen)
+  const labelSizeVal = window.__beads3d_labelSize || 11;
+  const spriteH = labelSizeVal * 0.00545;  // 11→0.06, 6→0.033, 24→0.131
   sprite.scale.set(spriteH * aspect, spriteH, 1);
 
   // Position above the node
@@ -759,6 +762,7 @@ function resolveOverlappingLabels() {
   }
 
   // Apply visibility — hide labels that didn't make the budget
+  const userOpacity = window.__beads3d_labelOpacity ?? 0.8;
   for (const l of allLabels) {
     if (!labelsVisible) {
       l.sprite.visible = false;
@@ -766,17 +770,20 @@ function resolveOverlappingLabels() {
     }
     l.sprite.visible = l.show;
     // Opacity fade: top labels get full opacity, lower ones fade (beads-bu3r)
+    // Multiply by user opacity slider so both LOD fade and slider work together
     if (l.show && l.sprite.material) {
       const rank = allLabels.indexOf(l);
       const fadeStart = Math.max(6, labelBudget * 0.6);
+      let lodOpacity;
       if (rank < fadeStart || l.pri >= 500) {
-        l.sprite.material.opacity = 1.0;
+        lodOpacity = 1.0;
       } else {
         // Fade from 1.0 down to 0.35 for the lowest-ranked visible labels
         const fadeRange = Math.max(1, labelBudget - fadeStart);
         const t = Math.min(1, (rank - fadeStart) / fadeRange);
-        l.sprite.material.opacity = 1.0 - t * 0.65;
+        lodOpacity = 1.0 - t * 0.65;
       }
+      l.sprite.material.opacity = lodOpacity * userOpacity;
     }
   }
 
@@ -906,7 +913,7 @@ function initGraph() {
       const group = new THREE.Group();
 
       // Materia orb core — FFVII-style inner glow (bd-c7d5z, replaces MeshBasicMaterial)
-      const breathSpeed = n.status === 'in_progress' ? 2.0 : (n.status === 'blocked' ? 0.5 : 0.0);
+      const breathSpeed = n.status === 'in_progress' ? 2.0 : 0.0; // bd-pe8k2: only in_progress pulses
       const coreIntensity = n.status === 'closed' ? 0.5 : (n.status === 'in_progress' ? 1.8 : 1.4);
       const coreOpacity = n.status === 'closed' ? 0.4 : 0.85;
       const core = new THREE.Mesh(GEO.sphereHi, createMateriaMaterial(hexColor, {
@@ -1028,15 +1035,6 @@ function initGraph() {
           rigSprite.userData.rigBadge = true;
           group.add(rigSprite);
         }
-      }
-
-      // Epic: wireframe organelle membrane
-      if (n.issue_type === 'epic') {
-        const shell = new THREE.Mesh(GEO.icosa, new THREE.MeshBasicMaterial({
-          color: 0x8b45a6, transparent: true, opacity: 0.15, wireframe: true,
-        }));
-        shell.scale.setScalar(size * 2);
-        group.add(shell);
       }
 
       // Decision/gate: diamond shape with "?" marker, only pending visible (bd-zr374)
@@ -1251,27 +1249,9 @@ function initGraph() {
   const scene = graph.scene();
   scene.fog = new THREE.FogExp2(0x0a0a0f, 0.0001);
 
-  // Nucleus — wireframe icosahedron at center (codebase)
-  const nucleusGeo = new THREE.IcosahedronGeometry(12, 2);
-  const nucleusMat = new THREE.MeshBasicMaterial({
-    color: 0x1a1a3e,
-    transparent: true,
-    opacity: 0.15,
-    wireframe: true,
-  });
-  const nucleus = new THREE.Mesh(nucleusGeo, nucleusMat);
-  nucleus.userData.isNucleus = true;
-  scene.add(nucleus);
-
-  // Cell membrane — faint outer boundary
-  const membraneGeo = new THREE.IcosahedronGeometry(350, 3);
-  const membraneMat = new THREE.MeshBasicMaterial({
-    color: 0x1a2a3a,
-    transparent: true,
-    opacity: 0.02,
-    wireframe: true,
-  });
-  scene.add(new THREE.Mesh(membraneGeo, membraneMat));
+  // Fairy lights — drifting luminous particles (bd-52izs, replaces geodesic dome nucleus/membrane)
+  const fairyLights = createFairyLights(300, 250);
+  scene.add(fairyLights);
 
   scene.add(new THREE.AmbientLight(0x404060, 0.5));
 
@@ -1869,7 +1849,7 @@ function restoreAllNodeOpacity() {
 
     if (!node._wasDimmed) continue;
     threeObj.traverse(child => {
-      if (!child.material || child.userData.selectionRing || child.userData.materiaCore || child.userData.pulse || child.userData.decisionPulse || child.userData.nodeLabel) return;
+      if (!child.material || child.userData.selectionRing || child.userData.materiaCore || child.userData.decisionPulse || child.userData.nodeLabel) return;
       restoreMaterialOpacity(child.material);
     });
     node._wasDimmed = false;
@@ -1877,7 +1857,6 @@ function restoreAllNodeOpacity() {
 }
 
 // --- Animation loop: pulsing effects + selection dimming ---
-let nucleusMesh = null; // cached reference
 
 function startAnimation() {
   function animate() {
@@ -1885,18 +1864,7 @@ function startAnimation() {
     const t = (performance.now() - startTime) / 1000;
     const hasSelection = selectedNode !== null;
 
-    // Rotate nucleus (cached, no scene.traverse)
-    if (!nucleusMesh) {
-      graph.scene().traverse(obj => {
-        if (obj.userData.isNucleus) nucleusMesh = obj;
-      });
-    }
-    if (nucleusMesh) {
-      nucleusMesh.rotation.y = t * 0.1;
-      nucleusMesh.rotation.x = Math.sin(t * 0.05) * 0.3;
-    }
-
-    // Update all shader uniforms (star field twinkle, Fresnel, selection ring sweep)
+    // Update all shader uniforms (star field twinkle, Fresnel, fairy lights drift, selection ring sweep)
     updateShaderTime(graph.scene(), t);
 
     // Per-node visual feedback — only iterate when needed
@@ -1962,11 +1930,6 @@ function startAnimation() {
           if (speed > 0.5) {
             const nx = -dx / speed, ny = -dy / speed, nz = -dz / speed;
             child.position.set(nx * 6, ny * 6, nz * 6);
-          }
-        } else if (child.userData.pulse) {
-          child.rotation.z = t * 0.5;
-          if (!child.material.uniforms) {
-            child.material.opacity = (0.15 + Math.sin(t * 3) * 0.1) * dimFactor;
           }
         } else if (child.userData.decisionPulse) {
           // Decision pending pulse: breathe scale + rotate (bd-zr374)
@@ -4973,8 +4936,10 @@ function setupControls() {
     btnBloom.classList.toggle('active', bloomEnabled);
   };
 
-  // Labels toggle (bd-1o2f7)
-  document.getElementById('btn-labels').onclick = () => toggleLabels();
+  // Labels toggle (bd-1o2f7, bd-oypa2: start active since labels default on)
+  const btnLabelsEl = document.getElementById('btn-labels');
+  btnLabelsEl.onclick = () => toggleLabels();
+  if (labelsVisible) btnLabelsEl.classList.add('active');
 
   // Bottom HUD bar quick-action buttons (bd-ddj44, bd-9ndk0.1)
   const hudBtnRefresh = document.getElementById('hud-btn-refresh');
@@ -6334,9 +6299,12 @@ function initControlPanel() {
     });
   });
   wireSlider('cp-pulse-speed', v => {
-    // Update pulseCycle uniform on all pulse ring materials (bd-b3ujw)
+    // Update breathSpeed on in-progress materia cores (bd-pe8k2, bd-b3ujw)
     if (!graph) return;
     graph.scene().traverse(obj => {
+      if (obj.material?.uniforms?.breathSpeed && obj.material.uniforms.breathSpeed.value > 0) {
+        obj.material.uniforms.breathSpeed.value = v;
+      }
       if (obj.material?.uniforms?.pulseCycle) {
         obj.material.uniforms.pulseCycle.value = v;
       }
@@ -6397,9 +6365,39 @@ function initControlPanel() {
     });
   }
 
-  // Label controls
-  wireSlider('cp-label-size', v => { window.__beads3d_labelSize = v; });
-  wireSlider('cp-label-opacity', v => { window.__beads3d_labelOpacity = v; });
+  // Label controls (bd-oypa2: wire to actual label rendering)
+  let _labelSizeDebounce;
+  wireSlider('cp-label-size', v => {
+    window.__beads3d_labelSize = v;
+    // Regenerate all labels with new size (debounced — slider fires rapidly)
+    clearTimeout(_labelSizeDebounce);
+    _labelSizeDebounce = setTimeout(() => {
+      if (graph) graph.nodeThreeObject(graph.nodeThreeObject());
+    }, 200);
+  });
+  wireSlider('cp-label-opacity', v => {
+    window.__beads3d_labelOpacity = v;
+    // Apply opacity to all existing label sprites immediately
+    if (graph) {
+      graph.scene().traverse(child => {
+        if (child.userData?.nodeLabel && child.material) {
+          child.material.opacity = v;
+        }
+      });
+    }
+  });
+
+  // Label show/hide toggle (bd-oypa2)
+  const labelToggle = document.getElementById('cp-label-toggle');
+  if (labelToggle) {
+    labelToggle.addEventListener('click', () => {
+      labelToggle.classList.toggle('on');
+      toggleLabels();
+      // Sync the toolbar button
+      const btn = document.getElementById('btn-labels');
+      if (btn) btn.classList.toggle('active', labelsVisible);
+    });
+  }
 
   // Layout controls (bd-a1odd)
   wireSlider('cp-force-strength', v => { if (graph) { graph.d3Force('charge')?.strength(-v); graph.d3ReheatSimulation(); } });
@@ -6526,7 +6524,7 @@ function initControlPanel() {
       'cp-bg-color': '#000005',
       'cp-color-open': '#2d8a4e', 'cp-color-active': '#d4a017',
       'cp-color-blocked': '#d04040', 'cp-color-agent': '#ff6b35', 'cp-color-epic': '#8b45a6',
-      'cp-label-size': 11, 'cp-label-opacity': 0.8,
+      'cp-label-toggle': 1, 'cp-label-size': 11, 'cp-label-opacity': 0.8,
       'cp-force-strength': 60, 'cp-link-distance': 60, 'cp-center-force': 1, 'cp-collision-radius': 0, 'cp-alpha-decay': 0.023,
       'cp-fly-speed': 1000,
       'cp-orbit-speed': 2.5, 'cp-orbit-rate': 0.08, 'cp-orbit-size': 1.5,
@@ -6544,7 +6542,7 @@ function initControlPanel() {
       'cp-bg-color': '#050510',
       'cp-color-open': '#00ff88', 'cp-color-active': '#ffee00',
       'cp-color-blocked': '#ff2050', 'cp-color-agent': '#ff8800', 'cp-color-epic': '#cc44ff',
-      'cp-label-size': 12, 'cp-label-opacity': 0.9,
+      'cp-label-toggle': 1, 'cp-label-size': 12, 'cp-label-opacity': 0.9,
       'cp-force-strength': 80, 'cp-link-distance': 50, 'cp-center-force': 1, 'cp-collision-radius': 0, 'cp-alpha-decay': 0.023,
       'cp-fly-speed': 800,
       'cp-orbit-speed': 4.0, 'cp-orbit-rate': 0.05, 'cp-orbit-size': 2.0,

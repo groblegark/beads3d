@@ -129,11 +129,9 @@ test.describe('materia node rendering (bd-c7d5z)', () => {
       expect(n.breathSpeed).toBeGreaterThan(0);
     }
 
-    // Non in_progress nodes should not breathe (except blocked which flickers)
+    // Non in_progress nodes should not breathe (bd-pe8k2: only in_progress pulses)
     for (const n of result.notBreathing) {
-      if (n.status !== 'blocked') {
-        expect(n.breathSpeed).toBe(0);
-      }
+      expect(n.breathSpeed).toBe(0);
     }
   });
 
