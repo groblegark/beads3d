@@ -221,6 +221,9 @@ let agentFilterOrphaned = false;   // show agents with no visible connected bead
 let agentFilterRigExclude = new Set(); // hide agents on these rigs (exact match)
 let agentFilterNameExclude = []; // glob patterns to hide agents by name (bd-8o2gd phase 4)
 
+// Edge type filter (bd-a0vbd): hide specific edge types to reduce graph density
+let depTypeHidden = new Set(['rig_conflict']); // default: hide rig conflict edges
+
 // Simple glob matcher: supports * (any chars) and ? (single char) (bd-8o2gd phase 4)
 function globMatch(pattern, str) {
   const re = new RegExp('^' + pattern.replace(/[.+^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*').replace(/\?/g, '.') + '$', 'i');
@@ -284,7 +287,7 @@ const _vfxConfig = {
 };
 
 // Agent tether strength — 0 = off, 1 = max pull (bd-uzj5j)
-let _agentTetherStrength = 0;
+let _agentTetherStrength = 0.5;
 
 // --- Event sprites: pop-up animations for status changes + new associations (bd-9qeto) ---
 const eventSprites = []; // { mesh, birth, lifetime, type, ... }
@@ -610,9 +613,15 @@ function toggleMinimap() {
 function createNodeLabelSprite(node) {
   const pLabel = ['P0', 'P1', 'P2', 'P3', 'P4'][node.priority] || '';
   const title = (node.title || node.id).slice(0, 40) + ((node.title || node.id).length > 40 ? '...' : '');
-  const line1 = node.id;
-  const line2 = title;
-  const line3 = `${node.status || ''}${node.assignee ? ' · ' + node.assignee : ''} · ${pLabel}`;
+  // Build lines based on content toggles (bd-xnh54)
+  const showId = window.__beads3d_labelShowId !== false;
+  const showTitle = window.__beads3d_labelShowTitle !== false;
+  const showStatus = window.__beads3d_labelShowStatus !== false;
+  const lines = [];
+  if (showId) lines.push({ text: node.id, bold: true, color: '#4a9eff' });
+  if (showTitle) lines.push({ text: title, bold: false, color: '#e0e0e0' });
+  if (showStatus) lines.push({ text: `${node.status || ''}${node.assignee ? ' · ' + node.assignee : ''} · ${pLabel}`, bold: false, color: '#888' });
+  if (lines.length === 0) lines.push({ text: node.id, bold: true, color: '#4a9eff' });
 
   const canvas = document.createElement('canvas');
   const ctx = canvas.getContext('2d');
@@ -622,15 +631,15 @@ function createNodeLabelSprite(node) {
   const lineHeight = fontSize * 1.3;
   const padding = Math.round(fontSize * 0.5);
 
-  ctx.font = `bold ${fontSize}px "SF Mono", "Fira Code", monospace`;
-  const w1 = ctx.measureText(line1).width;
-  ctx.font = `${fontSize}px "SF Mono", "Fira Code", monospace`;
-  const w2 = ctx.measureText(line2).width;
-  const w3 = ctx.measureText(line3).width;
-  const textW = Math.max(w1, w2, w3);
+  // Measure text widths for all visible lines
+  let textW = 0;
+  for (const l of lines) {
+    ctx.font = `${l.bold ? 'bold ' : ''}${fontSize}px "SF Mono", "Fira Code", monospace`;
+    textW = Math.max(textW, ctx.measureText(l.text).width);
+  }
 
   canvas.width = Math.ceil(textW + padding * 2);
-  canvas.height = Math.ceil(lineHeight * 3 + padding * 2);
+  canvas.height = Math.ceil(lineHeight * lines.length + padding * 2);
 
   // Background with rounded corners
   ctx.fillStyle = 'rgba(10, 10, 18, 0.85)';
@@ -649,19 +658,13 @@ function createNodeLabelSprite(node) {
   ctx.lineWidth = 1;
   ctx.stroke();
 
-  // Line 1: ID (bold, blue)
-  ctx.font = `bold ${fontSize}px "SF Mono", "Fira Code", monospace`;
-  ctx.fillStyle = '#4a9eff';
-  ctx.fillText(line1, padding, padding + fontSize);
-
-  // Line 2: title (white)
-  ctx.font = `${fontSize}px "SF Mono", "Fira Code", monospace`;
-  ctx.fillStyle = '#e0e0e0';
-  ctx.fillText(line2, padding, padding + fontSize + lineHeight);
-
-  // Line 3: status · assignee · priority (dim)
-  ctx.fillStyle = '#888';
-  ctx.fillText(line3, padding, padding + fontSize + lineHeight * 2);
+  // Render each visible line
+  for (let i = 0; i < lines.length; i++) {
+    const l = lines[i];
+    ctx.font = `${l.bold ? 'bold ' : ''}${fontSize}px "SF Mono", "Fira Code", monospace`;
+    ctx.fillStyle = l.color;
+    ctx.fillText(l.text, padding, padding + fontSize + lineHeight * i);
+  }
 
   const texture = new THREE.CanvasTexture(canvas);
   texture.minFilter = THREE.LinearFilter;
@@ -1135,7 +1138,7 @@ function initGraph() {
     .linkVisibility(l => {
       const src = typeof l.source === 'object' ? l.source : graphData.nodes.find(n => n.id === l.source);
       const tgt = typeof l.target === 'object' ? l.target : graphData.nodes.find(n => n.id === l.target);
-      return src && tgt && !src._hidden && !tgt._hidden;
+      return src && tgt && !src._hidden && !tgt._hidden && !depTypeHidden.has(l.dep_type);
     })
 
     // Link icons — sprite at midpoint showing dep type (shield=blocks, clock=waits, chain=parent)
@@ -3399,7 +3402,7 @@ function applyFilters() {
   graph.linkVisibility(l => {
     const src = typeof l.source === 'object' ? l.source : graphData.nodes.find(n => n.id === l.source);
     const tgt = typeof l.target === 'object' ? l.target : graphData.nodes.find(n => n.id === l.target);
-    return src && tgt && !src._hidden && !tgt._hidden;
+    return src && tgt && !src._hidden && !tgt._hidden && !depTypeHidden.has(l.dep_type);
   });
 
   // Rebuild node objects when reveal state changes (ghost opacity) (hq-vorf47)
@@ -6405,6 +6408,46 @@ function initControlPanel() {
     });
   }
 
+  // Label content toggles (bd-xnh54) — choose which fields to show
+  let _labelContentDebounce;
+  for (const field of ['id', 'title', 'status']) {
+    const toggleEl = document.getElementById(`cp-label-show-${field}`);
+    if (!toggleEl) continue;
+    toggleEl.addEventListener('click', () => {
+      toggleEl.classList.toggle('on');
+      const isOn = toggleEl.classList.contains('on');
+      window[`__beads3d_labelShow${field.charAt(0).toUpperCase() + field.slice(1)}`] = isOn;
+      // Regenerate labels with new content (debounced)
+      clearTimeout(_labelContentDebounce);
+      _labelContentDebounce = setTimeout(() => {
+        if (graph) graph.nodeThreeObject(graph.nodeThreeObject());
+      }, 200);
+    });
+  }
+
+  // Edge type toggles (bd-a0vbd): show/hide specific edge types to reduce graph density
+  const EDGE_TOGGLE_MAP = {
+    'cp-edge-blocks': 'blocks',
+    'cp-edge-parent-child': 'parent-child',
+    'cp-edge-waits-for': 'waits-for',
+    'cp-edge-relates-to': 'relates-to',
+    'cp-edge-assigned-to': 'assigned_to',
+    'cp-edge-rig-conflict': 'rig_conflict',
+  };
+  for (const [elId, depType] of Object.entries(EDGE_TOGGLE_MAP)) {
+    const toggleEl = document.getElementById(elId);
+    if (!toggleEl) continue;
+    toggleEl.addEventListener('click', () => {
+      toggleEl.classList.toggle('on');
+      if (toggleEl.classList.contains('on')) {
+        depTypeHidden.delete(depType);
+      } else {
+        depTypeHidden.add(depType);
+      }
+      applyFilters();
+    });
+  }
+
   // Layout controls (bd-a1odd)
   wireSlider('cp-force-strength', v => { if (graph) { graph.d3Force('charge')?.strength(-v); graph.d3ReheatSimulation(); } });
   wireSlider('cp-link-distance', v => { if (graph) { graph.d3Force('link')?.distance(v); graph.d3ReheatSimulation(); } });
@@ -6536,6 +6579,7 @@ function initControlPanel() {
       'cp-color-open': '#2d8a4e', 'cp-color-active': '#d4a017',
       'cp-color-blocked': '#d04040', 'cp-color-agent': '#ff6b35', 'cp-color-epic': '#8b45a6',
       'cp-label-toggle': 1, 'cp-label-size': 11, 'cp-label-opacity': 0.8,
+      'cp-label-show-id': 1, 'cp-label-show-title': 1, 'cp-label-show-status': 1,
       'cp-force-strength': 60, 'cp-link-distance': 60, 'cp-center-force': 1, 'cp-collision-radius': 0, 'cp-alpha-decay': 0.023, 'cp-agent-tether': 0,
       'cp-fly-speed': 1000,
       'cp-orbit-speed': 2.5, 'cp-orbit-rate': 0.08, 'cp-orbit-size': 1.5,
@@ -6544,7 +6588,7 @@ function initControlPanel() {
       'cp-camera-fov': 75, 'cp-camera-rotate-speed': 2.0, 'cp-camera-zoom-speed': 1.0,
       'cp-camera-near': 0.1, 'cp-camera-far': 50000,
       'cp-hud-stats': 1, 'cp-hud-bottom': 1, 'cp-hud-controls': 1,
-      'cp-hud-left-sidebar': 1, 'cp-hud-right-sidebar': 1, 'cp-hud-minimap': 1, 'cp-hud-tooltip': 1,
+      'cp-hud-left-sidebar': 1, 'cp-hud-right-sidebar': 1, 'cp-hud-minimap': 1, 'cp-hud-tooltip': 1, 'cp-edge-blocks': 1, 'cp-edge-parent-child': 1, 'cp-edge-waits-for': 1, 'cp-edge-relates-to': 1, 'cp-edge-assigned-to': 1, 'cp-edge-rig-conflict': 0,
     },
     'Neon': {
       'cp-bloom-threshold': 0.15, 'cp-bloom-strength': 1.8, 'cp-bloom-radius': 0.6,
@@ -6554,6 +6598,7 @@ function initControlPanel() {
       'cp-color-open': '#00ff88', 'cp-color-active': '#ffee00',
       'cp-color-blocked': '#ff2050', 'cp-color-agent': '#ff8800', 'cp-color-epic': '#cc44ff',
       'cp-label-toggle': 1, 'cp-label-size': 12, 'cp-label-opacity': 0.9,
+      'cp-label-show-id': 1, 'cp-label-show-title': 1, 'cp-label-show-status': 1,
       'cp-force-strength': 80, 'cp-link-distance': 50, 'cp-center-force': 1, 'cp-collision-radius': 0, 'cp-alpha-decay': 0.023, 'cp-agent-tether': 0,
       'cp-fly-speed': 800,
       'cp-orbit-speed': 4.0, 'cp-orbit-rate': 0.05, 'cp-orbit-size': 2.0,
@@ -6562,7 +6607,7 @@ function initControlPanel() {
       'cp-camera-fov': 60, 'cp-camera-rotate-speed': 3.0, 'cp-camera-zoom-speed': 1.5,
       'cp-camera-near': 0.1, 'cp-camera-far': 50000,
       'cp-hud-stats': 1, 'cp-hud-bottom': 1, 'cp-hud-controls': 1,
-      'cp-hud-left-sidebar': 1, 'cp-hud-right-sidebar': 1, 'cp-hud-minimap': 1, 'cp-hud-tooltip': 1,
+      'cp-hud-left-sidebar': 1, 'cp-hud-right-sidebar': 1, 'cp-hud-minimap': 1, 'cp-hud-tooltip': 1, 'cp-edge-blocks': 1, 'cp-edge-parent-child': 1, 'cp-edge-waits-for': 1, 'cp-edge-relates-to': 1, 'cp-edge-assigned-to': 1, 'cp-edge-rig-conflict': 0,
     },
     'High Contrast': {
       'cp-bloom-threshold': 0.8, 'cp-bloom-strength': 0.3, 'cp-bloom-radius': 0.2,
@@ -6572,6 +6617,7 @@ function initControlPanel() {
       'cp-color-open': '#00cc44', 'cp-color-active': '#ffcc00',
       'cp-color-blocked': '#ff0000', 'cp-color-agent': '#ff8844', 'cp-color-epic': '#aa44cc',
       'cp-label-toggle': 1, 'cp-label-size': 13, 'cp-label-opacity': 1.0,
+      'cp-label-show-id': 1, 'cp-label-show-title': 1, 'cp-label-show-status': 1,
       'cp-force-strength': 60, 'cp-link-distance': 60, 'cp-center-force': 1, 'cp-collision-radius': 0, 'cp-alpha-decay': 0.023, 'cp-agent-tether': 0,
       'cp-fly-speed': 1000,
       'cp-orbit-speed': 1.5, 'cp-orbit-rate': 0.15, 'cp-orbit-size': 1.0,
@@ -6580,7 +6626,7 @@ function initControlPanel() {
       'cp-camera-fov': 75, 'cp-camera-rotate-speed': 2.0, 'cp-camera-zoom-speed': 1.0,
       'cp-camera-near': 0.1, 'cp-camera-far': 50000,
       'cp-hud-stats': 1, 'cp-hud-bottom': 1, 'cp-hud-controls': 1,
-      'cp-hud-left-sidebar': 1, 'cp-hud-right-sidebar': 1, 'cp-hud-minimap': 1, 'cp-hud-tooltip': 1,
+      'cp-hud-left-sidebar': 1, 'cp-hud-right-sidebar': 1, 'cp-hud-minimap': 1, 'cp-hud-tooltip': 1, 'cp-edge-blocks': 1, 'cp-edge-parent-child': 1, 'cp-edge-waits-for': 1, 'cp-edge-relates-to': 1, 'cp-edge-assigned-to': 1, 'cp-edge-rig-conflict': 0,
     },
   };
 
