@@ -139,7 +139,7 @@ test.describe('UAT screenshot capture', () => {
     await mockAPI(page);
     await page.goto('/');
     await waitForGraphReady(page);
-    await page.keyboard.press('l');
+    // Labels are ON by default (bd-oypa2) — wait for LOD pass
     await page.waitForTimeout(500);
     await forceRender(page);
     await page.waitForTimeout(200);
@@ -180,7 +180,7 @@ test.describe('UAT screenshot capture', () => {
     await mockAPI(page, MOCK_MULTI_AGENT_GRAPH);
     await page.goto('/');
     await waitForGraphReady(page);
-    await page.keyboard.press('l');
+    // Labels are ON by default (bd-oypa2) — wait for LOD pass
     await page.waitForTimeout(500);
     await forceRender(page);
     await page.waitForTimeout(200);
@@ -222,7 +222,7 @@ test.describe('UAT screenshot capture', () => {
     await mockAPI(page, MOCK_LARGE_GRAPH);
     await page.goto('/');
     await waitForGraphReady(page);
-    await page.keyboard.press('l');
+    // Labels are ON by default (bd-oypa2) — wait for LOD pass
     await page.waitForTimeout(500);
     await forceRender(page);
     await page.waitForTimeout(200);
@@ -267,7 +267,7 @@ test.describe('UAT screenshot capture', () => {
     await mockAPI(page);
     await page.goto('/');
     await waitForGraphReady(page);
-    await page.keyboard.press('l');
+    // Labels are ON by default (bd-oypa2) — wait for LOD pass
     await page.waitForTimeout(500);
     // Zoom camera close to Epic 1 cluster
     await page.evaluate(() => {
@@ -304,7 +304,7 @@ test.describe('UAT screenshot capture', () => {
     await mockAPI(page);
     await page.goto('/');
     await waitForGraphReady(page);
-    await page.keyboard.press('l');
+    // Labels are ON by default (bd-oypa2)
     await page.waitForTimeout(500);
     // Select bd-feat1 via API
     await page.evaluate(() => {
@@ -414,7 +414,7 @@ test.describe('UAT screenshot capture', () => {
     await mockAPI(page);
     await page.goto('/?molecule=bd-epic1');
     await waitForGraphReady(page);
-    await page.keyboard.press('l');
+    // Labels are ON by default (bd-oypa2) — wait for LOD pass
     await page.waitForTimeout(500);
     await forceRender(page);
     await captureScenario(page, {
