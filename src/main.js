@@ -283,6 +283,9 @@ const _vfxConfig = {
   selectionGlow: 1.0,       // selection glow intensity multiplier
 };
 
+// Agent tether strength — 0 = off, 1 = max pull (bd-uzj5j)
+let _agentTetherStrength = 0;
+
 // --- Event sprites: pop-up animations for status changes + new associations (bd-9qeto) ---
 const eventSprites = []; // { mesh, birth, lifetime, type, ... }
 const EVENT_SPRITE_MAX = 40;
@@ -4532,10 +4535,14 @@ function setupAgentTether() {
       deps.get(srcId).push(child);
     }
 
+    // Skip entirely when tether disabled (bd-uzj5j)
+    if (_agentTetherStrength <= 0) return;
+
     // Apply spring force: agent pulls beads, beads pull deps (with decay)
-    const TETHER_STRENGTH = 0.08;  // direct agent→bead coupling
+    const BASE_STRENGTH = 0.3;     // max tether pull (scaled by slider)
+    const TETHER_STRENGTH = BASE_STRENGTH * _agentTetherStrength;
     const DECAY = 0.5;             // force halves per hop
-    const REST_DIST = 25;          // desired agent→bead distance
+    const REST_DIST = 20;          // desired agent→bead distance
 
     for (const [agentId, beads] of agentBeads) {
       const agent = nodeById.get(agentId);
@@ -4563,8 +4570,8 @@ function setupAgentTether() {
           node.vx += dx * pull;
           node.vy += dy * pull;
           node.vz += dz * pull;
-          // Slight counter-force on agent (Newton's 3rd, dampened)
-          const counterPull = pull * 0.1;
+          // Counter-force on agent (Newton's 3rd, dampened)
+          const counterPull = pull * 0.15;
           agent.vx -= dx * counterPull;
           agent.vy -= dy * counterPull;
           agent.vz -= dz * counterPull;
@@ -6420,6 +6427,11 @@ function initControlPanel() {
     }
   });
   wireSlider('cp-alpha-decay', v => { if (graph) graph.d3AlphaDecay(v); });
+  // Agent tether: slider controls pull strength (bd-uzj5j)
+  wireSlider('cp-agent-tether', v => {
+    _agentTetherStrength = v;
+    if (graph && v > 0) graph.d3ReheatSimulation();
+  });
   // Layout mode dropdown (bd-a1odd)
   { const sel = document.getElementById('cp-layout-mode');
     if (sel) sel.addEventListener('change', () => setLayout(sel.value)); }
@@ -6524,7 +6536,7 @@ function initControlPanel() {
       'cp-color-open': '#2d8a4e', 'cp-color-active': '#d4a017',
       'cp-color-blocked': '#d04040', 'cp-color-agent': '#ff6b35', 'cp-color-epic': '#8b45a6',
       'cp-label-toggle': 1, 'cp-label-size': 11, 'cp-label-opacity': 0.8,
-      'cp-force-strength': 60, 'cp-link-distance': 60, 'cp-center-force': 1, 'cp-collision-radius': 0, 'cp-alpha-decay': 0.023,
+      'cp-force-strength': 60, 'cp-link-distance': 60, 'cp-center-force': 1, 'cp-collision-radius': 0, 'cp-alpha-decay': 0.023, 'cp-agent-tether': 0,
       'cp-fly-speed': 1000,
       'cp-orbit-speed': 2.5, 'cp-orbit-rate': 0.08, 'cp-orbit-size': 1.5,
       'cp-hover-rate': 0.15, 'cp-stream-rate': 0.12, 'cp-stream-speed': 3.0,
@@ -6542,7 +6554,7 @@ function initControlPanel() {
       'cp-color-open': '#00ff88', 'cp-color-active': '#ffee00',
       'cp-color-blocked': '#ff2050', 'cp-color-agent': '#ff8800', 'cp-color-epic': '#cc44ff',
       'cp-label-toggle': 1, 'cp-label-size': 12, 'cp-label-opacity': 0.9,
-      'cp-force-strength': 80, 'cp-link-distance': 50, 'cp-center-force': 1, 'cp-collision-radius': 0, 'cp-alpha-decay': 0.023,
+      'cp-force-strength': 80, 'cp-link-distance': 50, 'cp-center-force': 1, 'cp-collision-radius': 0, 'cp-alpha-decay': 0.023, 'cp-agent-tether': 0,
       'cp-fly-speed': 800,
       'cp-orbit-speed': 4.0, 'cp-orbit-rate': 0.05, 'cp-orbit-size': 2.0,
       'cp-hover-rate': 0.08, 'cp-stream-rate': 0.06, 'cp-stream-speed': 5.0,
@@ -6560,7 +6572,7 @@ function initControlPanel() {
       'cp-color-open': '#00cc44', 'cp-color-active': '#ffcc00',
       'cp-color-blocked': '#ff0000', 'cp-color-agent': '#ff8844', 'cp-color-epic': '#aa44cc',
       'cp-label-toggle': 1, 'cp-label-size': 13, 'cp-label-opacity': 1.0,
-      'cp-force-strength': 60, 'cp-link-distance': 60, 'cp-center-force': 1, 'cp-collision-radius': 0, 'cp-alpha-decay': 0.023,
+      'cp-force-strength': 60, 'cp-link-distance': 60, 'cp-center-force': 1, 'cp-collision-radius': 0, 'cp-alpha-decay': 0.023, 'cp-agent-tether': 0,
       'cp-fly-speed': 1000,
       'cp-orbit-speed': 1.5, 'cp-orbit-rate': 0.15, 'cp-orbit-size': 1.0,
       'cp-hover-rate': 0.25, 'cp-stream-rate': 0.2, 'cp-stream-speed': 2.0,
