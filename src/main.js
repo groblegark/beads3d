@@ -5435,6 +5435,9 @@ async function refresh() {
   }
   // If only properties changed (status, title, etc.), the existing three.js
   // objects pick up the changes via the animation tick — no layout reset needed.
+
+  // bd-tgg70: Update beads lists in all open agent windows after graph refresh
+  refreshAgentWindowBeads();
 }
 
 // --- SSE live updates (bd-03b5v) ---
@@ -5860,6 +5863,65 @@ const TOOL_ICONS = {
   Glob: 'G', WebFetch: 'F', WebSearch: 'S', NotebookEdit: 'N',
 };
 
+// bd-tgg70: Shared helpers for agent window beads lists (avoids stale snapshots)
+function getAssignedBeads(agentId) {
+  if (!graphData || !graphData.links) return [];
+  return graphData.links
+    .filter(l => l.dep_type === 'assigned_to' &&
+      (typeof l.source === 'object' ? l.source.id : l.source) === agentId)
+    .map(l => {
+      const tgtId = typeof l.target === 'object' ? l.target.id : l.target;
+      const tgtNode = graphData.nodes.find(n => n.id === tgtId);
+      return tgtNode ? { id: tgtId, title: tgtNode.title || tgtId } : null;
+    })
+    .filter(Boolean);
+}
+
+function renderBeadsListHtml(assigned) {
+  return assigned
+    .map(b => `<div class="agent-window-bead" data-bead-id="${escapeHtml(b.id)}" title="${escapeHtml(b.id)}: ${escapeHtml(b.title)}" style="cursor:pointer">${escapeHtml(b.id.replace(/^[a-z]+-/, ''))}: ${escapeHtml(b.title)}</div>`)
+    .join('');
+}
+
+// bd-tgg70: Re-render beads lists in all open agent windows after graph refresh
+function refreshAgentWindowBeads() {
+  for (const [agentId, win] of agentWindows) {
+    const assigned = getAssignedBeads(agentId);
+    const beadsList = renderBeadsListHtml(assigned);
+
+    // Update the count badge in the header (the one without inline color style)
+    const badges = win.el.querySelectorAll('.agent-window-header .agent-window-badge');
+    for (const b of badges) {
+      if (!b.style.color) { b.textContent = assigned.length; break; }
+    }
+
+    // Update or create the beads container
+    let beadsContainer = win.el.querySelector('.agent-window-beads');
+    if (beadsList) {
+      if (!beadsContainer) {
+        beadsContainer = document.createElement('div');
+        beadsContainer.className = 'agent-window-beads';
+        // Insert after status bar, before feed
+        const feed = win.el.querySelector('.agent-feed');
+        if (feed) win.el.insertBefore(beadsContainer, feed);
+      }
+      beadsContainer.innerHTML = beadsList;
+      // Re-attach click handler (bd-xm78e)
+      beadsContainer.onclick = (e) => {
+        const beadEl = e.target.closest('.agent-window-bead');
+        if (!beadEl) return;
+        const beadId = beadEl.dataset.beadId;
+        if (!beadId) return;
+        e.stopPropagation();
+        const beadNode = graphData.nodes.find(n => n.id === beadId);
+        if (beadNode) handleNodeClick(beadNode);
+      };
+    } else if (beadsContainer) {
+      beadsContainer.remove();
+    }
+  }
+}
+
 function showAgentWindow(node) {
   if (!node || !node.id) return;
 
@@ -5880,20 +5942,9 @@ function showAgentWindow(node) {
 
   const agentName = node.title || node.id.replace('agent:', '');
 
-  // Find assigned beads
-  const assigned = graphData.links
-    .filter(l => l.dep_type === 'assigned_to' &&
-      (typeof l.source === 'object' ? l.source.id : l.source) === node.id)
-    .map(l => {
-      const tgtId = typeof l.target === 'object' ? l.target.id : l.target;
-      const tgtNode = graphData.nodes.find(n => n.id === tgtId);
-      return tgtNode ? { id: tgtId, title: tgtNode.title || tgtId } : null;
-    })
-    .filter(Boolean);
-
-  const beadsList = assigned
-    .map(b => `<div class="agent-window-bead" data-bead-id="${escapeHtml(b.id)}" title="${escapeHtml(b.id)}: ${escapeHtml(b.title)}" style="cursor:pointer">${escapeHtml(b.id.replace(/^[a-z]+-/, ''))}: ${escapeHtml(b.title)}</div>`)
-    .join('');
+  // bd-tgg70: Use shared helpers for beads list (refreshAgentWindowBeads updates these live)
+  const assigned = getAssignedBeads(node.id);
+  const beadsList = renderBeadsListHtml(assigned);
 
   const rigBadge = node.rig
     ? `<span class="agent-window-rig" style="color:${rigColor(node.rig)};border-color:${rigColor(node.rig)}33">${escapeHtml(node.rig)}</span>`
@@ -6953,20 +7004,9 @@ function openAgentsView() {
                          agentStatus === 'idle' ? '#d4a017' :
                          agentStatus === 'crashed' ? '#d04040' : '#666';
 
-    // Find assigned beads
-    const assigned = graphData.links
-      .filter(l => l.dep_type === 'assigned_to' &&
-        (typeof l.source === 'object' ? l.source.id : l.source) === node.id)
-      .map(l => {
-        const tgtId = typeof l.target === 'object' ? l.target.id : l.target;
-        const tgtNode = graphData.nodes.find(n => n.id === tgtId);
-        return tgtNode ? { id: tgtId, title: tgtNode.title || tgtId } : null;
-      })
-      .filter(Boolean);
-
-    const beadsList = assigned
-      .map(b => `<div class="agent-window-bead" data-bead-id="${escapeHtml(b.id)}" title="${escapeHtml(b.id)}: ${escapeHtml(b.title)}" style="cursor:pointer">${escapeHtml(b.id.replace(/^[a-z]+-/, ''))}: ${escapeHtml(b.title)}</div>`)
-      .join('');
+    // bd-tgg70: Use shared helpers for beads list
+    const assigned = getAssignedBeads(node.id);
+    const beadsList = renderBeadsListHtml(assigned);
 
     const avRigBadge = node.rig
       ? `<span class="agent-window-rig" style="color:${rigColor(node.rig)};border-color:${rigColor(node.rig)}33">${escapeHtml(node.rig)}</span>`
@@ -7130,19 +7170,9 @@ function createAgentWindowInGrid(node) {
                        agentStatus === 'idle' ? '#d4a017' :
                        agentStatus === 'crashed' ? '#d04040' : '#666';
 
-  const assigned = graphData ? graphData.links
-    .filter(l => l.dep_type === 'assigned_to' &&
-      (typeof l.source === 'object' ? l.source.id : l.source) === node.id)
-    .map(l => {
-      const tgtId = typeof l.target === 'object' ? l.target.id : l.target;
-      const tgtNode = graphData.nodes.find(n => n.id === tgtId);
-      return tgtNode ? { id: tgtId, title: tgtNode.title || tgtId } : null;
-    })
-    .filter(Boolean) : [];
-
-  const beadsList = assigned
-    .map(b => `<div class="agent-window-bead" data-bead-id="${escapeHtml(b.id)}" title="${escapeHtml(b.id)}: ${escapeHtml(b.title)}" style="cursor:pointer">${escapeHtml(b.id.replace(/^[a-z]+-/, ''))}: ${escapeHtml(b.title)}</div>`)
-    .join('');
+  // bd-tgg70: Use shared helpers for beads list
+  const assigned = getAssignedBeads(node.id);
+  const beadsList = renderBeadsListHtml(assigned);
 
   const ciwStatusClass = agentStatus === 'active' ? 'status-active' : agentStatus === 'idle' ? 'status-idle' : agentStatus === 'crashed' ? 'status-crashed' : '';
 
