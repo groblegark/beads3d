@@ -3,10 +3,17 @@
 
 const DEFAULT_BASE = '/api';
 
+// SSE reconnection with exponential backoff (bd-ki6im)
+const SSE_INITIAL_DELAY = 1000;
+const SSE_MAX_DELAY = 30000;
+const SSE_MAX_RETRIES = 50;
+const SSE_BACKOFF_FACTOR = 2;
+
 export class BeadsAPI {
   constructor(baseUrl = DEFAULT_BASE) {
     this.baseUrl = baseUrl;
     this._eventSources = []; // track SSE connections for cleanup (bd-7n4g8)
+    this._reconnectManagers = []; // track reconnection managers (bd-ki6im)
   }
 
   async _rpc(method, body = {}) {
@@ -99,59 +106,126 @@ export class BeadsAPI {
     }
   }
 
-  // SSE event stream for live updates (mutation events)
-  connectEvents(onEvent) {
-    const url = `${this.baseUrl}/events`;
-    const es = new EventSource(url);
+  // SSE reconnection manager (bd-ki6im)
+  // Creates an EventSource with automatic reconnection on error/close.
+  // callbacks: { onStatus(state, info) } where state is 'connecting'|'connected'|'reconnecting'|'disconnected'
+  // setupFn(es): called to attach event listeners to a new EventSource
+  _connectWithReconnect(url, label, setupFn, callbacks = {}) {
+    const mgr = {
+      url,
+      label,
+      _es: null,
+      _retries: 0,
+      _delay: SSE_INITIAL_DELAY,
+      _timer: null,
+      _stopped: false,
 
-    es.onmessage = (e) => {
-      try {
-        const data = JSON.parse(e.data);
-        onEvent(data);
-      } catch { /* skip malformed */ }
+      connect: () => {
+        if (mgr._stopped) return;
+
+        const isReconnect = mgr._retries > 0;
+        if (isReconnect) {
+          console.log(`[beads3d] ${label} SSE reconnecting (attempt ${mgr._retries}/${SSE_MAX_RETRIES})...`);
+          callbacks.onStatus?.('reconnecting', { attempt: mgr._retries, maxRetries: SSE_MAX_RETRIES });
+        } else {
+          callbacks.onStatus?.('connecting', {});
+        }
+
+        const es = new EventSource(url);
+        mgr._es = es;
+
+        es.onopen = () => {
+          console.log(`[beads3d] ${label} SSE connected`);
+          mgr._retries = 0;
+          mgr._delay = SSE_INITIAL_DELAY;
+          callbacks.onStatus?.('connected', {});
+        };
+
+        es.onerror = () => {
+          if (mgr._stopped) return;
+          // EventSource auto-reconnects for CONNECTING state, but not for CLOSED
+          if (es.readyState === EventSource.CLOSED) {
+            console.warn(`[beads3d] ${label} SSE closed, scheduling reconnect`);
+            es.close();
+            mgr._scheduleReconnect();
+          }
+          // For CONNECTING state: EventSource handles it natively, but if it
+          // keeps failing, readyState will eventually become CLOSED
+        };
+
+        setupFn(es);
+
+        // Track for cleanup
+        const idx = this._eventSources.indexOf(mgr._prevEs);
+        if (idx >= 0) this._eventSources.splice(idx, 1);
+        mgr._prevEs = es;
+        this._eventSources.push(es);
+      },
+
+      _scheduleReconnect: () => {
+        if (mgr._stopped) return;
+        mgr._retries++;
+        if (mgr._retries > SSE_MAX_RETRIES) {
+          console.error(`[beads3d] ${label} SSE gave up after ${SSE_MAX_RETRIES} retries`);
+          callbacks.onStatus?.('disconnected', {});
+          return;
+        }
+        const jitter = Math.random() * 0.3 * mgr._delay;
+        const wait = mgr._delay + jitter;
+        console.log(`[beads3d] ${label} SSE reconnect in ${Math.round(wait)}ms`);
+        mgr._timer = setTimeout(() => {
+          mgr.connect();
+        }, wait);
+        mgr._delay = Math.min(mgr._delay * SSE_BACKOFF_FACTOR, SSE_MAX_DELAY);
+      },
+
+      stop: () => {
+        mgr._stopped = true;
+        clearTimeout(mgr._timer);
+        if (mgr._es) mgr._es.close();
+      },
+
+      // Manual reconnect (for retry button)
+      retry: () => {
+        mgr._stopped = false;
+        mgr._retries = 0;
+        mgr._delay = SSE_INITIAL_DELAY;
+        clearTimeout(mgr._timer);
+        if (mgr._es) mgr._es.close();
+        mgr.connect();
+      },
     };
 
-    es.onopen = () => console.log('[beads3d] mutation SSE connected');
-    es.onerror = () => {
-      if (es.readyState === EventSource.CLOSED) console.warn('[beads3d] mutation SSE closed:', url);
-    };
-
-    this._eventSources.push(es);
-    return es;
+    this._reconnectManagers.push(mgr);
+    mgr.connect();
+    return mgr;
   }
 
-  // SSE bus event stream — all NATS event streams (bd-c7723)
+  // SSE event stream for live updates with reconnection (bd-ki6im)
+  connectEvents(onEvent, callbacks = {}) {
+    const url = `${this.baseUrl}/events`;
+    return this._connectWithReconnect(url, 'mutation', (es) => {
+      es.onmessage = (e) => {
+        try {
+          const data = JSON.parse(e.data);
+          onEvent(data);
+        } catch { /* skip malformed */ }
+      };
+    }, callbacks);
+  }
+
+  // SSE bus event stream with reconnection — all NATS event streams (bd-c7723, bd-ki6im)
   // streams: comma-separated stream names (e.g., "agents,hooks,oj") or "all"
-  connectBusEvents(streams, onEvent) {
+  connectBusEvents(streams, onEvent, callbacks = {}) {
     const url = `${this.baseUrl}/bus/events?stream=${encodeURIComponent(streams)}`;
-    const es = new EventSource(url);
-
-    es.addEventListener('agents', (e) => {
-      try { onEvent(JSON.parse(e.data)); } catch { /* skip */ }
-    });
-    es.addEventListener('hooks', (e) => {
-      try { onEvent(JSON.parse(e.data)); } catch { /* skip */ }
-    });
-    es.addEventListener('oj', (e) => {
-      try { onEvent(JSON.parse(e.data)); } catch { /* skip */ }
-    });
-    es.addEventListener('mutations', (e) => {
-      try { onEvent(JSON.parse(e.data)); } catch { /* skip */ }
-    });
-    es.addEventListener('decisions', (e) => {
-      try { onEvent(JSON.parse(e.data)); } catch { /* skip */ }
-    });
-    es.addEventListener('mail', (e) => {
-      try { onEvent(JSON.parse(e.data)); } catch { /* skip */ }
-    });
-
-    es.onopen = () => console.log('[beads3d] bus SSE connected:', streams);
-    es.onerror = () => {
-      if (es.readyState === EventSource.CLOSED) console.warn('[beads3d] bus SSE closed:', url);
-    };
-
-    this._eventSources.push(es);
-    return es;
+    const eventTypes = ['agents', 'hooks', 'oj', 'mutations', 'decisions', 'mail'];
+    return this._connectWithReconnect(url, 'bus', (es) => {
+      for (const type of eventTypes) {
+        es.addEventListener(type, (e) => {
+          try { onEvent(JSON.parse(e.data)); } catch { /* skip */ }
+        });
+      }
+    }, callbacks);
   }
 
   // --- Decision operations (bd-g0tmq) ---
@@ -221,11 +295,22 @@ export class BeadsAPI {
     return this._rpc('ConfigUnset', { key });
   }
 
-  // Close all SSE connections (bd-7n4g8)
+  // Close all SSE connections and stop reconnection (bd-7n4g8, bd-ki6im)
   destroy() {
+    for (const mgr of this._reconnectManagers) {
+      mgr.stop();
+    }
+    this._reconnectManagers.length = 0;
     for (const es of this._eventSources) {
       es.close();
     }
     this._eventSources.length = 0;
+  }
+
+  // Manual reconnect all SSE streams (bd-ki6im, for retry button)
+  reconnectAll() {
+    for (const mgr of this._reconnectManagers) {
+      mgr.retry();
+    }
   }
 }

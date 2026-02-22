@@ -317,13 +317,30 @@
       display: inline-block;
     }
 
-    /* Connection status — now inside bottom-hud-right (bd-ddj44) */
+    /* Connection status — now inside bottom-hud-right (bd-ddj44, bd-ki6im) */
     #status {
       font-size: 10px;
       color: #444;
     }
     #status.connected { color: #2d8a4e; }
     #status.error { color: #d04040; }
+    #status.reconnecting { color: #d4a017; animation: status-pulse 1.2s ease-in-out infinite; }
+    @keyframes status-pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.4; }
+    }
+    #status .retry-btn {
+      font-size: 9px;
+      color: #d04040;
+      background: #1a1a2a;
+      border: 1px solid #d04040;
+      border-radius: 3px;
+      padding: 1px 6px;
+      margin-left: 6px;
+      cursor: pointer;
+      vertical-align: middle;
+    }
+    #status .retry-btn:hover { background: #2a1a1a; color: #ff5050; }
 
     /* Keyboard hints — now inside bottom-hud-right (bd-ddj44) */
     #keyhints {

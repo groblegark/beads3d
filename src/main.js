@@ -2139,7 +2139,7 @@ async function fetchViaGraph(statusEl) {
 
   // Filter disconnected decisions and molecules: only show if they have at least
   // one edge connecting them to a visible bead (bd-t25i1)
-  const LINKED_ONLY = new Set(['decision', 'molecule']);
+  const LINKED_ONLY = new Set(['decision', 'gate', 'molecule']); // bd-zbyn7: include gate (decisions are type=gate)
   const connectedIds = new Set();
   for (const l of links) { connectedIds.add(l.source); connectedIds.add(l.target); }
   nodes = nodes.filter(n => !LINKED_ONLY.has(n.issue_type) || connectedIds.has(n.id));
@@ -2183,8 +2183,8 @@ async function fetchViaGraph(statusEl) {
 
 async function fetchViaList(statusEl) {
   const SKIP_TYPES = new Set(DEEP_LINK_MOLECULE
-    ? ['message', 'config', 'gate', 'wisp', 'convoy', 'decision', 'formula', 'advice', 'role'] // bd-lwut6: include molecules
-    : ['message', 'config', 'gate', 'wisp', 'convoy', 'decision', 'molecule', 'formula', 'advice', 'role']);
+    ? ['message', 'config', 'wisp', 'convoy', 'formula', 'advice', 'role'] // bd-lwut6: include molecules; bd-zbyn7: include gate/decision
+    : ['message', 'config', 'wisp', 'convoy', 'molecule', 'formula', 'advice', 'role']);
 
   // Parallel fetch: open/active beads + blocked + stats (bd-7haep: include all active statuses)
   const [openIssues, inProgress, hookedIssues, deferredIssues, blocked, stats] = await Promise.all([
@@ -2343,7 +2343,7 @@ function _liveUpdateProjectPulse() {
   let open = 0, active = 0, blocked = 0, agentCount = 0, pendingDecisions = 0;
   for (const n of nodes) {
     if (n.issue_type === 'agent') { agentCount++; continue; }
-    if ((n.issue_type === 'gate' || n.issue_type === 'decision') && n.status !== 'closed') pendingDecisions++;
+    if ((n.issue_type === 'decision' || (n.issue_type === 'gate' && n.await_type === 'decision')) && n.status !== 'closed') pendingDecisions++;
     if (n._blocked) blocked++;
     else if (n.status === 'in_progress') active++;
     else if (n.status === 'open' || n.status === 'hooked' || n.status === 'deferred') open++;
@@ -2375,7 +2375,7 @@ function updateStats(stats, issues) {
     if (pulseEl) {
       const agentCount = issues.filter(n => n.issue_type === 'agent').length;
       const pendingDecisions = issues.filter(n =>
-        (n.issue_type === 'gate' || n.issue_type === 'decision') && n.status !== 'closed'
+        (n.issue_type === 'decision' || (n.issue_type === 'gate' && n.await_type === 'decision')) && n.status !== 'closed'
       ).length;
       pulseEl.innerHTML = `
         <div class="pulse-stat"><span class="pulse-stat-label">open</span><span class="pulse-stat-value">${open}</span></div>
@@ -5440,10 +5440,38 @@ async function refresh() {
   refreshAgentWindowBeads();
 }
 
-// --- SSE live updates (bd-03b5v) ---
+// --- SSE live updates (bd-03b5v, bd-ki6im: reconnection) ---
 // Handle incoming mutation events: optimistic property updates for instant feedback,
 // debounced full refresh for structural changes (new/deleted beads).
 let _refreshTimer;
+// SSE connection state tracking (bd-ki6im)
+const _sseState = { mutation: 'connecting', bus: 'connecting' };
+function _updateConnectionStatus() {
+  const statusEl = document.getElementById('status');
+  if (!statusEl) return;
+  const states = [_sseState.mutation, _sseState.bus];
+  if (states.every(s => s === 'connected')) {
+    statusEl.textContent = 'connected';
+    statusEl.className = 'connected';
+  } else if (states.some(s => s === 'disconnected')) {
+    const retryBtn = statusEl.querySelector('.retry-btn');
+    if (!retryBtn) {
+      statusEl.innerHTML = 'disconnected <button class="retry-btn" title="Retry SSE connection">retry</button>';
+      statusEl.className = 'error';
+      statusEl.querySelector('.retry-btn').addEventListener('click', (e) => {
+        e.stopPropagation();
+        api.reconnectAll();
+      });
+    }
+  } else if (states.some(s => s === 'reconnecting')) {
+    const attempt = _sseState._lastAttempt || '?';
+    statusEl.textContent = `reconnecting (${attempt})...`;
+    statusEl.className = 'reconnecting';
+  } else {
+    statusEl.textContent = 'connecting...';
+    statusEl.className = '';
+  }
+}
 function connectLiveUpdates() {
   try {
     api.connectEvents((evt) => {
@@ -5453,6 +5481,21 @@ function connectLiveUpdates() {
       // debounce from 5s/1.5s to 10s/3s to reduce layout disruption frequency).
       clearTimeout(_refreshTimer);
       _refreshTimer = setTimeout(refresh, applied ? 10000 : 3000);
+    }, {
+      onStatus: (state, info) => {
+        _sseState.mutation = state;
+        if (info.attempt) _sseState._lastAttempt = info.attempt;
+        _updateConnectionStatus();
+        // On reconnect, refresh to catch missed mutations (bd-ki6im)
+        if (state === 'connected' && _sseState._mutationWasDown) {
+          _sseState._mutationWasDown = false;
+          clearTimeout(_refreshTimer);
+          _refreshTimer = setTimeout(refresh, 500);
+        }
+        if (state === 'reconnecting' || state === 'disconnected') {
+          _sseState._mutationWasDown = true;
+        }
+      },
     });
   } catch { /* polling fallback */ }
 }
@@ -6302,9 +6345,9 @@ function updateDecisionQueue() {
   const body = document.getElementById('rs-decisions-body');
   if (!body || !graphData) return;
 
-  // Find decision/gate nodes that are pending
+  // Find decision/gate nodes that are pending (bd-zbyn7: decisions are type=gate, await_type=decision)
   const decisions = graphData.nodes.filter(n =>
-    (n.issue_type === 'decision' || n.issue_type === 'gate') &&
+    (n.issue_type === 'decision' || (n.issue_type === 'gate' && n.await_type === 'decision')) &&
     n.status !== 'closed' && !n._hidden
   );
 
@@ -7738,6 +7781,22 @@ function connectBusStream() {
 
       // bd-nnr22: update left sidebar agent roster from all SSE events
       updateAgentRosterFromEvent(evt);
+    }, {
+      // bd-ki6im: bus SSE reconnection status
+      onStatus: (state, info) => {
+        _sseState.bus = state;
+        if (info.attempt) _sseState._lastAttempt = info.attempt;
+        _updateConnectionStatus();
+        // On reconnect, refresh to catch missed events
+        if (state === 'connected' && _sseState._busWasDown) {
+          _sseState._busWasDown = false;
+          clearTimeout(_refreshTimer);
+          _refreshTimer = setTimeout(refresh, 500);
+        }
+        if (state === 'reconnecting' || state === 'disconnected') {
+          _sseState._busWasDown = true;
+        }
+      },
     });
   } catch { /* SSE not available — degrade gracefully */ }
 }
