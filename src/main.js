@@ -6560,7 +6560,7 @@ function initControlPanel() {
       'cp-bg-color': '#000000',
       'cp-color-open': '#00cc44', 'cp-color-active': '#ffcc00',
       'cp-color-blocked': '#ff0000', 'cp-color-agent': '#ff8844', 'cp-color-epic': '#aa44cc',
-      'cp-label-size': 13, 'cp-label-opacity': 1.0,
+      'cp-label-toggle': 1, 'cp-label-size': 13, 'cp-label-opacity': 1.0,
       'cp-force-strength': 60, 'cp-link-distance': 60, 'cp-center-force': 1, 'cp-collision-radius': 0, 'cp-alpha-decay': 0.023,
       'cp-fly-speed': 1000,
       'cp-orbit-speed': 1.5, 'cp-orbit-rate': 0.15, 'cp-orbit-size': 1.0,

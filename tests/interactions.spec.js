@@ -294,15 +294,8 @@ test.describe('keyboard shortcuts', () => {
     await page.goto('/');
     await waitForGraph(page);
 
-    // Labels should be off initially
+    // Labels are ON by default (bd-oypa2)
     const btnLabels = page.locator('#btn-labels');
-    await expect(btnLabels).not.toHaveClass(/active/);
-
-    // Press 'l' to toggle labels on
-    await page.keyboard.press('l');
-    await page.waitForTimeout(300);
-
-    // Button should now be active
     await expect(btnLabels).toHaveClass(/active/);
 
     // Label sprites should be visible in the Three.js scene
@@ -341,7 +334,7 @@ test.describe('keyboard shortcuts', () => {
     });
     expect(stillOn.visible).toBeGreaterThan(0);
 
-    // Press 'l' again to toggle labels off
+    // Press 'l' to toggle labels off
     await page.keyboard.press('l');
     await page.waitForTimeout(300);
 
@@ -366,15 +359,18 @@ test.describe('keyboard shortcuts', () => {
 
     const btnLabels = page.locator('#btn-labels');
 
-    // Click button to turn on
-    await btnLabels.click();
-    await page.waitForTimeout(300);
+    // Labels are ON by default (bd-oypa2) — button starts active
     await expect(btnLabels).toHaveClass(/active/);
 
     // Click button to turn off
     await btnLabels.click();
     await page.waitForTimeout(300);
     await expect(btnLabels).not.toHaveClass(/active/);
+
+    // Click button to turn back on
+    await btnLabels.click();
+    await page.waitForTimeout(300);
+    await expect(btnLabels).toHaveClass(/active/);
   });
 });
 

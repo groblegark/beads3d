@@ -144,9 +144,8 @@ test.describe('label overlap quality gate (beads-o4ao)', () => {
     await page.goto('/');
     await waitForGraphReady(page);
 
-    // Toggle labels on
-    await page.keyboard.press('l');
-    await page.waitForTimeout(500); // wait for LOD pass to run (~4 frames)
+    // Labels are ON by default (bd-oypa2) — wait for LOD pass
+    await page.waitForTimeout(500);
     await forceRender(page);
     await page.waitForTimeout(200);
 
@@ -179,8 +178,7 @@ test.describe('label overlap quality gate (beads-o4ao)', () => {
     await page.goto('/');
     await waitForGraphReady(page);
 
-    // Toggle labels on
-    await page.keyboard.press('l');
+    // Labels are ON by default (bd-oypa2) — wait for LOD pass
     await page.waitForTimeout(500);
 
     // Zoom camera far out (simulate wide zoom)
@@ -216,8 +214,7 @@ test.describe('label overlap quality gate (beads-o4ao)', () => {
     await page.goto('/');
     await waitForGraphReady(page);
 
-    // Toggle labels on
-    await page.keyboard.press('l');
+    // Labels are ON by default (bd-oypa2)
     await page.waitForTimeout(500);
 
     // Zoom far out to minimize budget
@@ -254,8 +251,7 @@ test.describe('label overlap quality gate (beads-o4ao)', () => {
     await page.goto('/');
     await waitForGraphReady(page);
 
-    // Toggle labels on
-    await page.keyboard.press('l');
+    // Labels are ON by default (bd-oypa2) — wait for LOD pass
     await page.waitForTimeout(500);
     await forceRender(page);
     await page.waitForTimeout(200);
@@ -277,12 +273,14 @@ test.describe('label overlap quality gate (beads-o4ao)', () => {
     expect(severeOverlaps, `${severeOverlaps} label pairs have >20% overlap`).toBeLessThanOrEqual(2);
   });
 
-  test('labels off — no visible labels', async ({ page }) => {
+  test('labels off — no visible labels after toggle', async ({ page }) => {
     await mockAPI(page);
     await page.goto('/');
     await waitForGraphReady(page);
 
-    // Labels should be off by default
+    // Labels are ON by default (bd-oypa2) — press 'l' to turn them off
+    await page.keyboard.press('l');
+    await page.waitForTimeout(500);
     const labels = await getVisibleLabelBounds(page);
     expect(labels.length).toBe(0);
   });
@@ -292,8 +290,7 @@ test.describe('label overlap quality gate (beads-o4ao)', () => {
     await page.goto('/');
     await waitForGraphReady(page);
 
-    // Toggle labels on
-    await page.keyboard.press('l');
+    // Labels are ON by default (bd-oypa2) — wait for LOD pass
     await page.waitForTimeout(500);
     await forceRender(page);
     await page.waitForTimeout(200);
