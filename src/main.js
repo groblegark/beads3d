@@ -88,6 +88,9 @@ let agentFilterNameExclude = []; // glob patterns to hide agents by name (bd-8o2
 
 // Edge type filter (bd-a0vbd): hide specific edge types to reduce graph density
 let depTypeHidden = new Set(['rig_conflict']); // default: hide rig conflict edges
+
+// Pending firework burst targets — IDs of beads from create events awaiting refresh (bd-4gmot)
+const _pendingFireworks = new Set();
 let maxEdgesPerNode = 0; // 0 = unlimited; cap edges per node to reduce hub hairballs (bd-ke2xc)
 
 // Simple glob matcher: supports * (any chars) and ? (single char) (bd-8o2gd phase 4)
@@ -205,6 +208,73 @@ function spawnStatusPulse(node, oldStatus, newStatus) {
   });
 
   // Prune oldest
+  while (eventSprites.length > EVENT_SPRITE_MAX) {
+    const old = eventSprites.shift();
+    graph.scene().remove(old.mesh);
+    old.mesh.geometry.dispose();
+    old.mesh.material.dispose();
+  }
+}
+
+// Spawn firework burst at a node position when a new bead is created (bd-4gmot)
+function spawnFireworkBurst(node) {
+  if (!node || !_particlePool || !graph) return;
+  const pos = { x: node.x || 0, y: node.y || 0, z: node.z || 0 };
+  const color = new THREE.Color(nodeColor(node)).getHex();
+  const size = nodeSize({ priority: node.priority, issue_type: node.issue_type });
+
+  // Wave 1: primary radial burst — 80 particles ejected spherically
+  const count1 = 80;
+  for (let i = 0; i < count1; i++) {
+    const theta = Math.random() * Math.PI * 2;
+    const phi = Math.acos(2 * Math.random() - 1);
+    const speed = 8 + Math.random() * 4; // 8-12 units/s
+    _particlePool.emit(pos, color, 1, {
+      velocity: [
+        speed * Math.sin(phi) * Math.cos(theta),
+        speed * Math.sin(phi) * Math.sin(theta),
+        speed * Math.cos(phi),
+      ],
+      spread: size * 0.3,
+      lifetime: 1.2 + Math.random() * 0.3,
+      size: 2.0,
+    });
+  }
+
+  // Wave 2: secondary slower ring — staggered 100ms, 40 particles
+  setTimeout(() => {
+    if (!_particlePool) return;
+    for (let i = 0; i < 40; i++) {
+      const angle = (i / 40) * Math.PI * 2;
+      const speed = 3 + Math.random() * 2;
+      _particlePool.emit(pos, color, 1, {
+        velocity: [
+          speed * Math.cos(angle),
+          (Math.random() - 0.5) * 2,
+          speed * Math.sin(angle),
+        ],
+        spread: size * 0.2,
+        lifetime: 1.5 + Math.random() * 0.5,
+        size: 2.5,
+      });
+    }
+  }, 100);
+
+  // Center flash: bright expanding ring (reuses status pulse pattern)
+  const ringGeo = new THREE.RingGeometry(size * 0.5, size * 0.8, 24);
+  const ringMat = new THREE.MeshBasicMaterial({
+    color, transparent: true, opacity: 0.9, side: THREE.DoubleSide, depthWrite: false,
+  });
+  const ring = new THREE.Mesh(ringGeo, ringMat);
+  ring.position.set(pos.x, pos.y, pos.z);
+  ring.lookAt(graph.camera().position);
+  graph.scene().add(ring);
+  eventSprites.push({
+    mesh: ring, node, birth: performance.now() / 1000, lifetime: 0.6,
+    type: 'status-pulse', startScale: 1.0, endScale: 6.0,
+  });
+
+  // Prune oldest sprites
   while (eventSprites.length > EVENT_SPRITE_MAX) {
     const old = eventSprites.shift();
     graph.scene().remove(old.mesh);
@@ -4286,6 +4356,17 @@ async function refresh() {
     return newNode;
   });
 
+  // Fire firework bursts for newly created beads that were pending from SSE events (bd-4gmot)
+  if (_pendingFireworks.size > 0) {
+    for (const node of mergedNodes) {
+      if (_pendingFireworks.has(node.id) && !existingById.has(node.id)) {
+        spawnFireworkBurst(node);
+        _pendingFireworks.delete(node.id);
+      }
+    }
+    _pendingFireworks.clear(); // clear any stale entries
+  }
+
   // Detect removed nodes
   for (const n of currentNodes) {
     if (!newIds.has(n.id)) nodesRemoved++;
@@ -4530,7 +4611,9 @@ function applyMutationOptimistic(evt) {
     }
 
     case 'create':
-      // New bead — can't render without full data, need refresh
+      // New bead — can't render without full data, need refresh.
+      // Record the ID for firework burst after refresh places the node. (bd-4gmot)
+      if (evt.issue_id) _pendingFireworks.add(evt.issue_id);
       return false;
 
     case 'delete':
