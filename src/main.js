@@ -3258,7 +3258,7 @@ function connectBusStream() {
     let _newAgentRefreshTimer = null;
     const _pendingNewAgents = new Set(); // agent IDs awaiting graph refresh
     api.connectBusEvents(
-      'agents,hooks,oj,mutations,mail,decisions',
+      'agents,hooks,oj,mutations,mail,decisions,advisory',
       (evt) => {
         const label = dootLabel(evt);
         if (!label) return;

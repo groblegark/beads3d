@@ -108,6 +108,12 @@ export function dootLabel(evt) {
   if (type === 'DecisionEscalated') return 'escalated';
   if (type === 'DecisionExpired') return 'expired';
 
+  // Jack advisories (beads-xjol: risky command warnings)
+  if (type === 'jack-reminder') {
+    const cmd = (p.command || '').slice(0, 40);
+    return cmd ? `jack? ${cmd}` : 'jack advisory';
+  }
+
   return type
     .replace(/([A-Z])/g, ' $1')
     .trim()
@@ -126,6 +132,7 @@ export function dootColor(evt) {
   const type = evt.type || '';
   if (type.includes('Crash') || type.includes('Failed')) return '#ff3333';
   if (type.includes('Decision')) return '#d4a017'; // before Created check — DecisionCreated is yellow
+  if (type === 'jack-reminder') return '#ff6b35'; // orange wrench for jack advisories
   if (type.includes('Stop') || type.includes('End')) return '#888888';
   if (type.includes('Started') || type.includes('Spawned') || type.includes('Created')) return '#2d8a4e';
   if (type.includes('Tool')) return '#4a9eff';
