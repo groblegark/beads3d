@@ -759,6 +759,7 @@ export function setupControls() {
       const status = btn.dataset.status;
       const group = STATUS_GROUPS[status] || [status];
       btn.classList.toggle('active');
+      btn.setAttribute('aria-pressed', btn.classList.contains('active'));
       if (state.statusFilter.has(status)) {
         group.forEach((s) => state.statusFilter.delete(s));
       } else {
@@ -774,6 +775,7 @@ export function setupControls() {
     btn.addEventListener('click', () => {
       const type = btn.dataset.type;
       btn.classList.toggle('active');
+      btn.setAttribute('aria-pressed', btn.classList.contains('active'));
       if (state.typeFilter.has(type)) {
         state.typeFilter.delete(type);
       } else {

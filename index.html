@@ -99,14 +99,19 @@
       display: flex;
       flex-wrap: wrap;
       gap: 4px;
+      border: none;
+      padding: 0;
+      margin: 0;
     }
-    .filter-group label {
+    .filter-group label,
+    .filter-group-legend {
       font-size: 9px;
       color: #555;
       text-transform: uppercase;
       letter-spacing: 1px;
       width: 100%;
       margin-bottom: 2px;
+      padding: 0;
     }
 
     /* Button style (shared) */
@@ -1221,6 +1226,49 @@
       display: block;
     }
 
+    /* Visible focus indicators (bd-7zczp a11y) */
+    :focus-visible {
+      outline: 2px solid #4a9eff;
+      outline-offset: 2px;
+    }
+    .ctrl-btn:focus-visible, .fd-btn:focus-visible, .cp-preset-btn:focus-visible {
+      outline: 2px solid #4a9eff;
+      outline-offset: 1px;
+    }
+    .cp-slider:focus-visible {
+      outline: 2px solid #4a9eff;
+      outline-offset: 2px;
+    }
+    .cp-toggle:focus-visible {
+      outline: 2px solid #4a9eff;
+      outline-offset: 2px;
+      border-radius: 7px;
+    }
+
+    /* Reset heading margins in sidebars (bd-7zczp a11y) */
+    .ls-section-label, .rs-section-label {
+      margin: 0;
+      font-weight: 600;
+    }
+
+    /* Skip-to-content link (bd-7zczp a11y) */
+    .skip-link {
+      position: fixed;
+      top: -100%;
+      left: 16px;
+      z-index: 10000;
+      background: #4a9eff;
+      color: #000;
+      padding: 8px 16px;
+      border-radius: 4px;
+      font-size: 12px;
+      font-weight: 600;
+      text-decoration: none;
+    }
+    .skip-link:focus {
+      top: 16px;
+    }
+
     /* Scrollbar styling */
     ::-webkit-scrollbar { width: 4px; }
     ::-webkit-scrollbar-track { background: transparent; }
@@ -1882,77 +1930,80 @@
   </style>
 </head>
 <body>
-  <div id="graph"></div>
+  <a href="#graph" class="skip-link">Skip to graph</a>
+  <main id="graph" role="application" aria-label="3D issue graph visualization"></main>
 
-  <div id="hud">
+  <div id="hud" aria-label="Graph statistics">
     <h1>beads3d</h1>
     <div class="stats" id="stats"></div>
   </div>
 
-  <div id="controls">
-    <input type="text" id="search-input" placeholder="search ( / ) · enter fly · ↑↓ cycle" autocomplete="off" spellcheck="false">
-
-    <div class="filter-group">
-      <label>status</label>
-      <button class="ctrl-btn filter-status" data-status="open">open</button>
-      <button class="ctrl-btn filter-status" data-status="in_progress">active</button>
-      <button class="ctrl-btn filter-status" data-status="closed">closed</button>
+  <div id="controls" role="toolbar" aria-label="Graph controls">
+    <div role="search">
+      <input type="text" id="search-input" placeholder="search ( / ) · enter fly · ↑↓ cycle" autocomplete="off" spellcheck="false" aria-label="Search issues">
     </div>
 
-    <div class="filter-group">
-      <label>type</label>
-      <button class="ctrl-btn filter-type" data-type="epic">epic</button>
-      <button class="ctrl-btn filter-type" data-type="feature">feature</button>
-      <button class="ctrl-btn filter-type" data-type="bug">bug</button>
-      <button class="ctrl-btn filter-type" data-type="task">task</button>
-    </div>
+    <fieldset class="filter-group" role="group" aria-label="Status filters">
+      <legend class="filter-group-legend">status</legend>
+      <button class="ctrl-btn filter-status" data-status="open" aria-pressed="false">open</button>
+      <button class="ctrl-btn filter-status" data-status="in_progress" aria-pressed="false">active</button>
+      <button class="ctrl-btn filter-status" data-status="closed" aria-pressed="false">closed</button>
+    </fieldset>
 
-    <div class="filter-group" id="agent-filter-group">
-      <label>agents</label>
-      <button class="ctrl-btn filter-agent-toggle active" id="btn-agent-show">show</button>
-      <button class="ctrl-btn filter-agent-toggle" id="btn-agent-orphaned">orphaned</button>
+    <fieldset class="filter-group" role="group" aria-label="Type filters">
+      <legend class="filter-group-legend">type</legend>
+      <button class="ctrl-btn filter-type" data-type="epic" aria-pressed="false">epic</button>
+      <button class="ctrl-btn filter-type" data-type="feature" aria-pressed="false">feature</button>
+      <button class="ctrl-btn filter-type" data-type="bug" aria-pressed="false">bug</button>
+      <button class="ctrl-btn filter-type" data-type="task" aria-pressed="false">task</button>
+    </fieldset>
+
+    <fieldset class="filter-group" id="agent-filter-group" role="group" aria-label="Agent filters">
+      <legend class="filter-group-legend">agents</legend>
+      <button class="ctrl-btn filter-agent-toggle active" id="btn-agent-show" aria-pressed="true">show</button>
+      <button class="ctrl-btn filter-agent-toggle" id="btn-agent-orphaned" aria-pressed="false">orphaned</button>
       <div class="agent-rig-pills" id="agent-rig-pills"></div>
-    </div>
+    </fieldset>
 
-    <div class="filter-group">
-      <label>age</label>
-      <button class="ctrl-btn filter-age active" data-days="7">7d</button>
-      <button class="ctrl-btn filter-age" data-days="30">30d</button>
-      <button class="ctrl-btn filter-age" data-days="90">90d</button>
-      <button class="ctrl-btn filter-age" data-days="0">all</button>
-    </div>
+    <fieldset class="filter-group" role="group" aria-label="Age filters">
+      <legend class="filter-group-legend">age</legend>
+      <button class="ctrl-btn filter-age active" data-days="7" aria-pressed="true">7d</button>
+      <button class="ctrl-btn filter-age" data-days="30" aria-pressed="false">30d</button>
+      <button class="ctrl-btn filter-age" data-days="90" aria-pressed="false">90d</button>
+      <button class="ctrl-btn filter-age" data-days="0" aria-pressed="false">all</button>
+    </fieldset>
 
-    <div class="filter-group">
-      <label>layout</label>
-      <div class="btn-row" id="layout-controls">
-        <button class="ctrl-btn active" id="btn-layout-free">free</button>
-        <button class="ctrl-btn" id="btn-layout-dag">dag</button>
-        <button class="ctrl-btn" id="btn-layout-radial">radial</button>
-        <button class="ctrl-btn" id="btn-layout-cluster">cluster</button>
+    <fieldset class="filter-group" role="group" aria-label="Layout mode">
+      <legend class="filter-group-legend">layout</legend>
+      <div class="btn-row" id="layout-controls" role="radiogroup" aria-label="Layout mode">
+        <button class="ctrl-btn active" id="btn-layout-free" role="radio" aria-checked="true">free</button>
+        <button class="ctrl-btn" id="btn-layout-dag" role="radio" aria-checked="false">dag</button>
+        <button class="ctrl-btn" id="btn-layout-radial" role="radio" aria-checked="false">radial</button>
+        <button class="ctrl-btn" id="btn-layout-cluster" role="radio" aria-checked="false">cluster</button>
       </div>
+    </fieldset>
+
+    <div class="btn-row">
+      <button class="ctrl-btn" id="btn-bloom" aria-label="Toggle bloom effect" aria-pressed="false">bloom</button>
+      <button class="ctrl-btn" id="btn-labels" aria-label="Toggle labels (L)">labels (l)</button>
+      <button class="ctrl-btn" id="btn-refresh" aria-label="Refresh graph">refresh</button>
+      <button class="ctrl-btn" id="btn-control-panel" title="Control panel (g)" aria-label="Open control panel">&#x2699;</button>
     </div>
 
     <div class="btn-row">
-      <button class="ctrl-btn" id="btn-bloom">bloom</button>
-      <button class="ctrl-btn" id="btn-labels">labels (l)</button>
-      <button class="ctrl-btn" id="btn-refresh">refresh</button>
-      <button class="ctrl-btn" id="btn-control-panel" title="Control panel (g)">&#x2699;</button>
-    </div>
-
-    <div class="btn-row">
-      <button class="ctrl-btn" id="btn-screenshot">screenshot (p)</button>
-      <button class="ctrl-btn" id="btn-export">export (x)</button>
+      <button class="ctrl-btn" id="btn-screenshot" aria-label="Take screenshot (P)">screenshot (p)</button>
+      <button class="ctrl-btn" id="btn-export" aria-label="Export graph data (X)">export (x)</button>
     </div>
 
     <div id="filter-count"></div>
   </div>
 
-  <div id="tooltip"></div>
-  <span id="minimap-label">minimap</span>
-  <canvas id="minimap" width="360" height="280"></canvas>
+  <div id="tooltip" role="tooltip" aria-hidden="true"></div>
+  <span id="minimap-label" aria-hidden="true">minimap</span>
+  <canvas id="minimap" width="360" height="280" aria-hidden="true" aria-label="Graph minimap"></canvas>
 
   <!-- Bottom HUD Bar (bd-ddj44) -->
-  <div id="bottom-hud">
+  <nav id="bottom-hud" aria-label="Bottom HUD bar">
     <!-- Left: project pulse + quick actions (bd-t9unh) -->
     <div id="bottom-hud-left">
       <div>
@@ -1960,15 +2011,15 @@
         <div id="hud-project-pulse"></div>
       </div>
       <div>
-        <div id="hud-quick-actions">
-          <button class="ctrl-btn" id="hud-btn-refresh" title="Refresh graph (r)">refresh</button>
-          <button class="ctrl-btn" id="hud-btn-labels" title="Toggle labels (l)">labels</button>
-          <button class="ctrl-btn" id="hud-btn-agents" title="Agents view (A)">agents</button>
-          <button class="ctrl-btn" id="hud-btn-bloom" title="Toggle bloom (b)">bloom</button>
-          <button class="ctrl-btn" id="hud-btn-search" title="Focus search (/)">search</button>
-          <button class="ctrl-btn" id="hud-btn-minimap" title="Toggle minimap (m)">minimap</button>
-          <button class="ctrl-btn" id="hud-btn-sidebar" title="Toggle sidebar (f)">sidebar</button>
-          <button class="ctrl-btn" id="hud-btn-controls" title="Toggle controls (g)">controls</button>
+        <div id="hud-quick-actions" role="toolbar" aria-label="Quick actions">
+          <button class="ctrl-btn" id="hud-btn-refresh" title="Refresh graph (r)" aria-label="Refresh graph">refresh</button>
+          <button class="ctrl-btn" id="hud-btn-labels" title="Toggle labels (l)" aria-label="Toggle labels">labels</button>
+          <button class="ctrl-btn" id="hud-btn-agents" title="Agents view (A)" aria-label="Open agents view">agents</button>
+          <button class="ctrl-btn" id="hud-btn-bloom" title="Toggle bloom (b)" aria-label="Toggle bloom effect">bloom</button>
+          <button class="ctrl-btn" id="hud-btn-search" title="Focus search (/)" aria-label="Focus search input">search</button>
+          <button class="ctrl-btn" id="hud-btn-minimap" title="Toggle minimap (m)" aria-label="Toggle minimap">minimap</button>
+          <button class="ctrl-btn" id="hud-btn-sidebar" title="Toggle sidebar (f)" aria-label="Toggle left sidebar">sidebar</button>
+          <button class="ctrl-btn" id="hud-btn-controls" title="Toggle controls (g)" aria-label="Toggle controls panel">controls</button>
         </div>
       </div>
     </div>
@@ -1984,39 +2035,39 @@
     </div>
 
     <!-- Status indicator (connection) -->
-    <div id="status" style="position:fixed;bottom:4px;right:8px;font-size:9px;color:#555;z-index:260">connecting...</div>
-  </div>
+    <div id="status" aria-live="polite" aria-atomic="true" role="status" style="position:fixed;bottom:4px;right:8px;font-size:9px;color:#555;z-index:260">connecting...</div>
+  </nav>
 
   <!-- Left Sidebar — Agent Roster & Focused Issue (bd-nnr22) -->
-  <div id="left-sidebar">
+  <aside id="left-sidebar" aria-label="Left sidebar">
     <div class="ls-header">
       <span class="ls-title">Sidebar</span>
-      <button class="ls-close" id="ls-close">&times;</button>
+      <button class="ls-close" id="ls-close" aria-label="Close sidebar">&times;</button>
     </div>
-    <div id="ls-agent-roster" class="ls-section">
+    <section id="ls-agent-roster" class="ls-section" aria-label="Agent roster">
       <div class="ls-section-header">
-        <span class="ls-section-label">Agent Roster</span>
-        <span class="ls-section-count" id="ls-agent-count">0</span>
+        <h2 class="ls-section-label">Agent Roster</h2>
+        <span class="ls-section-count" id="ls-agent-count" aria-label="Agent count">0</span>
       </div>
-      <div id="ls-agent-list">
-        <div class="ls-agent-empty">No agents connected</div>
+      <div id="ls-agent-list" role="list" aria-label="Connected agents">
+        <div class="ls-agent-empty" role="listitem">No agents connected</div>
       </div>
-    </div>
-    <div id="ls-focused-issue" class="ls-section">
+    </section>
+    <section id="ls-focused-issue" class="ls-section" aria-label="Focused issue details">
       <div class="ls-section-header">
-        <span class="ls-section-label">Focused Issue</span>
+        <h2 class="ls-section-label">Focused Issue</h2>
       </div>
       <div id="ls-focused-content">
         <div class="ls-placeholder">Click a node to inspect</div>
       </div>
-    </div>
-  </div>
+    </section>
+  </aside>
 
   <!-- Filter dashboard slide-out panel (bd-8o2gd phase 2) -->
-  <div id="filter-dashboard">
+  <aside id="filter-dashboard" aria-label="Filter dashboard">
     <div class="fd-header">
       <span class="fd-title">Filters</span>
-      <button class="fd-close" id="fd-close">&times;</button>
+      <button class="fd-close" id="fd-close" aria-label="Close filter dashboard">&times;</button>
     </div>
 
     <div class="fd-profile-bar">
@@ -2084,55 +2135,55 @@
     </div>
 
     <div class="fd-footer">
-      <span id="fd-node-count">0/0 nodes</span>
-      <button class="fd-reset" id="fd-share" title="Copy shareable URL">share</button>
-      <button class="fd-reset" id="fd-reset">reset</button>
+      <span id="fd-node-count" aria-live="polite">0/0 nodes</span>
+      <button class="fd-reset" id="fd-share" title="Copy shareable URL" aria-label="Copy shareable URL">share</button>
+      <button class="fd-reset" id="fd-reset" aria-label="Reset all filters">reset</button>
     </div>
-  </div>
+  </aside>
 
   <!-- bd-inqge: Right sidebar -->
-  <div id="right-sidebar">
+  <aside id="right-sidebar" aria-label="Project sidebar">
     <div class="rs-header">
       <span class="rs-title">PROJECT</span>
-      <button class="rs-collapse-btn" id="rs-collapse" title="Collapse sidebar">&#x25B6;</button>
+      <button class="rs-collapse-btn" id="rs-collapse" title="Collapse sidebar" aria-label="Collapse project sidebar" aria-expanded="true">&#x25B6;</button>
     </div>
 
-    <div class="rs-section" id="rs-epics">
+    <section class="rs-section" id="rs-epics" aria-label="Epic progress">
       <div class="rs-section-header">
-        <span class="rs-section-label">Epic Progress</span>
-        <span class="rs-section-toggle">&#9660;</span>
+        <h2 class="rs-section-label">Epic Progress</h2>
+        <span class="rs-section-toggle" aria-hidden="true">&#9660;</span>
       </div>
       <div class="rs-section-body" id="rs-epics-body">
         <div class="rs-empty">loading...</div>
       </div>
-    </div>
+    </section>
 
-    <div class="rs-section" id="rs-decisions">
+    <section class="rs-section" id="rs-decisions" aria-label="Pending decisions">
       <div class="rs-section-header">
-        <span class="rs-section-label">Decisions</span>
-        <span class="rs-section-toggle">&#9660;</span>
+        <h2 class="rs-section-label">Decisions</h2>
+        <span class="rs-section-toggle" aria-hidden="true">&#9660;</span>
       </div>
       <div class="rs-section-body" id="rs-decisions-body">
         <div class="rs-empty">no pending decisions</div>
       </div>
-    </div>
+    </section>
 
-    <div class="rs-section" id="rs-health">
+    <section class="rs-section" id="rs-health" aria-label="Dependency health">
       <div class="rs-section-header">
-        <span class="rs-section-label">Dep Health</span>
-        <span class="rs-section-toggle">&#9660;</span>
+        <h2 class="rs-section-label">Dep Health</h2>
+        <span class="rs-section-toggle" aria-hidden="true">&#9660;</span>
       </div>
       <div class="rs-section-body" id="rs-health-body">
         <div class="rs-empty">loading...</div>
       </div>
-    </div>
-  </div>
+    </section>
+  </aside>
 
   <!-- bd-69y6v: Control panel -->
-  <div id="control-panel">
+  <aside id="control-panel" role="dialog" aria-label="Control panel" aria-modal="false">
     <div class="cp-header">
       <span class="cp-title">CONTROL PANEL</span>
-      <button class="cp-close" id="cp-close">&times;</button>
+      <button class="cp-close" id="cp-close" aria-label="Close control panel">&times;</button>
     </div>
 
     <div class="cp-section" id="cp-bloom">
@@ -2517,13 +2568,13 @@
         </div>
       </div>
     </div>
-  </div>
+  </aside>
 
-  <div id="detail"></div>
-  <div id="context-menu"></div>
-  <canvas id="select-overlay"></canvas>
-  <div id="bulk-menu"></div>
-  <div id="agents-view"></div>
+  <div id="detail" role="complementary" aria-label="Issue detail panel"></div>
+  <div id="context-menu" role="menu" aria-label="Context menu"></div>
+  <canvas id="select-overlay" aria-hidden="true"></canvas>
+  <div id="bulk-menu" role="menu" aria-label="Bulk actions menu"></div>
+  <div id="agents-view" role="dialog" aria-label="Agents view" aria-modal="true"></div>
 
   <script type="module" src="/src/main.js"></script>
 </body>
