@@ -18,6 +18,16 @@ let _getGraph = null;
 let _refresh = null;
 let _handleNodeClick = null;
 
+/**
+ * Inject dependencies from main.js to avoid circular imports.
+ * @param {Object} deps
+ * @param {Object} deps.api - BeadsAPI instance
+ * @param {Function} deps.getGraphData - Returns current graph data ({nodes, links})
+ * @param {Function} deps.getGraph - Returns ForceGraph3D instance
+ * @param {Function} deps.refresh - Trigger a full data refresh
+ * @param {Function} deps.handleNodeClick - Callback when a node is clicked
+ * @returns {void}
+ */
 export function setMutationDeps({ api, getGraphData, getGraph, refresh, handleNodeClick }) {
   _api = api;
   _getGraphData = getGraphData;
@@ -35,12 +45,14 @@ function escapeHtml(str) {
 
 // --- State ---
 
-// Live event doots — HTML overlay elements via CSS2DRenderer (bd-bwkdk)
-export const doots = []; // { css2d, el, node, birth, lifetime, jx, jz }
-export let css2dRenderer = null; // CSS2DRenderer instance
+/** @type {Array<Object>} Active doot overlay elements: { css2d, el, node, birth, lifetime, jx, jz } */
+export const doots = [];
 
-// Doot-triggered issue popups — auto-dismissing cards when doots fire (beads-edy1)
-export const dootPopups = new Map(); // nodeId → { el, timer, node, lastDoot }
+/** @type {Object|null} CSS2DRenderer instance for HTML doots, or null before init */
+export let css2dRenderer = null;
+
+/** @type {Map<string, Object>} Doot-triggered issue popups: nodeId to { el, timer, node, lastDoot } */
+export const dootPopups = new Map();
 
 // --- SSE live updates (bd-03b5v, bd-ki6im: reconnection) ---
 // Handle incoming mutation events: optimistic property updates for instant feedback,
@@ -76,6 +88,10 @@ function _updateConnectionStatus() {
   }
 }
 
+/**
+ * Connect to the SSE mutation event stream and apply optimistic updates with debounced refresh.
+ * @returns {void}
+ */
 export function connectLiveUpdates() {
   try {
     _api.connectEvents(
@@ -109,8 +125,12 @@ export function connectLiveUpdates() {
   }
 }
 
-// Apply a mutation event optimistically to the in-memory graph data.
-// Returns true if a visual update was applied (no urgent refresh needed).
+/**
+ * Apply a mutation event optimistically to the in-memory graph data.
+ * Returns true if a visual update was applied (no urgent refresh needed).
+ * @param {Object} evt - Mutation event with type, issue_id, and event-specific fields
+ * @returns {boolean} Whether a visual update was applied
+ */
 export function applyMutationOptimistic(evt) {
   const graphData = _getGraphData();
   const graph = _getGraph();
@@ -173,7 +193,13 @@ export function applyMutationOptimistic(evt) {
   }
 }
 
-// Update SSE bus connection state (called from connectBusStream in main.js)
+/**
+ * Update the SSE bus connection state and refresh the status indicator.
+ * Called from connectBusStream in main.js.
+ * @param {string} state - Connection state ('connecting', 'connected', 'reconnecting', 'disconnected')
+ * @param {Object} info - Additional info, e.g. { attempt: number }
+ * @returns {void}
+ */
 export function updateBusConnectionState(state, info) {
   _sseState.bus = state;
   if (info && info.attempt) _sseState._lastAttempt = info.attempt;
@@ -195,7 +221,10 @@ const DOOT_LIFETIME = 4.0; // seconds before fully faded
 const DOOT_RISE_SPEED = 8; // units per second upward
 const DOOT_MAX = 30; // max active doots (oldest get pruned)
 
-// Initialize CSS2D overlay renderer for HTML doots (bd-bwkdk)
+/**
+ * Initialize the CSS2D overlay renderer for HTML doots and append it to the graph element.
+ * @returns {void}
+ */
 export function initCSS2DRenderer() {
   css2dRenderer = new CSS2DRenderer();
   css2dRenderer.setSize(window.innerWidth, window.innerHeight);
@@ -211,10 +240,13 @@ export function initCSS2DRenderer() {
   });
 }
 
-// Find a graph node to attach a doot to for a bus event (bd-5knqx).
-// Pass 1: Prefer dedicated agent nodes (issue_type=agent) — works with mock data.
-// Pass 2: Fall back to any visible node by issue_id or assignee — works in live
-// deployments where agents are transient sessions, not agent beads.
+/**
+ * Find a graph node to attach a doot to for a bus event.
+ * Pass 1: Prefer dedicated agent nodes (issue_type=agent).
+ * Pass 2: Fall back to any visible node by issue_id or assignee.
+ * @param {Object} evt - Bus event with type and payload fields
+ * @returns {Object|null} The matching graph node, or null if not found
+ */
 export function findAgentNode(evt) {
   const graphData = _getGraphData();
   const p = evt.payload || {};
@@ -282,7 +314,13 @@ export function findAgentNode(evt) {
   return null;
 }
 
-// Spawn an HTML doot via CSS2DObject — crisp text at any zoom (bd-bwkdk)
+/**
+ * Spawn an HTML doot (floating text label) via CSS2DObject above a graph node.
+ * @param {Object} node - Graph node to anchor the doot to
+ * @param {string} text - Text content to display in the doot
+ * @param {string} color - CSS color string for the doot text
+ * @returns {void}
+ */
 export function spawnDoot(node, text, color) {
   const graph = _getGraph();
   if (!node || !text || !graph) return;
@@ -328,8 +366,12 @@ export function spawnDoot(node, text, color) {
   }
 }
 
-// Update doot positions and opacity in animate loop (bd-bwkdk)
-// CSS2DRenderer handles screen projection — we just update world Y for rising
+/**
+ * Update doot positions (rising animation) and opacity (fade out) each frame.
+ * CSS2DRenderer handles screen projection; this updates world Y for rising.
+ * @param {number} t - Current time in seconds (from performance.now() / 1000)
+ * @returns {void}
+ */
 export function updateDoots(t) {
   const graph = _getGraph();
   for (let i = doots.length - 1; i >= 0; i--) {
@@ -358,6 +400,11 @@ export function updateDoots(t) {
 const DOOT_POPUP_DURATION = 30000; // 30s auto-dismiss
 const DOOT_POPUP_MAX = 3; // max simultaneous popups
 
+/**
+ * Show (or refresh) an auto-dismissing popup card for a node when a doot fires.
+ * @param {Object} node - Graph node to show the popup for
+ * @returns {void}
+ */
 export function showDootPopup(node) {
   if (!node || !node.id || node.issue_type === 'agent') return;
 
@@ -416,6 +463,11 @@ export function showDootPopup(node) {
   if (bar) bar.style.animationDuration = `${DOOT_POPUP_DURATION}ms`;
 }
 
+/**
+ * Dismiss and remove a doot popup by node ID.
+ * @param {string} nodeId - The node ID whose popup to dismiss
+ * @returns {void}
+ */
 export function dismissDootPopup(nodeId) {
   const popup = dootPopups.get(nodeId);
   if (!popup) return;

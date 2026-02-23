@@ -83,23 +83,42 @@ export function setCameraDeps(deps) {
 
 // --- Camera constants (bd-zab4q) ---
 // Quake-style smooth camera movement
-export const _keysDown = new Set(); // currently held arrow keys
-export const _camVelocity = { x: 0, y: 0, z: 0 }; // world-space camera velocity
-export const CAM_ACCEL = 1.2; // acceleration per frame while key held
-export const CAM_MAX_SPEED = 16; // max strafe speed (units/frame)
-export const CAM_FRICTION = 0.88; // velocity multiplier per frame when no key held (lower = more friction)
+
+/** @type {Set<string>} Currently held arrow/WASD keys */
+export const _keysDown = new Set();
+
+/** @type {{x: number, y: number, z: number}} World-space camera velocity */
+export const _camVelocity = { x: 0, y: 0, z: 0 };
+
+/** @type {number} Acceleration per frame while key held */
+export const CAM_ACCEL = 1.2;
+
+/** @type {number} Max strafe speed (units/frame) */
+export const CAM_MAX_SPEED = 16;
+
+/** @type {number} Velocity multiplier per frame when no key held (lower = more friction) */
+export const CAM_FRICTION = 0.88;
 
 // Camera freeze state (bd-casin)
+
+/** @type {boolean} Whether orbit controls are frozen (after multi-select zoom) */
 export let cameraFrozen = false;
 
 // Box selection state
+
+/** @type {boolean} Whether a rubber-band box selection is in progress */
 export let isBoxSelecting = false;
-export let boxSelectStart = null; // {x, y} screen coords
+
+/** @type {{x: number, y: number}|null} Screen coords of the box selection start point */
+export let boxSelectStart = null;
 
 // --- Camera freeze / center on multi-select (bd-casin) ---
 
-// Fly camera to center on the selected nodes + their immediate connections,
-// then freeze orbit controls. Call unfreezeCamera() (Escape) to restore.
+/**
+ * Fly camera to center on the selected nodes and their immediate connections,
+ * then freeze orbit controls. Call unfreezeCamera() (Escape) to restore.
+ * @returns {void}
+ */
 export function centerCameraOnSelection() {
   const multiSelected = _deps.state.multiSelected;
   const graphData = _deps.getGraphData();
@@ -173,6 +192,10 @@ export function centerCameraOnSelection() {
   }, 1050);
 }
 
+/**
+ * Unfreeze camera orbit controls and unpin all nodes so forces resume.
+ * @returns {void}
+ */
 export function unfreezeCamera() {
   if (!cameraFrozen) return;
   cameraFrozen = false;
@@ -188,8 +211,11 @@ export function unfreezeCamera() {
   }
 }
 
-// --- Quake-style smooth camera update (bd-zab4q) ---
-// Called from the animation loop in main.js each frame.
+/**
+ * Update Quake-style smooth camera movement based on currently held keys.
+ * Called from the animation loop in main.js each frame.
+ * @returns {void}
+ */
 export function updateCameraMovement() {
   const graph = _deps.getGraph();
   if (!graph) return;
@@ -271,7 +297,10 @@ export function updateCameraMovement() {
   }
 }
 
-// --- Screenshot & Export ---
+/**
+ * Capture a screenshot of the current 3D graph view and download it as a PNG.
+ * @returns {void}
+ */
 export function captureScreenshot() {
   const graph = _deps.getGraph();
   const renderer = graph.renderer();
@@ -291,6 +320,10 @@ export function captureScreenshot() {
   statusEl.className = 'connected';
 }
 
+/**
+ * Export the visible graph data (nodes, links, filters) as a downloadable JSON file.
+ * @returns {void}
+ */
 export function exportGraphJSON() {
   const graphData = _deps.getGraphData();
   const state = _deps.state;
@@ -378,6 +411,10 @@ function nodeToScreen(node) {
   };
 }
 
+/**
+ * Set up shift+drag rubber-band box selection on the graph element.
+ * @returns {void}
+ */
 export function setupBoxSelect() {
   const graph = _deps.getGraph();
   const graphData = _deps.getGraphData;
@@ -510,6 +547,12 @@ function buildBulkPrioritySubmenu() {
     .join('');
 }
 
+/**
+ * Display the bulk action menu at the given screen coordinates.
+ * @param {number} x - Screen X position for the menu
+ * @param {number} y - Screen Y position for the menu
+ * @returns {void}
+ */
 export function showBulkMenu(x, y) {
   const multiSelected = _deps.state.multiSelected;
   const count = multiSelected.size;
@@ -543,6 +586,10 @@ export function showBulkMenu(x, y) {
   };
 }
 
+/**
+ * Hide the bulk action menu and remove its click handler.
+ * @returns {void}
+ */
 export function hideBulkMenu() {
   bulkMenu.style.display = 'none';
   bulkMenu.onclick = null;
@@ -636,7 +683,11 @@ async function handleBulkAction(action, value) {
   unfreezeCamera(); // bd-casin: restore orbit controls after bulk action
 }
 
-// --- Controls ---
+/**
+ * Wire up all UI controls: toolbar buttons, keyboard shortcuts, search, filters,
+ * and sub-module dependency injection (filter dashboard, detail panel, etc.).
+ * @returns {void}
+ */
 export function setupControls() {
   const graph = _deps.getGraph();
   const api = _deps.api;

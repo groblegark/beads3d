@@ -671,6 +671,10 @@ export function createAgentWindowInGrid(node) {
   updateAgentsViewStats();
 }
 
+/**
+ * Update the active/idle/crashed/total stats display in the agents overlay header.
+ * @returns {void}
+ */
 export function updateAgentsViewStats() {
   const overlay = document.getElementById('agents-view');
   if (!overlay) return;
@@ -691,6 +695,10 @@ export function updateAgentsViewStats() {
 
 const _unifiedFeed = { el: null, entries: [], maxEntries: 500, pendingTools: new Map() };
 
+/**
+ * Initialize the unified activity feed DOM element and toggle button.
+ * @returns {void}
+ */
 export function initUnifiedFeed() {
   _unifiedFeed.el = document.getElementById('unified-feed');
   if (!_unifiedFeed.el) return;
@@ -847,6 +855,12 @@ function autoScrollUnified() {
 
 // --- Agent event routing (bd-kau4k, bd-5ok9s) ---
 
+/**
+ * Route an agent event to both the unified feed and the agent's individual window.
+ * @param {string} agentId - The agent ID that produced the event
+ * @param {Object} evt - The event object with type, payload, and ts fields
+ * @returns {void}
+ */
 export function appendAgentEvent(agentId, evt) {
   appendUnifiedEntry(agentId, evt);
   const win = agentWindows.get(agentId);
@@ -1023,6 +1037,10 @@ function _updateAgentStatusBar(win) {
   }
 }
 
+/**
+ * Start a 1-second interval that refreshes idle duration displays in agent status bars.
+ * @returns {void}
+ */
 export function startAgentWindowIdleTimer() {
   setInterval(() => {
     for (const [, win] of agentWindows) {
