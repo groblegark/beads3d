@@ -132,8 +132,7 @@ export function refreshAgentWindowBeads() {
 export function showAgentWindow(node) {
   if (!node || !node.id) return;
   if (agentWindows.has(node.id)) {
-    openAgentsView();
-    selectAgentTab(node.id);
+    toggleAgentDropdown(node.id);
     return;
   }
   const el = document.createElement('div');
@@ -185,9 +184,11 @@ export function showAgentWindow(node) {
   _addBottomTrayChip(node);
 }
 
+let _activeDropdownAgent = null;
+
 function _addBottomTrayChip(node) {
-  const container = document.getElementById('agent-windows');
-  if (!container) return;
+  const topBar = document.getElementById('agent-top-bar');
+  if (!topBar) return;
   const agentName = node.title || node.id.replace('agent:', '');
   const status = (node.status || '').toLowerCase();
   const dotColor =
@@ -196,11 +197,94 @@ function _addBottomTrayChip(node) {
   chip.className = 'agent-tray-chip';
   chip.dataset.agentId = node.id;
   chip.innerHTML = `<span class="agent-tray-dot" style="background:${dotColor}"></span>${escapeHtml(agentName)}`;
-  chip.onclick = () => {
-    openAgentsView();
-    selectAgentTab(node.id);
+  chip.onclick = (e) => {
+    e.stopPropagation();
+    toggleAgentDropdown(node.id);
   };
-  container.appendChild(chip);
+  topBar.appendChild(chip);
+}
+
+/**
+ * Toggle the dropdown panel for a specific agent.
+ * @param {string} agentId - The agent ID to show/hide
+ * @returns {void}
+ */
+export function toggleAgentDropdown(agentId) {
+  const dropdown = document.getElementById('agent-dropdown');
+  if (!dropdown) return;
+  // If clicking same agent, close dropdown
+  if (_activeDropdownAgent === agentId && dropdown.classList.contains('open')) {
+    closeAgentDropdown();
+    return;
+  }
+  // Position dropdown near the chip
+  const chip = document.querySelector(`.agent-tray-chip[data-agent-id="${agentId}"]`);
+  if (chip) {
+    const rect = chip.getBoundingClientRect();
+    // Align right edge of dropdown with right edge of chip, but keep on screen
+    const rightEdge = Math.min(rect.right, window.innerWidth - 12);
+    const leftEdge = Math.max(12, rightEdge - 480);
+    dropdown.style.left = leftEdge + 'px';
+    dropdown.style.right = 'auto';
+    dropdown.style.width = Math.min(480, window.innerWidth - 24) + 'px';
+  }
+  // Move the agent window element into the dropdown
+  const win = agentWindows.get(agentId);
+  if (!win) return;
+  // Remove any previous window from dropdown
+  dropdown.innerHTML = '';
+  win.el.style.display = '';
+  win.el.classList.remove('collapsed');
+  dropdown.appendChild(win.el);
+  dropdown.classList.add('open');
+  // Update chip active states
+  for (const c of document.querySelectorAll('.agent-tray-chip')) {
+    c.classList.toggle('active', c.dataset.agentId === agentId);
+  }
+  _activeDropdownAgent = agentId;
+  autoScroll(win);
+  // Close on click outside
+  setTimeout(() => {
+    document.addEventListener('click', _closeDropdownOnClickOutside, { once: true });
+  }, 0);
+}
+
+function _closeDropdownOnClickOutside(e) {
+  const dropdown = document.getElementById('agent-dropdown');
+  const topBar = document.getElementById('agent-top-bar');
+  if (!dropdown) return;
+  if (dropdown.contains(e.target) || (topBar && topBar.contains(e.target))) {
+    // Re-attach listener since we're inside
+    document.addEventListener('click', _closeDropdownOnClickOutside, { once: true });
+    return;
+  }
+  closeAgentDropdown();
+}
+
+/**
+ * Close the agent dropdown panel.
+ * @returns {void}
+ */
+export function closeAgentDropdown() {
+  const dropdown = document.getElementById('agent-dropdown');
+  if (!dropdown) return;
+  // Move window back to hidden container
+  if (_activeDropdownAgent) {
+    const win = agentWindows.get(_activeDropdownAgent);
+    if (win) {
+      const hiddenContainer = document.getElementById('agent-windows');
+      if (hiddenContainer) {
+        win.el.style.display = 'none';
+        hiddenContainer.appendChild(win.el);
+      }
+    }
+  }
+  dropdown.classList.remove('open');
+  dropdown.innerHTML = '';
+  for (const c of document.querySelectorAll('.agent-tray-chip')) {
+    c.classList.remove('active');
+  }
+  _activeDropdownAgent = null;
 }
 
 /**
@@ -209,6 +293,7 @@ function _addBottomTrayChip(node) {
  * @returns {void}
  */
 export function closeAgentWindow(agentId) {
+  if (_activeDropdownAgent === agentId) closeAgentDropdown();
   const win = agentWindows.get(agentId);
   if (!win) return;
   if (win._dragCleanup) {
@@ -619,8 +704,11 @@ export function closeAgentsView() {
   const overlay = document.getElementById('agents-view');
   if (!overlay) return;
   const tray = document.getElementById('agent-windows');
+  const dropdown = document.getElementById('agent-dropdown');
   if (tray) {
     for (const [, win] of agentWindows) {
+      // Don't move windows that are currently in the top dropdown
+      if (dropdown && dropdown.contains(win.el)) continue;
       if (win.el.parentElement !== tray) {
         win.el.style.display = 'none';
         tray.appendChild(win.el);
