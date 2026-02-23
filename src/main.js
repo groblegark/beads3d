@@ -313,6 +313,14 @@ function updatePerfOverlay(t) {
     const statsEl = document.getElementById('perf-stats');
     if (statsEl) {
       const lines = [];
+      // Frame time percentiles (bd-ak9s9)
+      if (_frameTimes.length >= 10) {
+        const sorted = [..._frameTimes].sort((a, b) => a - b);
+        const p50 = sorted[Math.floor(sorted.length * 0.5)].toFixed(1);
+        const p95 = sorted[Math.floor(sorted.length * 0.95)].toFixed(1);
+        const p99 = sorted[Math.floor(sorted.length * 0.99)].toFixed(1);
+        lines.push('p50: ' + p50 + '  p95: ' + p95 + '  p99: ' + p99 + ' ms');
+      }
       const mem = performance.memory;
       if (mem)
         lines.push(
