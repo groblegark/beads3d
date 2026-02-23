@@ -1968,8 +1968,8 @@
       opacity: 1; transform: translateX(-50%) translateY(0);
     }
     /* Suppress popups/toasts when lightbox is visible — body gets .dlb-active class (bd-7m6td) */
-    .dlb-active #doot-popups { pointer-events: none !important; opacity: 0.3; }
-    .dlb-active .decision-toast { pointer-events: none !important; opacity: 0.3; }
+    .dlb-active #doot-popups { display: none !important; }
+    .dlb-active .decision-toast { display: none !important; }
     .decision-lightbox.resolved-border { border-color: #2d8a4e; box-shadow: 0 0 30px rgba(45, 138, 78, 0.15), 0 8px 32px rgba(0, 0, 0, 0.6); }
     .decision-lightbox-header {
       display: flex; align-items: center; padding: 10px 16px;
