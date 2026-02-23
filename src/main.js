@@ -11,6 +11,7 @@ import { dootLabel, dootColor, resolveAgentIdLoose } from './event-format.js';
 import { setFilterDeps, toggleFilterDashboard, syncFilterDashboard, updateAssigneeButtons, initFilterDashboard, updateFilterCount } from './filter-dashboard.js';
 import { setDetailDeps, showDetail, hideDetail } from './detail-panel.js';
 import { setLeftSidebarDeps, toggleLeftSidebar, initLeftSidebar, updateAgentRosterFromEvent, updateLeftSidebarFocus, getLeftSidebarOpen, setLeftSidebarOpen, startLeftSidebarIdleTimer } from './left-sidebar.js';
+import { setAgentWindowDeps, agentWindows, getAgentsViewOpen, getSelectedAgentTab, refreshAgentWindowBeads, showAgentWindow, closeAgentWindow, toggleAgentsView, openAgentsView, closeAgentsView, selectAgentTab, createAgentWindowInGrid, initUnifiedFeed, appendAgentEvent, startAgentWindowIdleTimer } from './agent-windows.js';
 
 // --- Config ---
 const params = new URLSearchParams(window.location.search);

@@ -133,13 +133,7 @@ export function setCss2dRenderer(v) { css2dRenderer = v; }
 // Doot-triggered issue popups — auto-dismissing cards when doots fire (beads-edy1)
 export const dootPopups = new Map(); // nodeId → { el, timer, node, lastDoot }
 
-// Agent activity feed windows — rich session transcript popups (bd-kau4k)
-// bd-5ok9s: enhanced status: lastStatus, lastTool, idleSince, crashError
-export const agentWindows = new Map();
-
-// Agents View overlay state (bd-jgvas)
-export let agentsViewOpen = false;
-export function setAgentsViewOpen(v) { agentsViewOpen = v; }
+// Agent windows state moved to agent-windows.js (bd-7t6nt)
 
 // Left Sidebar state (bd-nnr22)
 export let leftSidebarOpen = false;
