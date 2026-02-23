@@ -399,7 +399,7 @@ export function spawnDoot(node, text, color) {
  * @returns {void}
  */
 export function updateDoots(t) {
-  const graph = _getGraph();
+  const graph = _getGraph?.();
   for (let i = doots.length - 1; i >= 0; i--) {
     const d = doots[i];
     const age = t - d.birth;

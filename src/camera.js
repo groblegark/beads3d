@@ -218,7 +218,7 @@ export function unfreezeCamera() {
  * @returns {void}
  */
 export function updateCameraMovement() {
-  const graph = _deps.getGraph();
+  const graph = _deps.getGraph?.();
   if (!graph) return;
 
   if (

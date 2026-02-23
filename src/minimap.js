@@ -36,8 +36,8 @@ const minimapCtx = minimapCanvas.getContext('2d');
 const minimapLabel = document.getElementById('minimap-label');
 
 export function renderMinimap() {
-  const graph = _deps.getGraph();
-  const graphData = _deps.getGraphData();
+  const graph = _deps.getGraph?.();
+  const graphData = _deps.getGraphData?.();
   if (!minimapVisible || !graph || graphData.nodes.length === 0) return;
 
   const w = minimapCanvas.width;

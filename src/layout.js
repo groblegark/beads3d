@@ -174,8 +174,8 @@ function addClusterGuides(nodes) {
 }
 
 export function setLayout(mode) {
-  const graph = _deps.getGraph();
-  const graphData = _deps.getGraphData();
+  const graph = _deps.getGraph?.();
+  const graphData = _deps.getGraphData?.();
   currentLayout = mode;
 
   // Highlight active button (bd-7zczp: sync aria-checked for radio group)
@@ -190,6 +190,9 @@ export function setLayout(mode) {
   }
   const layoutSel = document.getElementById('cp-layout-mode');
   if (layoutSel && layoutSel.value !== mode) layoutSel.value = mode;
+
+  // Guard: deps not wired yet (called before setLayoutDeps during init)
+  if (!graph || !graphData) return;
 
   // Clear all custom forces and visual guides
   clearLayoutGuides();
