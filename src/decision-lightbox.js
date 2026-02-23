@@ -9,7 +9,9 @@ let _visible = false;
 let _selectedId = null;
 let _decisions = []; // cached decision nodes from graph data
 let _dragState = null; // { startX, startY, origLeft, origTop }
+let _resizeState = null; // { startX, startY, origW, origH }
 let _customPos = null; // { left, top } — remembers position during session
+let _customSize = null; // { width, height } — remembers size during session
 
 /**
  * Inject dependencies from main.js.
@@ -107,14 +109,90 @@ export function initDecisionLightbox() {
       _dragState = null;
     });
 
-    // Double-click to reset position
+    // Touch drag support (beads-7kez)
+    header.addEventListener('touchstart', (e) => {
+      if (e.target.closest('button')) return;
+      const touch = e.touches[0];
+      const rect = lightbox.getBoundingClientRect();
+      _dragState = {
+        startX: touch.clientX,
+        startY: touch.clientY,
+        origLeft: rect.left,
+        origTop: rect.top,
+      };
+    }, { passive: true });
+
+    document.addEventListener('touchmove', (e) => {
+      if (!_dragState) return;
+      const touch = e.touches[0];
+      const dx = touch.clientX - _dragState.startX;
+      const dy = touch.clientY - _dragState.startY;
+      const newLeft = Math.max(0, Math.min(window.innerWidth - 100, _dragState.origLeft + dx));
+      const newTop = Math.max(0, Math.min(window.innerHeight - 50, _dragState.origTop + dy));
+      lightbox.style.left = `${newLeft}px`;
+      lightbox.style.top = `${newTop}px`;
+      lightbox.style.transform = 'none';
+      _customPos = { left: newLeft, top: newTop };
+    }, { passive: true });
+
+    document.addEventListener('touchend', () => {
+      _dragState = null;
+    });
+
+    // Double-click to reset position and size
     header.addEventListener('dblclick', () => {
       lightbox.style.left = '50%';
       lightbox.style.top = '12%';
       lightbox.style.transform = 'translateX(-50%)';
+      lightbox.style.width = '';
+      lightbox.style.height = '';
       _customPos = null;
+      _customSize = null;
     });
   }
+
+  // Resize handle (beads-7kez)
+  const resizeHandle = document.getElementById('dlb-resize-handle');
+  if (resizeHandle && lightbox) {
+    const startResize = (startX, startY) => {
+      const rect = lightbox.getBoundingClientRect();
+      _resizeState = { startX, startY, origW: rect.width, origH: rect.height };
+    };
+
+    resizeHandle.addEventListener('mousedown', (e) => {
+      startResize(e.clientX, e.clientY);
+      e.preventDefault();
+    });
+    resizeHandle.addEventListener('touchstart', (e) => {
+      const touch = e.touches[0];
+      startResize(touch.clientX, touch.clientY);
+    }, { passive: true });
+
+    document.addEventListener('mousemove', (e) => {
+      if (!_resizeState) return;
+      applyResize(e.clientX, e.clientY, lightbox);
+    });
+    document.addEventListener('touchmove', (e) => {
+      if (!_resizeState) return;
+      const touch = e.touches[0];
+      applyResize(touch.clientX, touch.clientY, lightbox);
+    }, { passive: true });
+
+    const endResize = () => { _resizeState = null; };
+    document.addEventListener('mouseup', endResize);
+    document.addEventListener('touchend', endResize);
+  }
+}
+
+function applyResize(clientX, clientY, lightbox) {
+  if (!_resizeState) return;
+  const dw = clientX - _resizeState.startX;
+  const dh = clientY - _resizeState.startY;
+  const newW = Math.max(300, Math.min(window.innerWidth - 40, _resizeState.origW + dw));
+  const newH = Math.max(200, Math.min(window.innerHeight - 40, _resizeState.origH + dh));
+  lightbox.style.width = `${newW}px`;
+  lightbox.style.height = `${newH}px`;
+  _customSize = { width: newW, height: newH };
 }
 
 /**
@@ -132,11 +210,15 @@ export function showDecisionLightbox(focusId) {
   lightbox.setAttribute('aria-hidden', 'false');
   backdrop.setAttribute('aria-hidden', 'false');
 
-  // Restore custom position if set
+  // Restore custom position and size if set (beads-7kez)
   if (_customPos) {
     lightbox.style.left = `${_customPos.left}px`;
     lightbox.style.top = `${_customPos.top}px`;
     lightbox.style.transform = 'none';
+  }
+  if (_customSize) {
+    lightbox.style.width = `${_customSize.width}px`;
+    lightbox.style.height = `${_customSize.height}px`;
   }
 
   // Trigger animation

@@ -1455,6 +1455,17 @@
       padding: 40px 20px;
       font-size: 14px;
     }
+    .decision-lightbox-resize {
+      position: absolute;
+      bottom: 0;
+      right: 0;
+      width: 16px;
+      height: 16px;
+      cursor: nwse-resize;
+      background: linear-gradient(135deg, transparent 50%, #d4a01744 50%);
+      border-radius: 0 0 8px 0;
+    }
+    .decision-lightbox-resize:hover { background: linear-gradient(135deg, transparent 50%, #d4a01788 50%); }
     /* Responsive: stack on narrow screens */
     @media (max-width: 600px) {
       .decision-lightbox { min-width: 90vw; width: 95vw; top: 5%; max-height: 85vh; }
@@ -2349,18 +2360,17 @@
   <!-- Decision Lightbox (beads-zuc3, beads-f29q) — floating window for decision interactions -->
   <div id="decision-lightbox-backdrop" class="decision-lightbox-backdrop" style="display:none" aria-hidden="true"></div>
   <div id="decision-lightbox" class="decision-lightbox" role="dialog" aria-modal="true" aria-label="Decision center" style="display:none" aria-hidden="true">
-    <div class="decision-lightbox-header">
+    <div id="dlb-header" class="decision-lightbox-header">
       <span class="decision-lightbox-title">Decisions</span>
-      <span id="decision-lightbox-badge" class="decision-lightbox-badge empty">0</span>
-      <button class="decision-lightbox-btn" id="decision-lightbox-minimize" aria-label="Minimize" title="Minimize">&#x2013;</button>
-      <button class="decision-lightbox-btn" id="decision-lightbox-close" aria-label="Close" title="Close">&times;</button>
+      <span id="dlb-badge" class="decision-lightbox-badge empty">0</span>
+      <button class="decision-lightbox-btn" id="dlb-minimize" aria-label="Minimize" title="Minimize">&#x2013;</button>
+      <button class="decision-lightbox-btn" id="dlb-close" aria-label="Close" title="Close">&times;</button>
     </div>
     <div class="decision-lightbox-body">
-      <div id="decision-lightbox-list" class="decision-lightbox-list"></div>
-      <div id="decision-lightbox-detail" class="decision-lightbox-detail">
-        <div class="decision-lightbox-empty">No decisions to display</div>
-      </div>
+      <div id="dlb-list" class="decision-lightbox-list" role="listbox" aria-label="Decision list"></div>
+      <div id="dlb-detail" class="decision-lightbox-detail"></div>
     </div>
+    <div id="dlb-resize-handle" class="decision-lightbox-resize" aria-hidden="true"></div>
   </div>
 
   <div id="tooltip" role="tooltip" aria-hidden="true"></div>
