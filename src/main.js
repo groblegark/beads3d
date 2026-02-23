@@ -467,6 +467,10 @@ function resolveOverlappingLabels() {
   const height = renderer.domElement.clientHeight;
   if (width === 0 || height === 0) return;
 
+  // bd-q9d6h: When there's an active selection, the animation loop manages label
+  // visibility (show highlighted, hide rest). LOD should NOT override that.
+  const hasActiveSelection = !!(selectedNode || multiSelected.size > 0);
+
   // --- Phase 1: Collect all label sprites and compute priority scores ---
   const allLabels = [];
   for (const node of graphData.nodes) {
@@ -518,12 +522,36 @@ function resolveOverlappingLabels() {
     }
   }
 
-  // Apply visibility — hide labels that didn't make the budget
+  // Apply visibility with hysteresis to prevent blinking (bd-q9d6h)
+  // Once shown, a label stays visible for at least 8 LOD cycles (~32 frames)
+  // before being hidden. This prevents rapid toggling when camera moves.
+  // When there's an active selection, skip LOD visibility — animation loop manages it.
   const userOpacity = window.__beads3d_labelOpacity ?? 0.8;
   for (const l of allLabels) {
     if (!labelsVisible) {
       l.sprite.visible = false;
+      l.sprite.userData._lodShownAt = 0;
       continue;
+    }
+    // bd-q9d6h: Don't fight animation loop during selection — it controls visibility
+    if (hasActiveSelection) {
+      // Still apply opacity to visible labels, but don't change visibility
+      if (l.sprite.visible && l.sprite.material) {
+        l.sprite.material.opacity = userOpacity;
+      }
+      continue;
+    }
+    // Hysteresis: if label was recently shown, keep it visible even if budget says hide
+    if (!l.show && l.sprite.userData._lodShownAt > 0) {
+      const framesSinceShown = (animate._labelFrame || 0) - l.sprite.userData._lodShownAt;
+      if (framesSinceShown < 8) {
+        l.show = true; // keep visible — hysteresis grace period
+      }
+    }
+    if (l.show) {
+      l.sprite.userData._lodShownAt = animate._labelFrame || 0;
+    } else {
+      l.sprite.userData._lodShownAt = 0;
     }
     l.sprite.visible = l.show;
     // Opacity fade: top labels get full opacity, lower ones fade (beads-bu3r)
@@ -1701,9 +1729,11 @@ function startAnimation() {
 
         // Label sprites: show on highlighted nodes when selected (bd-xk0tx)
         // When no selection, LOD pass (resolveOverlappingLabels) manages visibility (beads-bu3r)
+        // bd-q9d6h: only update if state actually changed, to reduce blink
         if (child.userData.nodeLabel) {
           if (hasSelection) {
-            child.visible = isHighlighted;
+            const shouldShow = isHighlighted;
+            if (child.visible !== shouldShow) child.visible = shouldShow;
           }
           // else: LOD pass handles visibility via label budget
           return;
