@@ -15,6 +15,7 @@ import {
 } from './shaders.js';
 import { LINK_ICON_MATERIALS, LINK_ICON_DEFAULT, LINK_ICON_SCALE } from './link-icons.js';
 import { updateRightSidebar, updateEpicProgress, updateDepHealth, updateDecisionQueue } from './right-sidebar.js';
+import { updateDecisionList, showDecisionLightbox } from './decision-lightbox.js';
 import { dootLabel, dootColor, resolveAgentIdLoose } from './event-format.js';
 import { updateAssigneeButtons, updateFilterCount } from './filter-dashboard.js';
 import { showDetail, hideDetail } from './detail-panel.js';
@@ -2328,7 +2329,13 @@ function handleNodeClick(node) {
 
   spreadSubgraph(component); // beads-k38a: push nodes apart for readability
   zoomToNodes(component);
-  showDetail(node);
+
+  // Route decision/gate nodes through lightbox instead of detail panel (beads-zuc3)
+  if (node.issue_type === 'decision' || (node.issue_type === 'gate' && node.await_type === 'decision')) {
+    showDecisionLightbox(node.id);
+  } else {
+    showDetail(node);
+  }
 
   // Update URL for deep-linking (bd-he95o) — enables copy/paste sharing
   updateBeadURL(node.id);
@@ -3134,6 +3141,7 @@ async function refresh() {
   applyFilters();
   rebuildEpicIndex();
   updateRightSidebar(graphData); // bd-inqge
+  updateDecisionList(graphData); // beads-zuc3: refresh decision lightbox
 
   // Compute pending decision badge counts per parent node (bd-o6tgy)
   const nodeById = new Map(mergedNodes.map((n) => [n.id, n]));

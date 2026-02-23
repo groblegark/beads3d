@@ -40,6 +40,7 @@ import { setControlPanelDeps, toggleControlPanel, initControlPanel, getControlPa
 import { setOnNodeClick, initRightSidebar } from './right-sidebar.js';
 import { setMutationDeps, dootPopups, dismissDootPopup } from './mutations.js';
 import { showStatusToast, hideContextMenu, ctxMenu } from './context-menu.js';
+import { setDecisionLightboxDeps, initDecisionLightbox } from './decision-lightbox.js';
 
 // Dependency injection — set by main.js before setupControls()
 let _deps = {};
@@ -966,6 +967,14 @@ export function setupControls() {
     showStatusToast,
     getGraph: _deps.getGraph,
   });
+
+  // Decision lightbox (beads-zuc3) — wire dependencies
+  setDecisionLightboxDeps({
+    api,
+    showStatusToast,
+    getGraph: _deps.getGraph,
+  });
+  initDecisionLightbox();
 
   // Agent windows (bd-7t6nt) — wire dependencies
   setAgentWindowDeps({
