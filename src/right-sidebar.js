@@ -3,6 +3,10 @@
 
 // Callback for node click — set by main.js to avoid circular import
 let _onNodeClick = null;
+/**
+ * @param {Function} fn
+ * @returns {void}
+ */
 export function setOnNodeClick(fn) {
   _onNodeClick = fn;
 }
@@ -17,6 +21,9 @@ function escapeHtml(str) {
 
 let rightSidebarCollapsed = false;
 
+/**
+ * @returns {void}
+ */
 export function toggleRightSidebar() {
   const sidebar = document.getElementById('right-sidebar');
   if (!sidebar) return;
@@ -29,6 +36,9 @@ export function toggleRightSidebar() {
   if (controls) controls.classList.toggle('sidebar-collapsed', rightSidebarCollapsed);
 }
 
+/**
+ * @returns {void}
+ */
 export function initRightSidebar() {
   const sidebar = document.getElementById('right-sidebar');
   if (!sidebar) return;
@@ -57,6 +67,10 @@ export function initRightSidebar() {
   });
 }
 
+/**
+ * @param {Object} graphData
+ * @returns {void}
+ */
 export function updateRightSidebar(graphData) {
   if (!graphData || rightSidebarCollapsed) return;
   updateEpicProgress(graphData);
@@ -64,6 +78,10 @@ export function updateRightSidebar(graphData) {
   updateDecisionQueue(graphData);
 }
 
+/**
+ * @param {Object} graphData
+ * @returns {void}
+ */
 export function updateEpicProgress(graphData) {
   const body = document.getElementById('rs-epics-body');
   if (!body || !graphData) return;
@@ -125,6 +143,10 @@ export function updateEpicProgress(graphData) {
   });
 }
 
+/**
+ * @param {Object} graphData
+ * @returns {void}
+ */
 export function updateDepHealth(graphData) {
   const body = document.getElementById('rs-health-body');
   if (!body || !graphData) return;
@@ -153,6 +175,10 @@ export function updateDepHealth(graphData) {
   });
 }
 
+/**
+ * @param {Object} graphData
+ * @returns {void}
+ */
 export function updateDecisionQueue(graphData) {
   const body = document.getElementById('rs-decisions-body');
   if (!body || !graphData) return;

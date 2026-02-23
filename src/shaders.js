@@ -1,9 +1,25 @@
 // Custom shaders for beads3d visual effects
 import * as THREE from 'three';
 
+/**
+ * @typedef {Object} ParticlePool
+ * @property {Function} emit - Emit particles at a position with given properties
+ * @property {Function} update - Update all active particles (call every frame)
+ * @property {Function} dispose - (not currently implemented) Clean up GPU resources
+ * @property {Function} activeCount - Returns the number of currently alive particles
+ */
+
 // --- Fresnel Glow Shader ---
 // Creates a rim-lighting effect: transparent at center, glowing at edges.
 // Used for the outer glow shell around each node.
+/**
+ * Create a Fresnel rim-lighting shader material.
+ * @param {number} color - Hex color for the glow
+ * @param {Object} [opts] - Optional parameters
+ * @param {number} [opts.opacity=0.4] - Base opacity
+ * @param {number} [opts.power=2.0] - Fresnel exponent (higher = tighter rim)
+ * @returns {THREE.ShaderMaterial}
+ */
 export function createFresnelMaterial(color, { opacity = 0.4, power = 2.0 } = {}) {
   return new THREE.ShaderMaterial({
     uniforms: {
@@ -40,6 +56,11 @@ export function createFresnelMaterial(color, { opacity = 0.4, power = 2.0 } = {}
 
 // --- Pulsing Ring Shader ---
 // Animated pulsing with color cycling for in-progress nodes.
+/**
+ * Create an animated pulsing ring shader material for in-progress nodes.
+ * @param {number} color - Hex color for the ring
+ * @returns {THREE.ShaderMaterial}
+ */
 export function createPulseRingMaterial(color) {
   return new THREE.ShaderMaterial({
     uniforms: {
@@ -77,6 +98,12 @@ export function createPulseRingMaterial(color) {
 
 // --- Background Star Field ---
 // Creates a GPU particle system of tiny stars for depth and atmosphere.
+/**
+ * Create a GPU particle system of tiny twinkling stars.
+ * @param {number} [count=2000] - Number of star particles
+ * @param {number} [radius=600] - Outer radius of the star sphere shell
+ * @returns {THREE.Points}
+ */
 export function createStarField(count = 2000, radius = 600) {
   const positions = new Float32Array(count * 3);
   const sizes = new Float32Array(count);
@@ -143,6 +170,12 @@ export function createStarField(count = 2000, radius = 600) {
 // --- Fairy Lights (bd-52izs) ---
 // Drifting luminous particles that float organically through the scene.
 // Replaces the old geodesic dome nucleus/membrane with living light.
+/**
+ * Create drifting luminous fairy light particles.
+ * @param {number} [count=300] - Number of fairy light particles
+ * @param {number} [radius=250] - Outer radius of the particle sphere
+ * @returns {THREE.Points}
+ */
 export function createFairyLights(count = 300, radius = 250) {
   const positions = new Float32Array(count * 3);
   const sizes = new Float32Array(count);
@@ -238,6 +271,10 @@ export function createFairyLights(count = 300, radius = 250) {
 // --- Selection Pulse Shader ---
 // A bright, pulsing ring for the selected node (replaces basic material).
 // Set `visible` uniform to 1.0 to show, 0.0 to hide.
+/**
+ * Create a bright pulsing selection ring shader material.
+ * @returns {THREE.ShaderMaterial}
+ */
 export function createSelectionRingMaterial() {
   return new THREE.ShaderMaterial({
     uniforms: {
@@ -278,6 +315,15 @@ export function createSelectionRingMaterial() {
 // FFVII-inspired translucent sphere: bright inner core, absorbed edges.
 // Opposite of Fresnel rim-light — glow radiates from center outward.
 // Breathing pulse for in-progress nodes, intensity for selection.
+/**
+ * Create a materia orb shader material with inner core glow.
+ * @param {number} color - Hex color for the materia
+ * @param {Object} [opts] - Optional parameters
+ * @param {number} [opts.opacity=0.85] - Base opacity
+ * @param {number} [opts.coreIntensity=1.4] - Core glow brightness
+ * @param {number} [opts.breathSpeed=0.0] - Breathing pulse speed in Hz (0 = static)
+ * @returns {THREE.ShaderMaterial}
+ */
 export function createMateriaMaterial(color, { opacity = 0.85, coreIntensity = 1.4, breathSpeed = 0.0 } = {}) {
   return new THREE.ShaderMaterial({
     uniforms: {
@@ -349,6 +395,11 @@ export function createMateriaMaterial(color, { opacity = 0.85, coreIntensity = 1
 // --- Materia Halo Sprite (bd-1038x) ---
 // Soft radial gradient billboard behind each node (replaces Fresnel shell).
 // Works with bloom pass for natural light bleed.
+/**
+ * Create a soft radial gradient halo canvas texture.
+ * @param {number} [size=64] - Canvas texture size in pixels
+ * @returns {THREE.CanvasTexture}
+ */
 export function createMateriaHaloTexture(size = 64) {
   const canvas = document.createElement('canvas');
   canvas.width = size;
@@ -370,6 +421,11 @@ export function createMateriaHaloTexture(size = 64) {
 // --- GPU Particle Pool (bd-1038x) ---
 // Pre-allocated particle system for all visual effects.
 // Single draw call via THREE.Points. Particles managed via life attribute.
+/**
+ * Create a pre-allocated GPU particle pool for visual effects.
+ * @param {number} [maxParticles=2000] - Maximum number of concurrent particles
+ * @returns {ParticlePool}
+ */
 export function createParticlePool(maxParticles = 2000) {
   // Per-particle attributes: position(3), velocity(3), color(3), life(1), maxLife(1), size(1)
   const positions = new Float32Array(maxParticles * 3);
@@ -504,6 +560,12 @@ export function createParticlePool(maxParticles = 2000) {
 
 // --- Update all shader uniforms ---
 // Call this in the animation loop to advance time-based effects.
+/**
+ * Update all shader time uniforms in the scene.
+ * @param {THREE.Scene} scene - The Three.js scene to traverse
+ * @param {number} time - Current animation time in seconds
+ * @returns {void}
+ */
 export function updateShaderTime(scene, time) {
   scene.traverse((obj) => {
     if (obj.material && obj.material.uniforms && obj.material.uniforms.time) {

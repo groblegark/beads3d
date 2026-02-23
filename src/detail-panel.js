@@ -10,8 +10,24 @@ let _openAgentTab = null; // bd-bwi52: open tabbed agents view for a node
 let _showStatusToast = null;
 let _getGraph = null;
 
+/**
+ * Map of currently open detail panels, keyed by bead ID.
+ *
+ * @type {Map<string, HTMLElement>}
+ */
 const openPanels = new Map(); // beadId → panel element
 
+/**
+ * Inject dependencies from main.js.
+ *
+ * @param {Object} deps
+ * @param {Object}   deps.api              - BeadsAPI instance
+ * @param {Function} deps.showAgentWindow  - (node) => void
+ * @param {Function} deps.openAgentTab     - (node) => void
+ * @param {Function} deps.showStatusToast  - (msg, isError?) => void
+ * @param {Function} deps.getGraph         - () => ForceGraph3D instance
+ * @returns {void}
+ */
 export function setDetailDeps({ api, showAgentWindow, openAgentTab, showStatusToast, getGraph }) {
   _api = api;
   _showAgentWindow = showAgentWindow;
@@ -29,6 +45,13 @@ function escapeHtml(str) {
   return div.innerHTML;
 }
 
+/**
+ * Shows the detail panel for a graph node. If the panel for this node is
+ * already open, it is toggled closed instead.
+ *
+ * @param {Object} node - Graph node object with id, title, status, etc.
+ * @returns {Promise<void>}
+ */
 export async function showDetail(node) {
   const container = document.getElementById('detail');
 
@@ -131,7 +154,12 @@ export async function showDetail(node) {
   }
 }
 
-// Close a single detail panel by bead ID (bd-fbmq3)
+/**
+ * Close a single detail panel by bead ID.
+ *
+ * @param {string} beadId - The bead/issue identifier whose panel to close.
+ * @returns {void}
+ */
 export function closeDetailPanel(beadId) {
   const panel = openPanels.get(beadId);
   if (!panel) return;
@@ -380,6 +408,11 @@ function bindDecisionHandlers(panel, node, resp) {
   }
 }
 
+/**
+ * Closes all currently open detail panels.
+ *
+ * @returns {void}
+ */
 export function hideDetail() {
   // Close all open panels (bd-fbmq3)
   for (const [beadId] of openPanels) {

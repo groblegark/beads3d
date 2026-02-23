@@ -1,6 +1,7 @@
 // Color scheme — biological cell aesthetic
 // Dark background, bioluminescent nodes, organic feel
 
+/** @type {Record<string, string>} Map of issue status to CSS hex color */
 export const STATUS_COLORS = {
   open: '#2d8a4e', // green — alive, ready
   in_progress: '#d4a017', // amber — active metabolism
@@ -13,6 +14,7 @@ export const STATUS_COLORS = {
   tombstone: '#1a1a22', // near-black — dead
 };
 
+/** @type {Record<string, string>} Map of issue type to CSS hex color */
 export const TYPE_COLORS = {
   epic: '#8b45a6', // purple — organelle
   feature: '#2d8a4e', // green
@@ -26,6 +28,7 @@ export const TYPE_COLORS = {
   test: '#4a7a9e',
 };
 
+/** @type {Record<number, number>} Map of priority level (0-4) to base node size in pixels */
 export const PRIORITY_SIZES = {
   0: 16, // P0 critical — largest (bd-d8dfd: increased)
   1: 11, // P1 high
@@ -34,6 +37,7 @@ export const PRIORITY_SIZES = {
   4: 5, // P4 backlog — smallest
 };
 
+/** @type {Record<string, string>} Map of dependency type to CSS hex color (with optional alpha) */
 export const DEP_TYPE_COLORS = {
   blocks: '#d04040',
   'waits-for': '#d4a017',
@@ -44,7 +48,7 @@ export const DEP_TYPE_COLORS = {
   default: '#3a3a5a',
 };
 
-// Decision state → color (bd-zr374)
+/** @type {Record<string, string>} Map of decision state to CSS hex color (bd-zr374) */
 export const DECISION_COLORS = {
   pending: '#d4a017', // amber — awaiting response
   resolved: '#2d8a4e', // green — answered
@@ -52,6 +56,13 @@ export const DECISION_COLORS = {
   canceled: '#666', // gray — canceled
 };
 
+/**
+ * Determine the display color for an issue node in the 3D graph.
+ * Checks blocked state, issue type, decision state, and status in priority order.
+ * Respects runtime color overrides from the control panel (window.__beads3d_colorOverrides).
+ * @param {{status: string, issue_type: string, _blocked: boolean, _decisionState?: string}} issue - The issue object
+ * @returns {string} CSS hex color string
+ */
 export function nodeColor(issue) {
   // bd-sz1ha: check control panel color overrides
   const ov = typeof window !== 'undefined' && window.__beads3d_colorOverrides;
@@ -72,6 +83,12 @@ export function nodeColor(issue) {
   return STATUS_COLORS[issue.status] || '#555';
 }
 
+/**
+ * Determine the display size for an issue node in the 3D graph.
+ * Size is based on priority, with multipliers for epics (largest), agents, and regular beads.
+ * @param {{priority: number, issue_type: string}} issue - The issue object
+ * @returns {number} Node size in pixels
+ */
 export function nodeSize(issue) {
   const base = PRIORITY_SIZES[issue.priority] ?? 4;
   // Epics are the largest — prominent organizers (bd-7iju8)
@@ -82,12 +99,18 @@ export function nodeSize(issue) {
   return base * 1.5;
 }
 
+/**
+ * Determine the display color for a dependency link in the 3D graph.
+ * @param {{dep_type: string}} dep - The dependency object
+ * @returns {string} CSS hex color string
+ */
 export function linkColor(dep) {
   return DEP_TYPE_COLORS[dep.dep_type] || DEP_TYPE_COLORS.default;
 }
 
 // Rig colors — deterministic hash-based palette (bd-90ikf)
 // Each rig gets a unique, distinct color for badge and conflict edges.
+/** @type {string[]} Palette of distinct CSS hex colors for rig assignment badges */
 const RIG_PALETTE = [
   '#e06090', // pink
   '#40c0a0', // teal
@@ -101,7 +124,14 @@ const RIG_PALETTE = [
   '#60d0c0', // mint
 ];
 
+/** @type {Record<string, string>} Cache of rig name to assigned color */
 const rigColorCache = {};
+/**
+ * Get a deterministic color for a rig name using hash-based palette selection.
+ * Results are cached for consistent coloring across renders.
+ * @param {string} rigName - The rig name to colorize
+ * @returns {string} CSS hex color string
+ */
 export function rigColor(rigName) {
   if (!rigName) return '#666';
   if (rigColorCache[rigName]) return rigColorCache[rigName];
@@ -111,7 +141,12 @@ export function rigColor(rigName) {
   return rigColorCache[rigName];
 }
 
-// CSS color string → THREE.js hex number
+/**
+ * Convert a CSS color string to a THREE.js hex number.
+ * Passes through values that are already numbers. Only handles '#rrggbb' format.
+ * @param {string|number} cssColor - CSS hex color string (e.g. '#ff6b35') or numeric hex value
+ * @returns {number} Numeric hex color value for THREE.js (e.g. 0xff6b35)
+ */
 export function colorToHex(cssColor) {
   if (typeof cssColor === 'number') return cssColor;
   if (cssColor.startsWith('#')) {

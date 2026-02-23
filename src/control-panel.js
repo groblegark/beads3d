@@ -33,10 +33,20 @@ export function setControlPanelDeps(deps) {
 
 let controlPanelOpen = false;
 
+/**
+ * Returns whether the control panel is currently open.
+ *
+ * @returns {boolean}
+ */
 export function getControlPanelOpen() {
   return controlPanelOpen;
 }
 
+/**
+ * Toggles the control panel open/closed state.
+ *
+ * @returns {void}
+ */
 export function toggleControlPanel() {
   const panel = document.getElementById('control-panel');
   if (!panel) return;
@@ -44,6 +54,12 @@ export function toggleControlPanel() {
   panel.classList.toggle('open', controlPanelOpen);
 }
 
+/**
+ * Initializes the control panel: wires up all sliders, toggles, presets,
+ * theme import/export, and config bead persistence.
+ *
+ * @returns {void}
+ */
 export function initControlPanel() {
   const panel = document.getElementById('control-panel');
   if (!panel) return;

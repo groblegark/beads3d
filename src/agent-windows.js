@@ -11,6 +11,14 @@ let _api = null;
 let _getGraphData = null;
 let _handleNodeClick = null;
 
+/**
+ * Inject dependencies from main.js to avoid circular imports.
+ * @param {Object} deps
+ * @param {Object} deps.api - BeadsAPI instance
+ * @param {Function} deps.getGraphData - Returns current graph data ({nodes, links})
+ * @param {Function} deps.handleNodeClick - Callback when a node is clicked
+ * @returns {void}
+ */
 export function setAgentWindowDeps({ api, getGraphData, handleNodeClick }) {
   _api = api;
   _getGraphData = getGraphData;
@@ -26,13 +34,23 @@ function escapeHtml(str) {
 
 // --- State ---
 
+/** @type {Map<string, Object>} Map of agent ID to agent window state objects */
 export const agentWindows = new Map();
 let agentsViewOpen = false;
 let _selectedAgentTab = null; // currently selected agent ID in tabbed view
 
+/**
+ * Returns whether the agents overlay view is currently open.
+ * @returns {boolean}
+ */
 export function getAgentsViewOpen() {
   return agentsViewOpen;
 }
+
+/**
+ * Returns the ID of the currently selected agent tab, or null if none.
+ * @returns {string|null}
+ */
 export function getSelectedAgentTab() {
   return _selectedAgentTab;
 }
@@ -61,6 +79,10 @@ function renderBeadsListHtml(assigned) {
     .join('');
 }
 
+/**
+ * Refresh the assigned beads list for all open agent windows.
+ * @returns {void}
+ */
 export function refreshAgentWindowBeads() {
   const graphData = _getGraphData();
   for (const [agentId, win] of agentWindows) {
@@ -101,6 +123,12 @@ export function refreshAgentWindowBeads() {
 
 // --- Agent window creation (bd-7h9sd, bd-kau4k) ---
 
+/**
+ * Show (or focus) an agent window for the given graph node.
+ * Creates the window DOM element and registers it if not already open.
+ * @param {Object} node - Graph node representing the agent
+ * @returns {void}
+ */
 export function showAgentWindow(node) {
   if (!node || !node.id) return;
   if (agentWindows.has(node.id)) {
@@ -175,6 +203,11 @@ function _addBottomTrayChip(node) {
   container.appendChild(chip);
 }
 
+/**
+ * Close and remove an agent window by agent ID.
+ * @param {string} agentId - The agent ID whose window to close
+ * @returns {void}
+ */
 export function closeAgentWindow(agentId) {
   const win = agentWindows.get(agentId);
   if (!win) return;
@@ -190,6 +223,11 @@ export function closeAgentWindow(agentId) {
 
 // --- Pop-out / dock-back (bd-dqe6k) ---
 
+/**
+ * Toggle an agent window between docked and popped-out (floating) state.
+ * @param {string} agentId - The agent ID whose window to toggle
+ * @returns {void}
+ */
 export function togglePopout(agentId) {
   const win = agentWindows.get(agentId);
   if (!win) return;
@@ -260,6 +298,11 @@ function enableHeaderDrag(el) {
   };
 }
 
+/**
+ * Enable top-edge resize handle on an agent window element.
+ * @param {HTMLElement} el - The agent window DOM element to enable resizing on
+ * @returns {void}
+ */
 export function enableTopResize(el) {
   const handle = el.querySelector('.agent-window-resize-handle');
   if (!handle) return;
@@ -288,11 +331,19 @@ export function enableTopResize(el) {
 
 // --- Agents View overlay (bd-jgvas, bd-bwi52) ---
 
+/**
+ * Toggle the agents overlay view open or closed.
+ * @returns {void}
+ */
 export function toggleAgentsView() {
   if (agentsViewOpen) closeAgentsView();
   else openAgentsView();
 }
 
+/**
+ * Open the agents overlay view, populating tabs for all visible agent nodes.
+ * @returns {void}
+ */
 export function openAgentsView() {
   const overlay = document.getElementById('agents-view');
   const graphData = _getGraphData();
@@ -494,6 +545,11 @@ function _ensureAgentWindow(node, contentArea) {
   });
 }
 
+/**
+ * Select and display the agent tab for the given agent ID in the overlay.
+ * @param {string} agentId - The agent ID to select
+ * @returns {void}
+ */
 export function selectAgentTab(agentId) {
   _selectedAgentTab = agentId;
   const overlay = document.getElementById('agents-view');
@@ -517,6 +573,12 @@ export function selectAgentTab(agentId) {
   if (win) autoScroll(win);
 }
 
+/**
+ * Update the status indicator dot color for an agent's tab and tray chip.
+ * @param {string} agentId - The agent ID to update
+ * @param {string} status - The new status ('active', 'idle', 'crashed', etc.)
+ * @returns {void}
+ */
 export function _updateTabStatus(agentId, status) {
   const color =
     status === 'active' ? '#2d8a4e' : status === 'idle' ? '#d4a017' : status === 'crashed' ? '#d04040' : '#666';
@@ -549,6 +611,10 @@ function _incrementTabUnread(agentId) {
   }
 }
 
+/**
+ * Close the agents overlay view and move all agent windows back to the tray.
+ * @returns {void}
+ */
 export function closeAgentsView() {
   const overlay = document.getElementById('agents-view');
   if (!overlay) return;
@@ -566,6 +632,11 @@ export function closeAgentsView() {
   agentsViewOpen = false;
 }
 
+/**
+ * Create an agent window and add it to the agents overlay grid with a new tab.
+ * @param {Object} node - Graph node representing the agent
+ * @returns {void}
+ */
 export function createAgentWindowInGrid(node) {
   if (!node || agentWindows.has(node.id)) return;
   const overlay = document.getElementById('agents-view');

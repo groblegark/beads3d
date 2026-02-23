@@ -57,6 +57,14 @@ function buildPrioritySubmenu(currentPriority) {
     .join('');
 }
 
+/**
+ * Handles a right-click on a graph node by building and displaying
+ * the context menu with status, priority, and action options.
+ *
+ * @param {Object} node - The graph node that was right-clicked.
+ * @param {MouseEvent} event - The contextmenu mouse event.
+ * @returns {void}
+ */
 export function handleNodeRightClick(node, event) {
   event.preventDefault();
   if (!node || node._hidden) return;
@@ -108,6 +116,11 @@ export function handleNodeRightClick(node, event) {
   };
 }
 
+/**
+ * Hides the context menu and clears associated state.
+ *
+ * @returns {void}
+ */
 export function hideContextMenu() {
   ctxMenu.style.display = 'none';
   ctxMenu.onclick = null;
@@ -196,6 +209,13 @@ async function handleContextAction(action, node, el) {
 let _toastTimer = null;
 let _toastOrigText = null;
 let _toastOrigClass = null;
+/**
+ * Displays a brief toast message overlaid on the status bar.
+ *
+ * @param {string} msg - The message to display.
+ * @param {boolean} [isError=false] - Whether to style the toast as an error.
+ * @returns {void}
+ */
 export function showStatusToast(msg, isError = false) {
   const el = document.getElementById('status');
   // Save the base state only on first (non-nested) toast
@@ -244,5 +264,9 @@ document.addEventListener('click', (e) => {
 // Suppress browser context menu on the graph canvas
 document.getElementById('graph').addEventListener('contextmenu', (e) => e.preventDefault());
 
-// Export ctxMenu for keyboard shortcut checks in camera.js
+/**
+ * The context menu DOM element, exported for keyboard shortcut checks in camera.js.
+ *
+ * @type {HTMLElement}
+ */
 export { ctxMenu };

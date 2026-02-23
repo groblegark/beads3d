@@ -15,6 +15,10 @@ let _showDetail = null;
 let _leftSidebarOpen = false;
 const _agentRoster = new Map(); // agent name → { status, task, tool, idleSince, crashError, nodeId }
 
+/**
+ * @param {Object} deps
+ * @returns {void}
+ */
 export function setLeftSidebarDeps({ api, getGraph, getGraphData, getSelectedNode, selectNode, showDetail }) {
   _api = api;
   _getGraph = getGraph;
@@ -24,17 +28,31 @@ export function setLeftSidebarDeps({ api, getGraph, getGraphData, getSelectedNod
   _showDetail = showDetail;
 }
 
+/**
+ * @returns {boolean}
+ */
 export function getLeftSidebarOpen() {
   return _leftSidebarOpen;
 }
+/**
+ * @param {boolean} v
+ * @returns {void}
+ */
 export function setLeftSidebarOpen(v) {
   _leftSidebarOpen = v;
 }
+/**
+ * @returns {Map<string, Object>}
+ */
 export function getAgentRoster() {
   return _agentRoster;
 }
 
 // Utility helpers (also used by agent windows in main.js)
+/**
+ * @param {number} seconds
+ * @returns {string}
+ */
 export function formatDuration(seconds) {
   if (seconds < 60) return seconds + 's';
   const m = Math.floor(seconds / 60);
@@ -44,6 +62,10 @@ export function formatDuration(seconds) {
   return h + 'h' + (m % 60) + 'm';
 }
 
+/**
+ * @param {string} str
+ * @returns {string}
+ */
 export function escapeStatusText(str) {
   const d = document.createElement('div');
   d.textContent = str;
@@ -57,6 +79,9 @@ function escapeHtml(str) {
   return div.innerHTML;
 }
 
+/**
+ * @returns {void}
+ */
 export function toggleLeftSidebar() {
   const panel = document.getElementById('left-sidebar');
   if (!panel) return;
@@ -69,6 +94,9 @@ export function toggleLeftSidebar() {
   }
 }
 
+/**
+ * @returns {void}
+ */
 export function initLeftSidebar() {
   const closeBtn = document.getElementById('ls-close');
   if (closeBtn)
@@ -79,6 +107,10 @@ export function initLeftSidebar() {
 }
 
 // Update agent roster from SSE events
+/**
+ * @param {Object} evt
+ * @returns {void}
+ */
 export function updateAgentRosterFromEvent(evt) {
   const agentId = resolveAgentIdLoose(evt);
   if (!agentId) return;
@@ -135,6 +167,9 @@ export function updateAgentRosterFromEvent(evt) {
   if (_leftSidebarOpen) renderAgentRoster();
 }
 
+/**
+ * @returns {void}
+ */
 export function renderAgentRoster() {
   const list = document.getElementById('ls-agent-list');
   const count = document.getElementById('ls-agent-count');
@@ -228,6 +263,10 @@ export function renderAgentRoster() {
   });
 }
 
+/**
+ * @param {Object} node
+ * @returns {Promise<void>}
+ */
 export async function updateLeftSidebarFocus(node) {
   const content = document.getElementById('ls-focused-content');
   if (!content) return;
@@ -357,6 +396,9 @@ export async function updateLeftSidebarFocus(node) {
 }
 
 // Update agent roster idle durations (runs alongside bd-5ok9s status bar updates)
+/**
+ * @returns {void}
+ */
 export function startLeftSidebarIdleTimer() {
   setInterval(() => {
     if (_leftSidebarOpen) {

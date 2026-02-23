@@ -2,11 +2,47 @@
 import * as THREE from 'three';
 import { nodeSize } from './colors.js';
 
+/**
+ * @typedef {Object} GraphNode
+ * @property {string} id - Node identifier
+ * @property {number} [x] - X position in 3D space
+ * @property {number} [y] - Y position in 3D space
+ * @property {number} [z] - Z position in 3D space
+ * @property {string} [status] - Node status (e.g. 'open', 'in_progress', 'closed')
+ * @property {string} [issue_type] - Issue type (e.g. 'feature', 'bug', 'task', 'epic')
+ * @property {number} [priority] - Priority level (0 = highest)
+ * @property {boolean} [_hidden] - Whether the node is hidden from view
+ * @property {Object} [__threeObj] - Internal Three.js object reference
+ */
+
+/**
+ * @typedef {Object} VFXConfig
+ * @property {number} orbitSpeed - Orbit ring angular speed
+ * @property {number} orbitRate - Orbit ring emission interval (seconds)
+ * @property {number} orbitSize - Orbit ring particle size
+ * @property {number} hoverRate - Hover glow emission interval (seconds)
+ * @property {number} hoverSize - Hover glow particle size
+ * @property {number} streamRate - Dependency energy stream emission interval (seconds)
+ * @property {number} streamSpeed - Energy stream particle velocity
+ * @property {number} particleLifetime - Base particle lifetime (seconds)
+ * @property {number} selectionGlow - Selection glow intensity multiplier
+ * @property {number} intensity - Global VFX intensity multiplier
+ * @property {boolean} [claimComet] - Whether claim comet trails are enabled
+ */
+
 // --- Dependency injection ---
 let _getGraph = null; // () => ForceGraph3D instance
 let _getGraphData = null; // () => { nodes, links }
 let _getParticlePool = null; // () => GPU particle pool
 
+/**
+ * Inject dependencies required by the VFX system.
+ * @param {Object} deps - Dependency injection container
+ * @param {Function} deps.getGraph - Returns the ForceGraph3D instance
+ * @param {Function} deps.getGraphData - Returns { nodes, links } graph data
+ * @param {Function} deps.getParticlePool - Returns the GPU particle pool
+ * @returns {void}
+ */
 export function setVfxDeps({ getGraph, getGraphData, getParticlePool }) {
   _getGraph = getGraph;
   _getGraphData = getGraphData;
@@ -14,6 +50,7 @@ export function setVfxDeps({ getGraph, getGraphData, getParticlePool }) {
 }
 
 // --- VFX Control Panel settings (bd-hr5om) ---
+/** @type {VFXConfig} */
 export const _vfxConfig = {
   orbitSpeed: 2.5, // orbit ring angular speed
   orbitRate: 0.08, // orbit ring emission interval (seconds)
@@ -35,22 +72,38 @@ const VFX_PRESETS = {
   maximum: 4.0,
 };
 
+/**
+ * Set the global VFX intensity multiplier (clamped to 0-4).
+ * @param {number} v - Intensity value
+ * @returns {void}
+ */
 export function setVfxIntensity(v) {
   _vfxConfig.intensity = Math.max(0, Math.min(4, v));
 }
 
+/**
+ * Apply a named VFX intensity preset.
+ * @param {string} name - Preset name ('subtle', 'normal', 'dramatic', 'maximum')
+ * @returns {void}
+ */
 export function presetVFX(name) {
   const v = VFX_PRESETS[name];
   if (v !== undefined) setVfxIntensity(v);
 }
 
 // --- Ambient particle aura for in-progress beads (bd-ttet4) ---
+/** @type {Map<string, {lastEmit: number, lastSpark: number, nextSpark: number, intensifyUntil: number}>} */
 export const _auraEmitters = new Map(); // nodeId → { lastEmit, lastSpark, intensifyUntil }
 const AURA_MAX_NODES = 20;
 const AURA_ORBIT_PERIOD = 2.0; // seconds for full orbit
 const AURA_SPARK_INTERVAL_MIN = 3.0;
 const AURA_SPARK_INTERVAL_MAX = 5.0;
 
+/**
+ * Update ambient particle aura for in-progress bead nodes.
+ * @param {number} t - Current animation time in seconds
+ * @returns {void}
+ */
 export function updateInProgressAura(t) {
   const _particlePool = _getParticlePool && _getParticlePool();
   const graphData = _getGraphData && _getGraphData();
@@ -149,18 +202,27 @@ export function updateInProgressAura(t) {
 }
 
 // Intensify aura briefly when a bead receives an update (bd-ttet4)
+/**
+ * Briefly intensify the aura of a bead node on update.
+ * @param {string} nodeId - ID of the node to intensify
+ * @returns {void}
+ */
 export function intensifyAura(nodeId) {
   const state = _auraEmitters.get(nodeId);
   if (state) state.intensifyUntil = performance.now() / 1000 + 1.0;
 }
 
 // Pending firework burst targets — IDs of beads from create events awaiting refresh (bd-4gmot)
+/** @type {Set<string>} */
 export const _pendingFireworks = new Set();
 // Active collapse animations — Map<nodeId, { startTime, node, origPos }> (bd-1n122)
+/** @type {Map<string, {startTime: number, node: GraphNode, origPos: {x: number, y: number, z: number}, phase: string, ghostStart?: number}>} */
 export const _activeCollapses = new Map();
 
 // --- Event sprites: pop-up animations for status changes + new associations (bd-9qeto) ---
+/** @type {Array<{mesh: THREE.Object3D, birth: number, lifetime: number, type: string, node?: GraphNode, [key: string]: *}>} */
 export const eventSprites = []; // { mesh, birth, lifetime, type, ... }
+/** @type {number} */
 export const EVENT_SPRITE_MAX = 80; // bd-k9cqt: increased for energy beam effects
 
 // Status pulse colors by transition
@@ -173,6 +235,13 @@ const STATUS_PULSE_COLORS = {
 };
 
 // Spawn an expanding ring burst when a bead changes status (bd-9qeto)
+/**
+ * Spawn expanding ring burst when a bead changes status.
+ * @param {GraphNode} node - The node that changed status
+ * @param {string} oldStatus - Previous status value
+ * @param {string} newStatus - New status value
+ * @returns {void}
+ */
 export function spawnStatusPulse(node, oldStatus, newStatus) {
   const graph = _getGraph && _getGraph();
   if (!node || !graph) return;
@@ -248,6 +317,11 @@ const FIREWORK_COLORS = {
 };
 
 // Spawn firework burst at a node position when a new bead is created (bd-4gmot)
+/**
+ * Spawn a radial firework burst at a node when a new bead is created.
+ * @param {GraphNode} node - The newly created node
+ * @returns {void}
+ */
 export function spawnFireworkBurst(node) {
   const _particlePool = _getParticlePool && _getParticlePool();
   const graph = _getGraph && _getGraph();
@@ -357,15 +431,31 @@ const SHOCKWAVE_COLORS = {
 };
 
 // Camera shake state (bd-3fnon)
+/** @type {?{startTime: number, duration: number, intensity: number, origPos: THREE.Vector3}} */
 export let _cameraShake = null; // { startTime, duration, intensity, origPos }
+/**
+ * Get the current camera shake state.
+ * @returns {?{startTime: number, duration: number, intensity: number, origPos: THREE.Vector3}}
+ */
 export function getCameraShake() {
   return _cameraShake;
 }
+/**
+ * Clear the camera shake state.
+ * @returns {void}
+ */
 export function clearCameraShake() {
   _cameraShake = null;
 }
 
 // Spawn dramatic shockwave ring on status change (bd-3fnon)
+/**
+ * Spawn a dramatic expanding shockwave torus ring on status change.
+ * @param {GraphNode} node - The node that changed status
+ * @param {string} oldStatus - Previous status value
+ * @param {string} newStatus - New status value
+ * @returns {void}
+ */
 export function spawnShockwave(node, oldStatus, newStatus) {
   const graph = _getGraph && _getGraph();
   const _particlePool = _getParticlePool && _getParticlePool();
@@ -497,6 +587,11 @@ export function spawnShockwave(node, oldStatus, newStatus) {
 }
 
 // Spawn implosion/collapse effect when a bead is closed (bd-1n122)
+/**
+ * Spawn an implosion/collapse effect when a bead is closed.
+ * @param {GraphNode} node - The node being closed
+ * @returns {void}
+ */
 export function spawnCollapseEffect(node) {
   const graph = _getGraph && _getGraph();
   const _particlePool = _getParticlePool && _getParticlePool();
@@ -645,6 +740,13 @@ export function spawnCollapseEffect(node) {
 }
 
 // Comet trail effect: agent -> claimed bead arc with particle trail (bd-t4umc)
+/**
+ * Spawn a comet trail arc from a source position to a target node.
+ * @param {{x: number, y: number, z: number}} sourcePos - Starting position
+ * @param {GraphNode} targetNode - Target node the comet flies toward
+ * @param {number} color - Hex color for the comet trail
+ * @returns {void}
+ */
 export function spawnCometTrail(sourcePos, targetNode, color) {
   const graph = _getGraph && _getGraph();
   const _particlePool = _getParticlePool && _getParticlePool();
@@ -693,6 +795,12 @@ export function spawnCometTrail(sourcePos, targetNode, color) {
   }
 }
 
+/**
+ * Trigger a claim comet trail from an agent node to a claimed bead.
+ * @param {GraphNode} node - The bead being claimed
+ * @param {string} newAssignee - Agent name of the new assignee
+ * @returns {void}
+ */
 export function triggerClaimComet(node, newAssignee) {
   const graph = _getGraph && _getGraph();
   const graphData = _getGraphData && _getGraphData();
@@ -716,6 +824,13 @@ export function triggerClaimComet(node, newAssignee) {
 }
 
 // Spawn sparks that travel along a new edge between two nodes (bd-9qeto)
+/**
+ * Spawn sparks that travel along a new edge between two nodes.
+ * @param {GraphNode} sourceNode - Source node of the edge
+ * @param {GraphNode} targetNode - Target node of the edge
+ * @param {number} [color] - Hex color for the sparks (defaults to 0x4a9eff)
+ * @returns {void}
+ */
 export function spawnEdgeSpark(sourceNode, targetNode, color) {
   const graph = _getGraph && _getGraph();
   if (!sourceNode || !targetNode || !graph) return;
@@ -785,6 +900,13 @@ export function spawnEdgeSpark(sourceNode, targetNode, color) {
 }
 
 // bd-k9cqt: Energy beam effect for dependency creation
+/**
+ * Spawn an energy beam effect between two nodes for dependency creation.
+ * @param {GraphNode} sourceNode - Source node of the beam
+ * @param {GraphNode} targetNode - Target node of the beam
+ * @param {number} color - Hex color for the beam
+ * @returns {void}
+ */
 export function spawnEnergyBeam(sourceNode, targetNode, color) {
   const graph = _getGraph && _getGraph();
   if (!sourceNode || !targetNode || !graph) return;
@@ -897,6 +1019,11 @@ export function spawnEnergyBeam(sourceNode, targetNode, color) {
 }
 
 // Update event sprites each frame (bd-9qeto)
+/**
+ * Update all active event sprites (expanding rings, sparks, comets, etc.).
+ * @param {number} t - Current animation time in seconds
+ * @returns {void}
+ */
 export function updateEventSprites(t) {
   const graph = _getGraph && _getGraph();
   const _particlePool = _getParticlePool && _getParticlePool();

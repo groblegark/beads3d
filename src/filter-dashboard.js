@@ -10,6 +10,10 @@ let _api = null;
 // Shared state references — set by main.js at init time
 let _state = null;
 
+/**
+ * @param {Object} deps
+ * @returns {void}
+ */
 export function setFilterDeps({ applyFilters, refresh, syncAllRigPills, api, state }) {
   _applyFilters = applyFilters;
   _refresh = refresh;
@@ -18,6 +22,9 @@ export function setFilterDeps({ applyFilters, refresh, syncAllRigPills, api, sta
   _state = state;
 }
 
+/**
+ * @returns {void}
+ */
 export function toggleFilterDashboard() {
   const panel = document.getElementById('filter-dashboard');
   if (!panel) return;
@@ -27,6 +34,9 @@ export function toggleFilterDashboard() {
 }
 
 // Sync dashboard button states to match current filter state
+/**
+ * @returns {void}
+ */
 export function syncFilterDashboard() {
   // Status buttons
   document.querySelectorAll('.fd-status').forEach((btn) => {
@@ -66,6 +76,9 @@ export function syncFilterDashboard() {
 }
 
 // Sync toolbar controls to match dashboard changes
+/**
+ * @returns {void}
+ */
 export function syncToolbarControls() {
   // Status
   const STATUS_GROUPS = { in_progress: ['in_progress', 'blocked', 'hooked', 'deferred'] };
@@ -93,6 +106,9 @@ export function syncToolbarControls() {
   if (btnOrph) btnOrph.classList.toggle('active', _state.agentFilterOrphaned);
 }
 
+/**
+ * @returns {void}
+ */
 export function updateAssigneeButtons() {
   const body = document.getElementById('fd-assignee-body');
   if (!body) return;
@@ -181,6 +197,9 @@ function _applyFilterState(state) {
   _refresh();
 }
 
+/**
+ * @returns {Promise<void>}
+ */
 export async function loadFilterProfiles() {
   const select = document.getElementById('fd-profile-select');
   if (!select) return;
@@ -225,6 +244,10 @@ async function saveFilterProfile(name) {
   }
 }
 
+/**
+ * @param {string} name
+ * @returns {Promise<void>}
+ */
 export async function loadFilterProfile(name) {
   if (!name) {
     // Default profile — clear all filters
@@ -270,6 +293,9 @@ async function deleteFilterProfile(name) {
 }
 
 // Apply URL query params to filter state (bd-8o2gd phase 4)
+/**
+ * @returns {Promise<void>}
+ */
 export async function applyUrlFilterParams() {
   let needRefresh = false;
 
@@ -309,6 +335,9 @@ export async function applyUrlFilterParams() {
 }
 
 // Generate a shareable URL with current filter state (bd-8o2gd phase 4)
+/**
+ * @returns {string}
+ */
 export function getShareableUrl() {
   const url = new URL(window.location.href);
   // Clear old filter params
@@ -331,6 +360,9 @@ export function getShareableUrl() {
   return url.toString();
 }
 
+/**
+ * @returns {void}
+ */
 export function initFilterDashboard() {
   const panel = document.getElementById('filter-dashboard');
   if (!panel) return;
@@ -532,6 +564,9 @@ export function initFilterDashboard() {
   });
 }
 
+/**
+ * @returns {void}
+ */
 export function updateFilterCount() {
   const visible = _state.graphData.nodes.filter((n) => !n._hidden).length;
   const total = _state.graphData.nodes.length;

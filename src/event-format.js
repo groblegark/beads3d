@@ -1,8 +1,21 @@
 // Event formatting utilities for doots, agent feeds, and activity streams (bd-7t6nt)
 // Pure functions — no global state dependencies.
 
+/**
+ * A bus or mutation event from the NATS event stream.
+ * @typedef {Object} BusEvent
+ * @property {string} type - The event type identifier (e.g. 'AgentStarted', 'PreToolUse', 'MutationUpdate')
+ * @property {Object} payload - Event-specific data payload
+ */
+
 // Generate a concise label for a bus/mutation event (bd-c7723, bd-wn5he)
 const _lastHeartbeat = {};
+/**
+ * Generate a concise human-readable label for a bus/mutation event.
+ * Returns null for events that should be suppressed (e.g. noisy heartbeats).
+ * @param {BusEvent} evt - The bus event to label
+ * @returns {string|null} A short display label, or null if the event should be suppressed
+ */
 export function dootLabel(evt) {
   const type = evt.type || '';
   const p = evt.payload || {};
@@ -102,7 +115,13 @@ export function dootLabel(evt) {
     .slice(0, 20);
 }
 
-// Color based on event type
+/**
+ * Determine the display color for an event based on its type.
+ * Maps event categories to colors: red for crashes/failures, amber for decisions,
+ * gray for stops/ends, green for starts/creates, blue for tools, orange default.
+ * @param {BusEvent} evt - The bus event to colorize
+ * @returns {string} CSS hex color string
+ */
 export function dootColor(evt) {
   const type = evt.type || '';
   if (type.includes('Crash') || type.includes('Failed')) return '#ff3333';
@@ -114,7 +133,14 @@ export function dootColor(evt) {
   return '#ff6b35'; // agent orange default
 }
 
-// Format a tool use event payload into a concise label for agent feeds
+/**
+ * Format a tool use event payload into a concise label for agent feed entries.
+ * Extracts the most relevant info (command, file path, pattern) from the tool input.
+ * @param {Object} payload - The event payload containing tool_name and tool_input
+ * @param {string} [payload.tool_name] - Name of the tool (e.g. 'Bash', 'Read', 'Edit')
+ * @param {Object} [payload.tool_input] - Tool-specific input parameters
+ * @returns {string} A short human-readable label for the tool invocation
+ */
 export function formatToolLabel(payload) {
   const toolName = payload.tool_name || 'tool';
   const input = payload.tool_input || {};
@@ -140,9 +166,13 @@ export function formatToolLabel(payload) {
   return toolName.toLowerCase();
 }
 
-// Map a bus event to the agent node ID it belongs to (bd-kau4k, bd-t76aw, bd-jgvas).
-// Returns the agent node ID (e.g. "agent:cool-trout") or null.
-// Does NOT require a window to already exist — used for auto-open (bd-jgvas Phase 2).
+/**
+ * Map a bus event to the agent node ID it belongs to (bd-kau4k, bd-t76aw, bd-jgvas).
+ * Extracts the actor from the event payload and formats it as an agent node ID.
+ * Does NOT require a window to already exist -- used for auto-open (bd-jgvas Phase 2).
+ * @param {BusEvent} evt - The bus event to resolve
+ * @returns {string|null} Agent node ID (e.g. 'agent:cool-trout') or null if not attributable
+ */
 export function resolveAgentIdLoose(evt) {
   const p = evt.payload || {};
 
@@ -159,7 +189,7 @@ export function resolveAgentIdLoose(evt) {
   return actor && actor !== 'daemon' ? `agent:${actor}` : null;
 }
 
-// Tool icon map for agent feed entries
+/** @type {Record<string, string>} Map of tool name to single-character icon for agent feed entries */
 export const TOOL_ICONS = {
   Read: 'R',
   Edit: 'E',

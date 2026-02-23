@@ -143,6 +143,7 @@ function drawWarning(ctx, s, color) {
   ctx.fill();
 }
 
+/** @type {Record<string, THREE.SpriteMaterial>} */
 export const LINK_ICON_MATERIALS = {
   blocks: makeLinkIconTexture(drawShield, '#d04040'),
   'waits-for': makeLinkIconTexture(drawClock, '#d4a017'),
@@ -151,5 +152,7 @@ export const LINK_ICON_MATERIALS = {
   assigned_to: makeLinkIconTexture(drawPerson, '#ff6b35'),
   rig_conflict: makeLinkIconTexture(drawWarning, '#ff3030'),
 };
+/** @type {THREE.SpriteMaterial} */
 export const LINK_ICON_DEFAULT = makeLinkIconTexture(drawDot, '#2a2a3a');
+/** @type {number} */
 export const LINK_ICON_SCALE = 12; // sprite size in world units (bd-t1g9o: increased for visibility)
