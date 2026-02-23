@@ -54,10 +54,13 @@ export let css2dRenderer = null;
 /** @type {Map<string, Object>} Doot-triggered issue popups: nodeId to { el, timer, node, lastDoot } */
 export const dootPopups = new Map();
 
-// --- SSE live updates (bd-03b5v, bd-ki6im: reconnection) ---
+// --- SSE live updates (bd-03b5v, bd-ki6im: reconnection, bd-otufd: batching) ---
 // Handle incoming mutation events: optimistic property updates for instant feedback,
 // debounced full refresh for structural changes (new/deleted beads).
 let _refreshTimer;
+let _mutationBatchTimer = null; // bd-otufd: batch mutations over 100ms window
+let _mutationBatch = []; // bd-otufd: pending mutations to apply
+const MUTATION_BATCH_MS = 100; // bd-otufd: batch window for coalescing mutations
 // SSE connection state tracking (bd-ki6im)
 const _sseState = { mutation: 'connecting', bus: 'connecting' };
 
@@ -96,12 +99,28 @@ export function connectLiveUpdates() {
   try {
     _api.connectEvents(
       (evt) => {
-        const applied = applyMutationOptimistic(evt);
-        // Always schedule a background refresh for consistency, but with longer
-        // delay if we already applied the change visually (bd-c1x6p: increased
-        // debounce from 5s/1.5s to 10s/3s to reduce layout disruption frequency).
-        clearTimeout(_refreshTimer);
-        _refreshTimer = setTimeout(_refresh, applied ? 10000 : 3000);
+        // Batch mutations over MUTATION_BATCH_MS to coalesce rapid updates (bd-otufd)
+        _mutationBatch.push(evt);
+        if (!_mutationBatchTimer) {
+          _mutationBatchTimer = setTimeout(() => {
+            const batch = _mutationBatch;
+            _mutationBatch = [];
+            _mutationBatchTimer = null;
+            // Deduplicate: keep last event per issue_id (latest state wins)
+            const byId = new Map();
+            for (const e of batch) {
+              if (e.issue_id) byId.set(e.issue_id, e);
+              else byId.set(Math.random(), e); // non-issue events pass through
+            }
+            let anyStructural = false;
+            for (const e of byId.values()) {
+              const applied = applyMutationOptimistic(e);
+              if (!applied) anyStructural = true;
+            }
+            clearTimeout(_refreshTimer);
+            _refreshTimer = setTimeout(_refresh, anyStructural ? 3000 : 10000);
+          }, MUTATION_BATCH_MS);
+        }
       },
       {
         onStatus: (state, info) => {
@@ -220,6 +239,8 @@ export function updateBusConnectionState(state, info) {
 const DOOT_LIFETIME = 4.0; // seconds before fully faded
 const DOOT_RISE_SPEED = 8; // units per second upward
 const DOOT_MAX = 30; // max active doots (oldest get pruned)
+let _dootLastSpawn = 0; // timestamp of last doot spawn (bd-otufd throttle)
+const DOOT_MIN_INTERVAL = 50; // minimum ms between doot spawns under load
 
 /**
  * Initialize the CSS2D overlay renderer for HTML doots and append it to the graph element.
@@ -324,6 +345,11 @@ export function findAgentNode(evt) {
 export function spawnDoot(node, text, color) {
   const graph = _getGraph();
   if (!node || !text || !graph) return;
+
+  // Throttle doot spawning under burst load — skip if too rapid (bd-otufd)
+  const now = performance.now();
+  if (now - _dootLastSpawn < DOOT_MIN_INTERVAL) return;
+  _dootLastSpawn = now;
 
   // Trigger doot popup for non-agent nodes (beads-edy1)
   showDootPopup(node);
