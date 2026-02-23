@@ -65,6 +65,9 @@ import {
   intensifyAura,
   setVfxIntensity,
   presetVFX,
+  adaptiveQualityTick,
+  getAdaptiveState,
+  applyVfxPreset,
 } from './vfx.js';
 // setControlPanelDeps, toggleControlPanel, initControlPanel moved to camera.js (bd-7t6nt)
 import {
@@ -137,7 +140,58 @@ const GEO = {
   torus: new THREE.TorusGeometry(1, 0.15, 6, 20), // unit torus for rings
   octa: new THREE.OctahedronGeometry(1, 0), // blocked spikes
   box: new THREE.BoxGeometry(1, 1, 1), // descent stage, general purpose
+  // Agent-specific shared geometries (bd-lzojw: previously created per-node)
+  cone: new THREE.ConeGeometry(0.3, 0.5, 6), // thruster nozzle
+  legCyl: new THREE.CylinderGeometry(0.04, 0.04, 1, 4), // landing leg
+  legPad: new THREE.SphereGeometry(0.12, 4, 4), // landing pad
+  antennaCyl: new THREE.CylinderGeometry(0.02, 0.02, 1, 3), // antenna
+  // Jack-specific shared geometries (bd-lzojw)
+  boltHead: new THREE.CylinderGeometry(1, 1, 0.4, 6), // hex bolt head
+  boltShaft: new THREE.CylinderGeometry(0.4, 0.4, 1.2, 6), // bolt shaft
 };
+
+// --- Material cache: reuse materials by color+params key (bd-lzojw) ---
+// Avoids creating thousands of ShaderMaterial/MeshBasicMaterial instances.
+// The `time` uniform is shared across all materia materials (updated in animation loop).
+// `selected` defaults to 0.0; selection highlight is handled separately.
+const _materialCache = new Map();
+
+function getCachedMateriaMaterial(hexColor, opts = {}) {
+  const key = `materia:${hexColor}:${opts.opacity ?? 0.85}:${opts.coreIntensity ?? 1.4}:${opts.breathSpeed ?? 0.0}`;
+  if (_materialCache.has(key)) return _materialCache.get(key);
+  const mat = createMateriaMaterial(hexColor, opts);
+  _materialCache.set(key, mat);
+  return mat;
+}
+
+function getCachedBasicMaterial(hexColor, opts = {}) {
+  const key = `basic:${hexColor}:${opts.opacity ?? 1.0}:${opts.wireframe ? 'w' : ''}`;
+  if (_materialCache.has(key)) return _materialCache.get(key);
+  const mat = new THREE.MeshBasicMaterial({
+    color: hexColor,
+    transparent: true,
+    opacity: opts.opacity ?? 1.0,
+    wireframe: !!opts.wireframe,
+  });
+  _materialCache.set(key, mat);
+  return mat;
+}
+
+function getCachedSpriteMaterial(hexColor, opts = {}) {
+  const blendKey = opts.blending === 'additive' ? 'add' : 'norm';
+  const key = `sprite:${hexColor}:${opts.opacity ?? 1.0}:${blendKey}`;
+  if (_materialCache.has(key)) return _materialCache.get(key);
+  const mat = new THREE.SpriteMaterial({
+    map: opts.map || null,
+    color: hexColor,
+    transparent: true,
+    opacity: opts.opacity ?? 1.0,
+    blending: opts.blending === 'additive' ? THREE.AdditiveBlending : THREE.NormalBlending,
+    depthWrite: false,
+  });
+  _materialCache.set(key, mat);
+  return mat;
+}
 
 // Shared materia halo texture (bd-c7d5z) — lazy-initialized on first use
 let _materiaHaloTex = null;
@@ -334,6 +388,8 @@ function updatePerfOverlay(t) {
       if (graphData) lines.push('nodes: ' + graphData.nodes.length + '  links: ' + graphData.links.length);
       lines.push('sprites: ' + eventSprites.length);
       if (_auraEmitters) lines.push('auras: ' + _auraEmitters.size);
+      const aq = getAdaptiveState();
+      lines.push('quality: ' + aq.tier + (aq.manualOverride ? ' (manual)' : ''));
       statsEl.innerHTML = lines.join('<br>');
     }
   }
@@ -706,13 +762,13 @@ function initGraph() {
       const hexColor = colorToHex(nodeColor(n));
       const group = new THREE.Group();
 
-      // Materia orb core — FFVII-style inner glow (bd-c7d5z, replaces MeshBasicMaterial)
+      // Materia orb core — FFVII-style inner glow (bd-c7d5z, bd-lzojw: cached materials)
       const breathSpeed = n.status === 'in_progress' ? 2.0 : 0.0; // bd-pe8k2: only in_progress pulses
       const coreIntensity = n.status === 'closed' ? 0.5 : n.status === 'in_progress' ? 1.8 : 1.4;
       const coreOpacity = n.status === 'closed' ? 0.4 : 0.85;
       const core = new THREE.Mesh(
         GEO.sphereHi,
-        createMateriaMaterial(hexColor, {
+        getCachedMateriaMaterial(hexColor, {
           opacity: coreOpacity * ghostFade,
           coreIntensity,
           breathSpeed,
@@ -721,16 +777,13 @@ function initGraph() {
       core.scale.setScalar(size);
       group.add(core);
 
-      // Materia halo sprite — soft radial gradient billboard (bd-c7d5z, replaces Fresnel shell)
+      // Materia halo sprite — soft radial gradient billboard (bd-c7d5z, bd-lzojw: cached material)
       if (!_materiaHaloTex) _materiaHaloTex = createMateriaHaloTexture(64);
       const halo = new THREE.Sprite(
-        new THREE.SpriteMaterial({
+        getCachedSpriteMaterial(hexColor, {
           map: _materiaHaloTex,
-          color: hexColor,
-          transparent: true,
           opacity: 0.2 * ghostFade,
-          blending: THREE.AdditiveBlending,
-          depthWrite: false,
+          blending: 'additive',
         }),
       );
       halo.scale.setScalar(size * 3.0);
@@ -741,48 +794,40 @@ function initGraph() {
         group.remove(core);
         group.remove(halo);
         const s = size;
-        const matOrange = new THREE.MeshBasicMaterial({ color: 0xff6b35, transparent: true, opacity: 0.85 });
-        const matDark = new THREE.MeshBasicMaterial({ color: 0x2a2a3a, transparent: true, opacity: 0.9 });
-        const matGold = new THREE.MeshBasicMaterial({ color: 0xd4a017, transparent: true, opacity: 0.7 });
+        // bd-lzojw: cached materials instead of new per-agent allocations
+        const matOrange = getCachedBasicMaterial(0xff6b35, { opacity: 0.85 });
+        const matDark = getCachedBasicMaterial(0x2a2a3a, { opacity: 0.9 });
+        const matGold = getCachedBasicMaterial(0xd4a017, { opacity: 0.7 });
+        const matWindow = getCachedBasicMaterial(0x88ccff, { opacity: 0.8 });
 
         // Cabin — squat octahedron (angular Apollo LM shape)
-        const cabin = new THREE.Mesh(GEO.octa, matOrange.clone());
+        const cabin = new THREE.Mesh(GEO.octa, matOrange);
         cabin.scale.set(s * 1.0, s * 0.7, s * 1.0);
         group.add(cabin);
 
         // Viewport window — small sphere on front face
-        const window = new THREE.Mesh(
-          GEO.sphereHi,
-          new THREE.MeshBasicMaterial({
-            color: 0x88ccff,
-            transparent: true,
-            opacity: 0.8,
-          }),
-        );
+        const window = new THREE.Mesh(GEO.sphereHi, matWindow);
         window.scale.setScalar(s * 0.25);
         window.position.set(0, s * 0.15, s * 0.55);
         group.add(window);
 
         // Descent stage — wider box below cabin
-        const descent = new THREE.Mesh(GEO.box, matGold.clone());
+        const descent = new THREE.Mesh(GEO.box, matGold);
         descent.scale.set(s * 1.4, s * 0.35, s * 1.4);
         descent.position.y = -s * 0.55;
         group.add(descent);
 
-        // Thruster nozzle — cone below descent stage
-        const nozzleGeo = new THREE.ConeGeometry(0.3, 0.5, 6);
-        const nozzle = new THREE.Mesh(nozzleGeo, matDark.clone());
+        // Thruster nozzle — cone below descent stage (bd-lzojw: shared geometry)
+        const nozzle = new THREE.Mesh(GEO.cone, matDark);
         nozzle.scale.setScalar(s);
         nozzle.position.y = -s * 1.0;
         nozzle.rotation.x = Math.PI; // point down
         group.add(nozzle);
 
-        // Landing legs — 4 angled cylinders
-        const legGeo = new THREE.CylinderGeometry(0.04, 0.04, 1, 4);
-        const padGeo = new THREE.SphereGeometry(0.12, 4, 4);
+        // Landing legs — 4 angled cylinders (bd-lzojw: shared geometries)
         for (let i = 0; i < 4; i++) {
           const angle = (i / 4) * Math.PI * 2 + Math.PI / 4;
-          const leg = new THREE.Mesh(legGeo, matOrange.clone());
+          const leg = new THREE.Mesh(GEO.legCyl, matOrange);
           leg.scale.setScalar(s);
           leg.scale.y = s * 1.2;
           leg.position.set(Math.cos(angle) * s * 0.7, -s * 0.9, Math.sin(angle) * s * 0.7);
@@ -790,27 +835,32 @@ function initGraph() {
           leg.rotation.x = -Math.sin(angle) * 0.4;
           group.add(leg);
           // Landing pad at foot
-          const pad = new THREE.Mesh(padGeo, matGold.clone());
+          const pad = new THREE.Mesh(GEO.legPad, matGold);
           pad.scale.setScalar(s);
           pad.position.set(Math.cos(angle) * s * 1.1, -s * 1.5, Math.sin(angle) * s * 1.1);
           group.add(pad);
         }
 
-        // Antenna — thin cylinder on top
-        const antennaGeo = new THREE.CylinderGeometry(0.02, 0.02, 1, 3);
-        const antenna = new THREE.Mesh(antennaGeo, matOrange.clone());
+        // Antenna — thin cylinder on top (bd-lzojw: shared geometry)
+        const antenna = new THREE.Mesh(GEO.antennaCyl, matOrange);
         antenna.scale.setScalar(s);
         antenna.scale.y = s * 0.8;
         antenna.position.y = s * 0.8;
         group.add(antenna);
         // Antenna tip
-        const tip = new THREE.Mesh(GEO.sphereHi, matOrange.clone());
+        const tip = new THREE.Mesh(GEO.sphereHi, matOrange);
         tip.scale.setScalar(s * 0.1);
         tip.position.y = s * 1.3;
         group.add(tip);
 
-        // Outer glow — orange fresnel shell (bd-s9b4v: subtler, tighter)
-        const agentGlow = new THREE.Mesh(GEO.sphereLo, createFresnelMaterial(0xff6b35, { opacity: 0.12, power: 3.5 }));
+        // Outer glow — orange fresnel shell (bd-s9b4v, bd-lzojw: cached material)
+        const _fresnelKey = 'fresnel:0xff6b35:0.12:3.5';
+        let fresnelMat = _materialCache.get(_fresnelKey);
+        if (!fresnelMat) {
+          fresnelMat = createFresnelMaterial(0xff6b35, { opacity: 0.12, power: 3.5 });
+          _materialCache.set(_fresnelKey, fresnelMat);
+        }
+        const agentGlow = new THREE.Mesh(GEO.sphereLo, fresnelMat);
         agentGlow.scale.setScalar(size * 1.3);
         agentGlow.userData.agentGlow = true;
         agentGlow.userData.baseScale = size * 1.5;
@@ -845,17 +895,13 @@ function initGraph() {
         }
       }
 
-      // Decision/gate: diamond shape with "?" marker, only pending visible (bd-zr374)
+      // Decision/gate: diamond shape with "?" marker, only pending visible (bd-zr374, bd-lzojw: cached)
       if (n.issue_type === 'gate' || n.issue_type === 'decision') {
         // Replace sphere core with elongated octahedron (diamond)
         group.remove(core);
         const diamond = new THREE.Mesh(
           GEO.octa,
-          new THREE.MeshBasicMaterial({
-            color: hexColor,
-            transparent: true,
-            opacity: 0.9 * ghostFade,
-          }),
+          getCachedBasicMaterial(hexColor, { opacity: 0.9 * ghostFade }),
         );
         diamond.scale.set(size * 0.8, size * 1.4, size * 0.8); // tall diamond
         group.add(diamond);
@@ -876,65 +922,46 @@ function initGraph() {
         // Pulsing glow wireframe for pending decisions
         const pulseGlow = new THREE.Mesh(
           GEO.octa,
-          new THREE.MeshBasicMaterial({
-            color: 0xd4a017,
-            transparent: true,
-            opacity: 0.25 * ghostFade,
-            wireframe: true,
-          }),
+          getCachedBasicMaterial(0xd4a017, { opacity: 0.25 * ghostFade, wireframe: true }),
         );
         pulseGlow.scale.set(size * 1.2, size * 2.0, size * 1.2);
         pulseGlow.userData.decisionPulse = true;
         group.add(pulseGlow);
       }
 
-      // Jack: hexagonal bolt — temporary infrastructure modification (bd-hffzf)
+      // Jack: hexagonal bolt — temporary infrastructure modification (bd-hffzf, bd-lzojw: shared geo + cached mat)
       if (n.issue_type === 'jack') {
         group.remove(core);
         const s = size;
         const jackColor = n._jackExpired ? 0xd04040 : 0xe06830; // red if expired, orange-red if active
-        const matJack = new THREE.MeshBasicMaterial({ color: jackColor, transparent: true, opacity: 0.85 * ghostFade });
 
-        // Hexagonal bolt head — wide, flat cylinder with 6 sides
-        const boltHeadGeo = new THREE.CylinderGeometry(1, 1, 0.4, 6);
-        const boltHead = new THREE.Mesh(boltHeadGeo, matJack.clone());
+        // Hexagonal bolt head — wide, flat cylinder with 6 sides (bd-lzojw: shared GEO.boltHead)
+        const boltHead = new THREE.Mesh(GEO.boltHead, getCachedBasicMaterial(jackColor, { opacity: 0.85 * ghostFade }));
         boltHead.scale.set(s * 1.0, s * 1.0, s * 1.0);
         group.add(boltHead);
 
-        // Bolt shaft — narrower cylinder below the head
-        const shaftGeo = new THREE.CylinderGeometry(0.4, 0.4, 1.2, 6);
-        const matShaft = new THREE.MeshBasicMaterial({ color: jackColor, transparent: true, opacity: 0.7 * ghostFade });
-        const shaft = new THREE.Mesh(shaftGeo, matShaft);
+        // Bolt shaft — narrower cylinder below the head (bd-lzojw: shared GEO.boltShaft)
+        const shaft = new THREE.Mesh(GEO.boltShaft, getCachedBasicMaterial(jackColor, { opacity: 0.7 * ghostFade }));
         shaft.scale.setScalar(s);
         shaft.position.y = -s * 0.8;
         group.add(shaft);
 
-        // Active jack: pulsing glow ring (wireframe hexagonal torus)
+        // Active jack: pulsing glow ring (wireframe hexagonal torus, bd-lzojw: shared geo + cached mat)
         if (n.status === 'in_progress' && !n._jackExpired) {
           const pulseRing = new THREE.Mesh(
-            boltHeadGeo,
-            new THREE.MeshBasicMaterial({
-              color: 0xe06830,
-              transparent: true,
-              opacity: 0.2 * ghostFade,
-              wireframe: true,
-            }),
+            GEO.boltHead,
+            getCachedBasicMaterial(0xe06830, { opacity: 0.2 * ghostFade, wireframe: true }),
           );
           pulseRing.scale.set(s * 1.4, s * 0.6, s * 1.4);
           pulseRing.userData.jackPulse = true;
           group.add(pulseRing);
         }
 
-        // Expired jack: flashing red warning ring
+        // Expired jack: flashing red warning ring (bd-lzojw: shared geo + cached mat)
         if (n._jackExpired) {
           const warnRing = new THREE.Mesh(
-            boltHeadGeo,
-            new THREE.MeshBasicMaterial({
-              color: 0xff2020,
-              transparent: true,
-              opacity: 0.3 * ghostFade,
-              wireframe: true,
-            }),
+            GEO.boltHead,
+            getCachedBasicMaterial(0xff2020, { opacity: 0.3 * ghostFade, wireframe: true }),
           );
           warnRing.scale.set(s * 1.6, s * 0.8, s * 1.6);
           warnRing.userData.jackExpiredFlash = true;
@@ -955,30 +982,21 @@ function initGraph() {
         }
       }
 
-      // Blocked: spiky octahedron
+      // Blocked: spiky octahedron (bd-lzojw: cached material)
       if (n._blocked) {
         const spike = new THREE.Mesh(
           GEO.octa,
-          new THREE.MeshBasicMaterial({
-            color: 0xd04040,
-            transparent: true,
-            opacity: 0.2,
-            wireframe: true,
-          }),
+          getCachedBasicMaterial(0xd04040, { opacity: 0.2, wireframe: true }),
         );
         spike.scale.setScalar(size * 2.4);
         group.add(spike);
       }
 
-      // Pending decision badge — small amber dot with count (bd-o6tgy)
+      // Pending decision badge — small amber dot with count (bd-o6tgy, bd-lzojw: cached material)
       if (n._pendingDecisions > 0 && n.issue_type !== 'gate' && n.issue_type !== 'decision') {
         const badge = new THREE.Mesh(
           GEO.sphereHi,
-          new THREE.MeshBasicMaterial({
-            color: 0xd4a017,
-            transparent: true,
-            opacity: 0.9,
-          }),
+          getCachedBasicMaterial(0xd4a017, { opacity: 0.9 }),
         );
         badge.scale.setScalar(Math.min(3 + n._pendingDecisions, 6));
         badge.position.set(size * 1.2, size * 1.2, 0); // top-right offset
@@ -1749,9 +1767,17 @@ function startAnimation() {
         }
 
         if (child.userData.materiaCore) {
-          // Materia selection boost — glow intensification (bd-c7d5z)
+          // Materia selection boost — glow intensification (bd-c7d5z, bd-lzojw: safe with cached materials)
+          // Cached materials are shared, so we clone on select and restore on deselect.
           if (child.material.uniforms && child.material.uniforms.selected) {
-            child.material.uniforms.selected.value = isSelected ? 1.0 : 0.0;
+            if (isSelected && child.material.uniforms.selected.value !== 1.0) {
+              child.userData._cachedMaterial = child.material;
+              child.material = child.material.clone();
+              child.material.uniforms.selected.value = 1.0;
+            } else if (!isSelected && child.userData._cachedMaterial) {
+              child.material = child.userData._cachedMaterial;
+              delete child.userData._cachedMaterial;
+            }
           }
         } else if (child.userData.selectionRing) {
           // Legacy selection ring (kept for backward compat)
@@ -1823,6 +1849,15 @@ function startAnimation() {
     // Update event sprites — status pulses + edge sparks (bd-9qeto)
     updateEventSprites(t);
     updatePerfOverlay(t);
+
+    // Adaptive quality scaling — feed FPS to auto-tune particle budget (bd-dnuky)
+    {
+      const now = performance.now();
+      if (!animate._lastAdaptiveTime) animate._lastAdaptiveTime = now;
+      const dt = now - animate._lastAdaptiveTime;
+      animate._lastAdaptiveTime = now;
+      if (dt > 0) adaptiveQualityTick(1000 / dt);
+    }
 
     // Camera shake for shockwave effects (bd-3fnon)
     const shake = getCameraShake();
