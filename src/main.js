@@ -6208,24 +6208,53 @@ function initControlPanel() {
 function connectBusStream() {
   try {
     let _dootDrops = 0;
+    // bd-eyvbw: debounced refresh for new agents not yet in the graph.
+    // When bus events arrive for an agent before the graph has fetched its node,
+    // schedule a quick refresh so the node appears without a manual page reload.
+    let _newAgentRefreshTimer = null;
+    const _pendingNewAgents = new Set(); // agent IDs awaiting graph refresh
     api.connectBusEvents('agents,hooks,oj,mutations,mail,decisions', (evt) => {
       const label = dootLabel(evt);
       if (!label) return;
 
       const node = findAgentNode(evt);
       if (!node) {
-        if (++_dootDrops <= 5) {
-          const p = evt.payload || {};
-          console.debug('[beads3d] doot drop %d: type=%s actor=%s issue=%s', _dootDrops, evt.type, p.actor, p.issue_id);
+        // bd-eyvbw: If we can identify the agent but it's not in the graph yet,
+        // schedule a refresh to fetch the new node instead of silently dropping.
+        const pendingAgentId = resolveAgentIdLoose(evt);
+        if (pendingAgentId && !_pendingNewAgents.has(pendingAgentId)) {
+          _pendingNewAgents.add(pendingAgentId);
+          clearTimeout(_newAgentRefreshTimer);
+          _newAgentRefreshTimer = setTimeout(async () => {
+            await refresh();
+            // After refresh, create windows for any newly-appeared agents
+            for (const pid of _pendingNewAgents) {
+              if (!agentWindows.has(pid) && graphData) {
+                const agentNode = graphData.nodes.find(n => n.id === pid);
+                if (agentNode) {
+                  if (getAgentsViewOpen()) {
+                    createAgentWindowInGrid(agentNode);
+                  } else {
+                    showAgentWindow(agentNode);
+                  }
+                }
+              }
+            }
+            _pendingNewAgents.clear();
+          }, 1500);
         }
-        return;
+        if (++_dootDrops <= 5) {
+          const dp = evt.payload || {};
+          console.debug('[beads3d] doot drop %d: type=%s actor=%s issue=%s', _dootDrops, evt.type, dp.actor, dp.issue_id);
+        }
+        // bd-eyvbw: still process agent window + roster updates below (skip doot/VFX only)
       }
 
-      spawnDoot(node, label, dootColor(evt));
+      if (node) spawnDoot(node, label, dootColor(evt));
 
       // Event sprites: status change pulse + close burst (bd-9qeto)
       const p = evt.payload || {};
-      if ((evt.type === 'MutationStatus' || evt.type === 'MutationClose') && p.issue_id && graphData) {
+      if (node && (evt.type === 'MutationStatus' || evt.type === 'MutationClose') && p.issue_id && graphData) {
         const issueNode = graphData.nodes.find(n => n.id === p.issue_id);
         if (issueNode) {
           const newStatus = p.new_status || (evt.type === 'MutationClose' ? 'closed' : '');
