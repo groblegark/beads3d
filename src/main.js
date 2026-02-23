@@ -160,7 +160,7 @@ let _agentTetherStrength = 0.5;
 
 // --- Event sprites: pop-up animations for status changes + new associations (bd-9qeto) ---
 const eventSprites = []; // { mesh, birth, lifetime, type, ... }
-const EVENT_SPRITE_MAX = 40;
+const EVENT_SPRITE_MAX = 80; // bd-k9cqt: increased for energy beam effects
 
 // Status pulse colors by transition
 const STATUS_PULSE_COLORS = {
@@ -562,6 +562,40 @@ function updateEventSprites(t) {
       s.mesh.position.z += s.velocity.z * 0.016 * decel;
       s.mesh.material.opacity = (1 - progress) * 0.8;
       s.mesh.scale.setScalar(1 - progress * 0.5);
+    } else if (s.type === 'comet-head') {
+      // Comet flying along bezier arc with particle trail (bd-t4umc)
+      s.mesh.position.copy(s.curve.getPointAt(Math.min(progress, 1.0)));
+      const expectedEmitted = Math.floor(progress * s.trailCount);
+      while (s._emitted < expectedEmitted && _particlePool) {
+        const trailT = s._emitted / s.trailCount;
+        const tp = s.curve.getPointAt(Math.min(trailT, 1.0));
+        const tangent = s.curve.getTangentAt(Math.min(trailT, 1.0));
+        _particlePool.emit({ x: tp.x, y: tp.y, z: tp.z }, s.color, 1, {
+          velocity: [-tangent.x * 3 + (Math.random() - 0.5) * 2, -tangent.y * 3 + (Math.random() - 0.5) * 2, -tangent.z * 3 + (Math.random() - 0.5) * 2],
+          spread: 0.5, lifetime: 0.6 + Math.random() * 0.3, size: 2.5 * (1 - trailT * 0.5),
+        });
+        s._emitted++;
+      }
+      s.mesh.material.opacity = Math.max(0.3, 1 - progress * 0.7);
+      if (progress >= 0.95 && !s._arrived) {
+        s._arrived = true;
+        const tgt = s.node;
+        if (tgt && _particlePool) {
+          const tp2 = { x: tgt.x || 0, y: tgt.y || 0, z: tgt.z || 0 };
+          for (let j = 0; j < 20; j++) {
+            const a = (j / 20) * Math.PI * 2;
+            _particlePool.emit(tp2, s.color, 1, { velocity: [Math.cos(a) * 4, (Math.random() - 0.5) * 2, Math.sin(a) * 4], spread: 0.3, lifetime: 0.6, size: 1.5 });
+          }
+        }
+        if (tgt && graph) {
+          const pulseGeo = new THREE.SphereGeometry(4, 10, 10);
+          const pulseMat = new THREE.MeshBasicMaterial({ color: 0xd4a017, transparent: true, opacity: 0.6, depthWrite: false, blending: THREE.AdditiveBlending });
+          const pulse = new THREE.Mesh(pulseGeo, pulseMat);
+          pulse.position.set(tgt.x || 0, tgt.y || 0, tgt.z || 0);
+          graph.scene().add(pulse);
+          eventSprites.push({ mesh: pulse, node: tgt, birth: performance.now() / 1000, lifetime: 0.5, type: 'creation-flash', startScale: 1.0, endScale: 1.3 });
+        }
+      }
     }
   }
 }
@@ -4791,7 +4825,12 @@ function applyMutationOptimistic(evt) {
       if (!node) return false;
       // Update assignee if present in the event
       if (evt.assignee !== undefined) {
+        const oldAssignee = node.assignee;
         node.assignee = evt.assignee;
+        // Comet trail: agent claiming a bead (bd-t4umc)
+        if (evt.assignee && evt.assignee !== oldAssignee) {
+          triggerClaimComet(node, evt.assignee);
+        }
       }
       if (evt.title) {
         node.title = evt.title;
