@@ -389,10 +389,14 @@ export function updateDoots(t) {
     const rise = age * DOOT_RISE_SPEED;
     d.css2d.position.set((d.node.x || 0) + d.jx, (d.node.y || 0) + 10 + rise, (d.node.z || 0) + d.jz);
 
-    // Fade out over last 40% of lifetime
+    // Fade out over last 40% of lifetime — only update DOM when value changes (bd-kkd9y)
     const fadeStart = d.lifetime * 0.6;
     const opacity = age < fadeStart ? 0.9 : 0.9 * (1 - (age - fadeStart) / (d.lifetime - fadeStart));
-    d.el.style.opacity = Math.max(0, opacity).toFixed(2);
+    const opStr = Math.max(0, opacity).toFixed(2);
+    if (d._lastOpacity !== opStr) {
+      d.el.style.opacity = opStr;
+      d._lastOpacity = opStr;
+    }
   }
 }
 

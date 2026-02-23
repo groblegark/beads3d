@@ -34,6 +34,9 @@ function escapeHtml(str) {
 
 // --- State ---
 
+const AGENT_WINDOW_MAX = 20; // max simultaneous agent windows (bd-kkd9y)
+const AGENT_FEED_MAX = 200; // max entries per agent feed (bd-kkd9y)
+
 /** @type {Map<string, Object>} Map of agent ID to agent window state objects */
 export const agentWindows = new Map();
 let agentsViewOpen = false;
@@ -135,6 +138,19 @@ export function showAgentWindow(node) {
     toggleAgentDropdown(node.id);
     return;
   }
+
+  // Evict oldest idle/crashed windows if at capacity (bd-kkd9y)
+  if (agentWindows.size >= AGENT_WINDOW_MAX) {
+    // Prefer evicting crashed, then idle, then oldest
+    let victim = null;
+    for (const [id, w] of agentWindows) {
+      if (w.lastStatus === 'crashed') { victim = id; break; }
+      if (!victim && w.lastStatus === 'idle') victim = id;
+    }
+    if (!victim) victim = agentWindows.keys().next().value; // oldest
+    if (victim) closeAgentWindow(victim);
+  }
+
   const el = document.createElement('div');
   el.className = 'agent-window';
   el.dataset.agentId = node.id;
@@ -1068,6 +1084,7 @@ export function appendAgentEvent(agentId, evt) {
   _updateAgentStatusBar(win);
   _updateTabStatus(agentId, win.lastStatus);
   _incrementTabUnread(agentId);
+  trimAgentFeed(win); // prevent unbounded DOM growth (bd-kkd9y)
   autoScroll(win);
 }
 
@@ -1084,6 +1101,18 @@ function autoScroll(win) {
     requestAnimationFrame(() => {
       feed.scrollTop = feed.scrollHeight;
     });
+  }
+}
+
+// Trim per-agent feed DOM to prevent unbounded growth (bd-kkd9y)
+function trimAgentFeed(win) {
+  const feed = win.feedEl;
+  while (feed.childNodes.length > AGENT_FEED_MAX) {
+    const old = feed.firstChild;
+    feed.removeChild(old);
+    // Also clean from entries array if tracked
+    const idx = win.entries.indexOf(old);
+    if (idx !== -1) win.entries.splice(idx, 1);
   }
 }
 

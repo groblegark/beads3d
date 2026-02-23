@@ -1817,7 +1817,8 @@ function startAnimation() {
 
     // Update live event doots — HTML overlay via CSS2DRenderer (bd-bwkdk)
     updateDoots(t);
-    if (css2dRenderer) css2dRenderer.render(graph.scene(), graph.camera());
+    // Only render CSS2D overlay when doots are active — avoids DOM projection overhead (bd-kkd9y)
+    if (css2dRenderer && doots.length > 0) css2dRenderer.render(graph.scene(), graph.camera());
 
     // Update event sprites — status pulses + edge sparks (bd-9qeto)
     updateEventSprites(t);
