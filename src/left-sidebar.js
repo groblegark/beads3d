@@ -104,13 +104,20 @@ export function updateAgentRosterFromEvent(evt) {
     entry.crashError = null;
   }
 
-  // Update task from MutationUpdate with assignee claim
+  // Update task from MutationUpdate with assignee claim (bd-23dv2: exact match only)
   if (type === 'MutationUpdate' && p.new_status === 'in_progress' && p.assignee) {
-    const assigneeName = p.assignee;
-    // Find roster entry matching this assignee
-    for (const [name, e] of _agentRoster) {
-      if (name === assigneeName || assigneeName.includes(name)) {
-        e.task = p.title || p.issue_id || '';
+    const e = _agentRoster.get(p.assignee);
+    if (e) e.task = p.title || p.issue_id || '';
+  }
+
+  // Clear stale task when a bead is closed (bd-23dv2)
+  if (type === 'MutationClose' && p.assignee) {
+    const e = _agentRoster.get(p.assignee);
+    if (e && e.task) {
+      // Only clear if the closed bead matches the displayed task
+      const closedTitle = p.title || p.issue_id || '';
+      if (e.task === closedTitle || e.task === p.issue_id) {
+        e.task = '';
       }
     }
   }
@@ -125,15 +132,29 @@ export function renderAgentRoster() {
 
   const graphData = _getGraphData();
 
-  // Also seed roster from graph data (agent nodes have task info)
+  // Seed roster from graph data and cross-reference assigned_to edges (bd-23dv2)
   if (graphData && graphData.nodes) {
+    // Build set of agents that have assigned_to edges (actual current assignments)
+    const agentsWithTasks = new Map(); // agentId → { id, title }
+    if (graphData.links) {
+      for (const l of graphData.links) {
+        if (l.dep_type !== 'assigned_to') continue;
+        const src = typeof l.source === 'object' ? l.source.id : l.source;
+        const tgt = typeof l.target === 'object' ? l.target.id : l.target;
+        const tgtNode = graphData.nodes.find(n => n.id === tgt);
+        if (tgtNode) agentsWithTasks.set(src, { id: tgt, title: tgtNode.title || tgt });
+      }
+    }
+
     for (const n of graphData.nodes) {
       if (n.issue_type === 'agent' && !n._hidden) {
         const name = n.title || n.id.replace('agent:', '');
+        const assignedBead = agentsWithTasks.get(n.id);
+        const taskFromGraph = assignedBead ? assignedBead.title : '';
         if (!_agentRoster.has(name)) {
           _agentRoster.set(name, {
             status: n._agentState || 'active',
-            task: n._currentTask || '',
+            task: taskFromGraph,
             tool: '',
             idleSince: null,
             crashError: null,
@@ -142,7 +163,8 @@ export function renderAgentRoster() {
         } else {
           const e = _agentRoster.get(name);
           e.nodeId = n.id;
-          if (n._currentTask) e.task = n._currentTask;
+          // Sync task from graph assigned_to edges — authoritative source (bd-23dv2)
+          e.task = taskFromGraph;
         }
       }
     }
