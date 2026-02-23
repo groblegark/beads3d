@@ -228,6 +228,7 @@ export function showDecisionLightbox(focusId) {
   });
 
   _visible = true;
+  document.body.classList.add('dlb-active'); // suppress popups/toasts (bd-7m6td)
 
   // Render list
   renderList();
@@ -259,6 +260,7 @@ export function hideDecisionLightbox() {
   backdrop.classList.remove('show');
   lightbox.classList.remove('show');
   _visible = false;
+  document.body.classList.remove('dlb-active'); // re-enable popups/toasts (bd-7m6td)
 
   setTimeout(() => {
     backdrop.style.display = 'none';

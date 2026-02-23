@@ -1288,190 +1288,7 @@
       /* No CSS transition — JS handles opacity animation to prevent flickering (bd-q9d6h) */
     }
 
-    /* Decision lightbox — floating window for decision interactions (beads-zuc3, beads-2223) */
-    .decision-lightbox-backdrop {
-      position: fixed;
-      top: 0; left: 0; right: 0; bottom: 0;
-      background: rgba(0, 0, 0, 0.5);
-      z-index: 499;
-    }
-    .decision-lightbox {
-      position: fixed;
-      top: 15%;
-      left: 50%;
-      transform: translateX(-50%);
-      min-width: 400px;
-      max-width: 700px;
-      width: 60vw;
-      min-height: 300px;
-      max-height: 70vh;
-      background: rgba(15, 15, 30, 0.95);
-      border: 1px solid #d4a017;
-      border-radius: 8px;
-      box-shadow: 0 0 24px rgba(212, 160, 23, 0.15), 0 8px 32px rgba(0, 0, 0, 0.5);
-      z-index: 500;
-      overflow: hidden;
-      display: flex;
-      flex-direction: column;
-      backdrop-filter: blur(8px);
-    }
-    .decision-lightbox.resolved { border-color: #2d8a4e; box-shadow: 0 0 24px rgba(45, 138, 78, 0.15), 0 8px 32px rgba(0, 0, 0, 0.5); }
-    .decision-lightbox-header {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      padding: 12px 16px;
-      border-bottom: 1px solid #2a2a3a;
-      cursor: grab;
-      user-select: none;
-      flex-shrink: 0;
-    }
-    .decision-lightbox-header:active { cursor: grabbing; }
-    .decision-lightbox-title {
-      font-size: 14px;
-      font-weight: 600;
-      color: #d4a017;
-      flex: 1;
-    }
-    .decision-lightbox-badge {
-      background: #d4a017;
-      color: #0a0a12;
-      font-size: 11px;
-      font-weight: 700;
-      padding: 1px 6px;
-      border-radius: 9px;
-      min-width: 18px;
-      text-align: center;
-    }
-    .decision-lightbox-badge.empty { background: #333; color: #888; }
-    .decision-lightbox-btn {
-      background: none;
-      border: none;
-      color: #888;
-      font-size: 16px;
-      cursor: pointer;
-      padding: 2px 6px;
-      border-radius: 3px;
-      line-height: 1;
-    }
-    .decision-lightbox-btn:hover { color: #ccc; background: rgba(255,255,255,0.08); }
-    .decision-lightbox-btn:focus-visible { outline: 2px solid #d4a017; outline-offset: 2px; }
-    .decision-lightbox-body {
-      display: flex;
-      flex: 1;
-      overflow: hidden;
-    }
-    .decision-lightbox-list {
-      width: 200px;
-      min-width: 160px;
-      border-right: 1px solid #1a1a2a;
-      overflow-y: auto;
-      flex-shrink: 0;
-    }
-    .decision-lightbox-item {
-      padding: 10px 12px;
-      border-left: 3px solid #d4a017;
-      border-bottom: 1px solid #1a1a2a;
-      cursor: pointer;
-      font-size: 12px;
-      color: #aaa;
-      line-height: 1.4;
-    }
-    .decision-lightbox-item:hover { background: rgba(212, 160, 23, 0.08); }
-    .decision-lightbox-item.active { background: rgba(212, 160, 23, 0.12); color: #e0c060; }
-    .decision-lightbox-item.resolved { border-left-color: #2d8a4e; color: #70a070; }
-    .decision-lightbox-item-prompt {
-      display: -webkit-box;
-      -webkit-line-clamp: 2;
-      -webkit-box-orient: vertical;
-      overflow: hidden;
-    }
-    .decision-lightbox-item-meta {
-      font-size: 10px;
-      color: #666;
-      margin-top: 4px;
-    }
-    .decision-lightbox-detail {
-      flex: 1;
-      padding: 16px;
-      overflow-y: auto;
-    }
-    .decision-lightbox-prompt {
-      font-size: 14px;
-      color: #ddd;
-      line-height: 1.5;
-      margin-bottom: 12px;
-    }
-    .decision-lightbox-context {
-      font-size: 12px;
-      color: #888;
-      background: rgba(0,0,0,0.2);
-      border-radius: 4px;
-      padding: 10px;
-      margin-bottom: 12px;
-      white-space: pre-wrap;
-      max-height: 150px;
-      overflow-y: auto;
-    }
-    .decision-lightbox-options {
-      display: flex;
-      flex-direction: column;
-      gap: 8px;
-      margin-bottom: 16px;
-    }
-    .decision-lightbox-opt {
-      background: rgba(212, 160, 23, 0.1);
-      border: 1px solid #d4a01744;
-      border-radius: 6px;
-      padding: 10px 14px;
-      color: #d0b050;
-      font-size: 14px;
-      cursor: pointer;
-      text-align: left;
-      transition: background 0.1s, border-color 0.1s;
-    }
-    .decision-lightbox-opt:hover { background: rgba(212, 160, 23, 0.2); border-color: #d4a017; }
-    .decision-lightbox-opt:focus-visible { outline: 2px solid #d4a017; outline-offset: 2px; }
-    .decision-lightbox-opt.selected { background: rgba(45, 138, 78, 0.15); border-color: #2d8a4e; color: #80c080; }
-    .decision-lightbox-opt-label { font-weight: 600; }
-    .decision-lightbox-opt-desc { font-size: 12px; color: #999; margin-top: 2px; }
-    .decision-lightbox-input {
-      width: 100%;
-      min-height: 60px;
-      background: rgba(0,0,0,0.3);
-      border: 1px solid #2a2a3a;
-      border-radius: 4px;
-      color: #ccc;
-      font-family: inherit;
-      font-size: 13px;
-      padding: 8px 10px;
-      resize: vertical;
-    }
-    .decision-lightbox-input:focus { border-color: #d4a017; outline: none; }
-    .decision-lightbox-input::placeholder { color: #555; }
-    .decision-lightbox-empty {
-      color: #666;
-      text-align: center;
-      padding: 40px 20px;
-      font-size: 14px;
-    }
-    .decision-lightbox-resize {
-      position: absolute;
-      bottom: 0;
-      right: 0;
-      width: 16px;
-      height: 16px;
-      cursor: nwse-resize;
-      background: linear-gradient(135deg, transparent 50%, #d4a01744 50%);
-      border-radius: 0 0 8px 0;
-    }
-    .decision-lightbox-resize:hover { background: linear-gradient(135deg, transparent 50%, #d4a01788 50%); }
-    /* Responsive: stack on narrow screens */
-    @media (max-width: 600px) {
-      .decision-lightbox { min-width: 90vw; width: 95vw; top: 5%; max-height: 85vh; }
-      .decision-lightbox-body { flex-direction: column; }
-      .decision-lightbox-list { width: 100%; max-height: 120px; border-right: none; border-bottom: 1px solid #1a1a2a; }
-    }
+    /* Duplicate CSS block removed — see consolidated lightbox styles below (bd-7m6td) */
 
     /* Doot-triggered issue popups (beads-edy1) */
     #doot-popups {
@@ -2130,10 +1947,11 @@
       75% { transform: translateX(6px); }
     }
 
-    /* Decision lightbox floating window (beads-zuc3) */
+    /* Decision lightbox floating window (beads-zuc3, bd-7m6td) */
+    /* z-index 10100/10101 ensures lightbox renders above all popups, toasts, and alerts */
     .decision-lightbox-backdrop {
       position: fixed; top: 0; left: 0; width: 100%; height: 100%;
-      background: rgba(0, 0, 0, 0.45); z-index: 499;
+      background: rgba(0, 0, 0, 0.45); z-index: 10100;
       opacity: 0; transition: opacity 0.2s;
     }
     .decision-lightbox-backdrop.show { opacity: 1; }
@@ -2141,7 +1959,7 @@
       position: fixed; top: 12%; left: 50%; transform: translateX(-50%);
       width: 680px; min-width: 380px; min-height: 280px; max-height: 72vh;
       background: rgba(12, 12, 25, 0.96); border: 1px solid #d4a017;
-      border-radius: 8px; z-index: 500; display: flex; flex-direction: column;
+      border-radius: 8px; z-index: 10101; display: flex; flex-direction: column;
       box-shadow: 0 0 30px rgba(212, 160, 23, 0.15), 0 8px 32px rgba(0, 0, 0, 0.6);
       opacity: 0; transform: translateX(-50%) translateY(12px);
       transition: opacity 0.25s, transform 0.25s;
@@ -2149,6 +1967,9 @@
     .decision-lightbox.show {
       opacity: 1; transform: translateX(-50%) translateY(0);
     }
+    /* Suppress popups/toasts when lightbox is visible — body gets .dlb-active class (bd-7m6td) */
+    .dlb-active #doot-popups { pointer-events: none !important; opacity: 0.3; }
+    .dlb-active .decision-toast { pointer-events: none !important; opacity: 0.3; }
     .decision-lightbox.resolved-border { border-color: #2d8a4e; box-shadow: 0 0 30px rgba(45, 138, 78, 0.15), 0 8px 32px rgba(0, 0, 0, 0.6); }
     .decision-lightbox-header {
       display: flex; align-items: center; padding: 10px 16px;
@@ -2169,6 +1990,18 @@
     }
     .decision-lightbox-close:hover { color: #ff4444; }
     .decision-lightbox-close:focus-visible { outline: 2px solid #4a9eff; outline-offset: 2px; }
+    .decision-lightbox-btn {
+      background: none; border: none; color: #888; font-size: 16px;
+      cursor: pointer; padding: 2px 6px; border-radius: 3px; line-height: 1;
+    }
+    .decision-lightbox-btn:hover { color: #ccc; background: rgba(255,255,255,0.08); }
+    .decision-lightbox-btn:focus-visible { outline: 2px solid #d4a017; outline-offset: 2px; }
+    .decision-lightbox-resize {
+      position: absolute; bottom: 0; right: 0; width: 16px; height: 16px;
+      cursor: nwse-resize; background: linear-gradient(135deg, transparent 50%, #d4a01744 50%);
+      border-radius: 0 0 8px 0;
+    }
+    .decision-lightbox-resize:hover { background: linear-gradient(135deg, transparent 50%, #d4a01788 50%); }
     .decision-lightbox-body {
       display: flex; flex: 1; overflow: hidden; min-height: 0;
     }
@@ -2947,19 +2780,7 @@
     </div>
   </aside>
 
-  <!-- Decision lightbox (beads-zuc3) -->
-  <div id="decision-lightbox-backdrop" class="decision-lightbox-backdrop" style="display:none" aria-hidden="true"></div>
-  <div id="decision-lightbox" class="decision-lightbox" role="dialog" aria-modal="true" aria-label="Decision center" style="display:none" aria-hidden="true">
-    <div class="decision-lightbox-header" id="dlb-header">
-      <span class="decision-lightbox-title">DECISIONS</span>
-      <span class="decision-lightbox-badge zero" id="dlb-badge">0</span>
-      <button class="decision-lightbox-close" id="dlb-close" aria-label="Close decision center">&times;</button>
-    </div>
-    <div class="decision-lightbox-body">
-      <div class="decision-lightbox-list" id="dlb-list" role="listbox" aria-label="Decision list"></div>
-      <div class="decision-lightbox-detail" id="dlb-detail"></div>
-    </div>
-  </div>
+  <!-- Duplicate lightbox HTML removed (bd-7m6td) — see beads-f29q lightbox above -->
 
   <div id="detail" role="complementary" aria-label="Issue detail panel"></div>
   <div id="context-menu" role="menu" aria-label="Context menu"></div>
