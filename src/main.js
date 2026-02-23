@@ -7,10 +7,10 @@ import { nodeColor, nodeSize, linkColor, colorToHex, rigColor } from './colors.j
 import { createFresnelMaterial, createStarField, updateShaderTime, createMateriaMaterial, createMateriaHaloTexture, createParticlePool, createFairyLights } from './shaders.js';
 import { LINK_ICON_MATERIALS, LINK_ICON_DEFAULT, LINK_ICON_SCALE } from './link-icons.js';
 import { initRightSidebar, updateRightSidebar, updateEpicProgress, updateDepHealth, updateDecisionQueue, setOnNodeClick } from './right-sidebar.js';
-import { dootLabel, dootColor, formatToolLabel, resolveAgentIdLoose, TOOL_ICONS } from './event-format.js';
+import { dootLabel, dootColor, resolveAgentIdLoose } from './event-format.js';
 import { setFilterDeps, toggleFilterDashboard, syncFilterDashboard, updateAssigneeButtons, initFilterDashboard, updateFilterCount } from './filter-dashboard.js';
 import { setDetailDeps, showDetail, hideDetail } from './detail-panel.js';
-import { setLeftSidebarDeps, toggleLeftSidebar, initLeftSidebar, updateAgentRosterFromEvent, updateLeftSidebarFocus, getLeftSidebarOpen, setLeftSidebarOpen, formatDuration, escapeStatusText, startLeftSidebarIdleTimer } from './left-sidebar.js';
+import { setLeftSidebarDeps, toggleLeftSidebar, initLeftSidebar, updateAgentRosterFromEvent, updateLeftSidebarFocus, getLeftSidebarOpen, setLeftSidebarOpen, startLeftSidebarIdleTimer } from './left-sidebar.js';
 
 // --- Config ---
 const params = new URLSearchParams(window.location.search);
@@ -121,13 +121,7 @@ let css2dRenderer = null; // CSS2DRenderer instance
 // Doot-triggered issue popups — auto-dismissing cards when doots fire (beads-edy1)
 const dootPopups = new Map(); // nodeId → { el, timer, node, lastDoot }
 
-// Agent activity feed windows — rich session transcript popups (bd-kau4k)
-// bd-5ok9s: enhanced status: lastStatus, lastTool, idleSince, crashError
-const agentWindows = new Map();
-
-// Agents View overlay state (bd-jgvas, bd-bwi52: tabbed)
-let agentsViewOpen = false;
-let _selectedAgentTab = null; // currently selected agent ID in tabbed view
+// Agent windows, agents view state moved to agent-windows.js (bd-7t6nt)
 
 // Left Sidebar state (bd-nnr22)
 // leftSidebarOpen, _agentRoster moved to left-sidebar.js (bd-7t6nt)
@@ -258,6 +252,99 @@ function updateInProgressAura(t) {
 function intensifyAura(nodeId) {
   const state = _auraEmitters.get(nodeId);
   if (state) state.intensifyUntil = performance.now() / 1000 + 1.0;
+}
+
+
+// --- FPS counter + performance monitoring overlay (bd-8nx79) ---
+let _perfOverlayVisible = false;
+let _perfGraphVisible = false;
+const _frameTimes = []; // last 120 frame times (ms)
+const _fpsHistory = []; // last 60 FPS values
+let _lastFrameTime = 0;
+let _perfOverlayEl = null;
+let _perfCanvasEl = null;
+
+function createPerfOverlay() {
+  if (_perfOverlayEl) return;
+  const el = document.createElement('div');
+  el.id = 'perf-overlay';
+  el.style.cssText = 'position:fixed;top:8px;right:8px;z-index:10000;font-family:monospace;font-size:11px;background:rgba(0,0,5,0.85);color:#ccc;padding:6px 10px;border-radius:4px;border:1px solid #2a2a3a;pointer-events:none;display:none;min-width:120px;';
+  el.innerHTML = '<div id="perf-fps" style="font-size:14px;font-weight:bold">-- FPS</div><canvas id="perf-graph" width="120" height="30" style="display:none;margin-top:4px;border:1px solid #222"></canvas><div id="perf-stats" style="margin-top:4px;font-size:9px;color:#888;line-height:1.4"></div>';
+  document.body.appendChild(el);
+  _perfOverlayEl = el;
+  _perfCanvasEl = document.getElementById('perf-graph');
+}
+
+function updatePerfOverlay(t) {
+  if (!_perfOverlayVisible || !_perfOverlayEl) return;
+  const now = performance.now();
+  const frameMs = _lastFrameTime > 0 ? now - _lastFrameTime : 16.67;
+  _lastFrameTime = now;
+  _frameTimes.push(frameMs);
+  if (_frameTimes.length > 120) _frameTimes.shift();
+  const fps = Math.round(1000 / frameMs);
+  _fpsHistory.push(fps);
+  if (_fpsHistory.length > 60) _fpsHistory.shift();
+  const avgFps = Math.round(_fpsHistory.reduce((a, b) => a + b, 0) / _fpsHistory.length);
+
+  // FPS display with color coding
+  const fpsEl = document.getElementById('perf-fps');
+  if (fpsEl) {
+    const color = avgFps > 50 ? '#2d8a4e' : avgFps > 30 ? '#d4a017' : '#d04040';
+    fpsEl.textContent = avgFps + ' FPS';
+    fpsEl.style.color = color;
+  }
+
+  // Frame time sparkline graph
+  if (_perfGraphVisible && _perfCanvasEl) {
+    _perfCanvasEl.style.display = 'block';
+    const ctx = _perfCanvasEl.getContext('2d');
+    const w = 120, h = 30;
+    ctx.clearRect(0, 0, w, h);
+    ctx.fillStyle = 'rgba(0,0,5,0.5)';
+    ctx.fillRect(0, 0, w, h);
+    const maxMs = 50;
+    for (let i = 0; i < _frameTimes.length; i++) {
+      const x = (i / 120) * w;
+      const barH = Math.min(_frameTimes[i] / maxMs, 1) * h;
+      ctx.fillStyle = _frameTimes[i] > 33 ? '#d04040' : '#2d8a4e';
+      ctx.fillRect(x, h - barH, Math.max(w / 120, 1), barH);
+    }
+    // 30fps threshold line
+    ctx.strokeStyle = '#d4a01744';
+    ctx.beginPath();
+    ctx.moveTo(0, h - (33 / maxMs) * h);
+    ctx.lineTo(w, h - (33 / maxMs) * h);
+    ctx.stroke();
+  } else if (_perfCanvasEl) {
+    _perfCanvasEl.style.display = 'none';
+  }
+
+  // Memory + object stats (every 30 frames to avoid thrashing)
+  if (_fpsHistory.length % 30 === 0) {
+    const statsEl = document.getElementById('perf-stats');
+    if (statsEl) {
+      const lines = [];
+      const mem = performance.memory;
+      if (mem) lines.push('heap: ' + (mem.usedJSHeapSize / 1048576).toFixed(1) + ' / ' + (mem.totalJSHeapSize / 1048576).toFixed(1) + ' MB');
+      if (_particlePool) lines.push('particles: ' + _particlePool.activeCount + ' / 2000');
+      if (graphData) lines.push('nodes: ' + graphData.nodes.length + '  links: ' + graphData.links.length);
+      lines.push('sprites: ' + eventSprites.length);
+      if (_auraEmitters) lines.push('auras: ' + _auraEmitters.size);
+      statsEl.innerHTML = lines.join('<br>');
+    }
+  }
+}
+
+function togglePerfOverlay() {
+  createPerfOverlay();
+  _perfOverlayVisible = !_perfOverlayVisible;
+  _perfOverlayEl.style.display = _perfOverlayVisible ? 'block' : 'none';
+  if (!_perfOverlayVisible) _lastFrameTime = 0;
+}
+
+function togglePerfGraph() {
+  _perfGraphVisible = !_perfGraphVisible;
 }
 
 // Agent tether strength — 0 = off, 1 = max pull (bd-uzj5j)
@@ -2551,6 +2638,7 @@ function startAnimation() {
 
     // Update event sprites — status pulses + edge sparks (bd-9qeto)
     updateEventSprites(t);
+    updatePerfOverlay(t);
 
     // Camera shake for shockwave effects (bd-3fnon)
     if (_cameraShake) {
@@ -4788,7 +4876,7 @@ function setupControls() {
     showAgentWindow,
     openAgentTab: (node) => {
       // bd-bwi52: open agents view + select tab for this agent
-      if (agentsViewOpen) {
+      if (getAgentsViewOpen()) {
         selectAgentTab(node.id);
       } else {
         openAgentsView();
@@ -4797,6 +4885,13 @@ function setupControls() {
     },
     showStatusToast,
     getGraph: () => graph,
+  });
+
+  // Agent windows (bd-7t6nt) — wire dependencies
+  setAgentWindowDeps({
+    api,
+    getGraphData: () => graphData,
+    handleNodeClick,
   });
 
   // Keyboard shortcuts
@@ -4830,7 +4925,7 @@ function setupControls() {
       }
 
       // Close Agents View if open (bd-jgvas)
-      if (agentsViewOpen) {
+      if (getAgentsViewOpen()) {
         // If search is focused and has text, clear it first
         const avSearch = document.querySelector('.agents-view-search');
         if (avSearch && document.activeElement === avSearch && avSearch.value) {
@@ -4870,6 +4965,16 @@ function setupControls() {
     if (e.key === 'r' && !isTextInputFocused()) {
       refresh();
     }
+    // Performance overlay: backtick toggles, ~ toggles frame graph (bd-8nx79)
+    if (e.key === '`' && !e.shiftKey && !isTextInputFocused()) { togglePerfOverlay(); return; }
+    if (e.key === '~' && !isTextInputFocused()) { togglePerfGraph(); return; }
+    // VFX intensity: [ ] to adjust, Shift+1-4 for presets (bd-epyyu)
+    if (e.key === '[' && !isTextInputFocused()) { setVfxIntensity(_vfxConfig.intensity - 0.25); return; }
+    if (e.key === ']' && !isTextInputFocused()) { setVfxIntensity(_vfxConfig.intensity + 0.25); return; }
+    if (e.shiftKey && e.key === '!' && !isTextInputFocused()) { presetVFX('subtle'); return; }
+    if (e.shiftKey && e.key === '@' && !isTextInputFocused()) { presetVFX('normal'); return; }
+    if (e.shiftKey && e.key === '#' && !isTextInputFocused()) { presetVFX('dramatic'); return; }
+    if (e.shiftKey && e.key === '$' && !isTextInputFocused()) { presetVFX('maximum'); return; }
     // 'b' to toggle bloom (ignore key repeat to prevent rapid on/off — beads-p97b)
     if (e.key === 'b' && !e.repeat && !isTextInputFocused()) {
       btnBloom.click();
@@ -5505,246 +5610,8 @@ function createDootPopupContainer() {
   document.body.appendChild(c);
   return c;
 }
+// showAgentWindow through enableTopResize moved to agent-windows.js (bd-7t6nt)
 
-// Agent activity feed windows moved to agent-windows.js (bd-7t6nt)
-
-// bd-tgg70: Re-render beads lists in all open agent windows after graph refresh
-function refreshAgentWindowBeads() {
-  for (const [agentId, win] of agentWindows) {
-    const assigned = getAssignedBeads(agentId);
-    const beadsList = renderBeadsListHtml(assigned);
-
-    // Update the count badge in the header (the one without inline color style)
-    const badges = win.el.querySelectorAll('.agent-window-header .agent-window-badge');
-    for (const b of badges) {
-      if (!b.style.color) { b.textContent = assigned.length; break; }
-    }
-
-    // Update or create the beads container
-    let beadsContainer = win.el.querySelector('.agent-window-beads');
-    if (beadsList) {
-      if (!beadsContainer) {
-        beadsContainer = document.createElement('div');
-        beadsContainer.className = 'agent-window-beads';
-        // Insert after status bar, before feed
-        const feed = win.el.querySelector('.agent-feed');
-        if (feed) win.el.insertBefore(beadsContainer, feed);
-      }
-      beadsContainer.innerHTML = beadsList;
-      // Re-attach click handler (bd-xm78e)
-      beadsContainer.onclick = (e) => {
-        const beadEl = e.target.closest('.agent-window-bead');
-        if (!beadEl) return;
-        const beadId = beadEl.dataset.beadId;
-        if (!beadId) return;
-        e.stopPropagation();
-        const beadNode = graphData.nodes.find(n => n.id === beadId);
-        if (beadNode) handleNodeClick(beadNode);
-      };
-    } else if (beadsContainer) {
-      beadsContainer.remove();
-    }
-  }
-}
-
-// bd-7h9sd: Unified agent window creation — creates a hidden agent-window element
-// for event tracking and adds a compact tab chip to the bottom tray.
-// The full tabbed view is in the agents-view overlay (Shift+A or click chip).
-function showAgentWindow(node) {
-  if (!node || !node.id) return;
-
-  // If already tracked, just open the overlay
-  if (agentWindows.has(node.id)) {
-    openAgentsView();
-    selectAgentTab(node.id);
-    return;
-  }
-
-  // Create a hidden agent-window element for event tracking (feeds, status)
-  const el = document.createElement('div');
-  el.className = 'agent-window';
-  el.dataset.agentId = node.id;
-  el.style.display = 'none'; // hidden — only shown in tabbed overlay
-
-  const agentName = node.title || node.id.replace('agent:', '');
-  const initStatus = (node.status || '').toLowerCase();
-  const initStatusClass = initStatus === 'active' ? 'status-active' : initStatus === 'idle' ? 'status-idle' : initStatus === 'crashed' ? 'status-crashed' : '';
-
-  el.innerHTML = `
-    <div class="agent-window-header">
-      <span class="agent-window-name">${escapeHtml(agentName)}</span>
-    </div>
-    <div class="agent-status-bar">
-      <span><span class="status-label">Status:</span> <span class="agent-status-state ${initStatusClass}">${initStatus || '?'}</span></span>
-      <span class="agent-status-idle-dur"></span>
-      <span class="agent-status-tool"></span>
-    </div>
-    <div class="agent-feed"><div class="agent-window-empty">waiting for events...</div></div>
-    <div class="agent-mail-compose">
-      <input class="agent-mail-input" type="text" placeholder="Send message to ${escapeHtml(agentName)}..." />
-      <button class="agent-mail-send">&#x2709;</button>
-    </div>
-  `;
-
-  // Store in a hidden container
-  const container = document.getElementById('agent-windows');
-  if (container) container.appendChild(el);
-
-  const feedEl = el.querySelector('.agent-feed');
-  const statusEl = el.querySelector('.agent-status-bar');
-  agentWindows.set(node.id, {
-    el, feedEl, statusEl, node,
-    entries: [],
-    pendingTool: null,
-    collapsed: false,
-    lastStatus: initStatus || null,
-    lastTool: null,
-    idleSince: initStatus === 'idle' ? Date.now() : null,
-    crashError: null,
-  });
-
-  // Add compact tab chip to bottom tray (bd-7h9sd)
-  _addBottomTrayChip(node);
-}
-
-// bd-7h9sd: Add a compact agent chip to the bottom tray
-function _addBottomTrayChip(node) {
-  const container = document.getElementById('agent-windows');
-  if (!container) return;
-  const agentName = node.title || node.id.replace('agent:', '');
-  const status = (node.status || '').toLowerCase();
-  const dotColor = status === 'active' ? '#2d8a4e' :
-                   status === 'idle' ? '#d4a017' :
-                   status === 'crashed' ? '#d04040' : '#666';
-
-  const chip = document.createElement('button');
-  chip.className = 'agent-tray-chip';
-  chip.dataset.agentId = node.id;
-  chip.innerHTML = `<span class="agent-tray-dot" style="background:${dotColor}"></span>${escapeHtml(agentName)}`;
-  chip.onclick = () => {
-    openAgentsView();
-    selectAgentTab(node.id);
-  };
-  container.appendChild(chip);
-}
-
-function closeAgentWindow(agentId) {
-  const win = agentWindows.get(agentId);
-  if (!win) return;
-  if (win._dragCleanup) { win._dragCleanup(); win._dragCleanup = null; }
-  win.el.remove();
-  agentWindows.delete(agentId);
-  // bd-7h9sd: Remove bottom tray chip
-  const chip = document.querySelector(`.agent-tray-chip[data-agent-id="${agentId}"]`);
-  if (chip) chip.remove();
-}
-
-// bd-dqe6k: Pop-out / dock-back agent windows
-function togglePopout(agentId) {
-  const win = agentWindows.get(agentId);
-  if (!win) return;
-  const el = win.el;
-  const btn = el.querySelector('.agent-window-popout');
-
-  if (el.classList.contains('popped-out')) {
-    // Dock back: return to tray or grid
-    el.classList.remove('popped-out');
-    el.style.left = '';
-    el.style.top = '';
-    el.style.width = '';
-    el.style.height = '';
-    btn.innerHTML = '&#x2197;';
-    btn.title = 'Pop out to floating window';
-    // Move back to original container (bd-bwi52: use tab content area)
-    const tray = document.getElementById('agent-windows');
-    const tabContent = document.querySelector('.agents-tab-content');
-    if (tabContent && document.getElementById('agents-view')?.classList.contains('open')) {
-      tabContent.appendChild(el);
-    } else if (tray) {
-      tray.appendChild(el);
-    }
-    // Remove drag listeners
-    if (win._dragCleanup) { win._dragCleanup(); win._dragCleanup = null; }
-  } else {
-    // Pop out: detach to fixed floating window
-    const rect = el.getBoundingClientRect();
-    el.classList.add('popped-out');
-    // Position where it was, clamped to viewport
-    el.style.left = Math.min(rect.left, window.innerWidth - 440) + 'px';
-    el.style.top = Math.max(20, rect.top - 60) + 'px';
-    btn.innerHTML = '&#x2199;';
-    btn.title = 'Dock back to tray';
-    // Move to body so it floats above everything
-    document.body.appendChild(el);
-    // Enable drag on header
-    win._dragCleanup = enableHeaderDrag(el);
-  }
-}
-
-function enableHeaderDrag(el) {
-  const header = el.querySelector('.agent-window-header');
-  let dragging = false, startX = 0, startY = 0, origLeft = 0, origTop = 0;
-
-  function onMouseDown(e) {
-    // Don't drag if clicking buttons or name
-    if (e.target.closest('button') || e.target.closest('.agent-window-name')) return;
-    dragging = true;
-    startX = e.clientX;
-    startY = e.clientY;
-    origLeft = parseInt(el.style.left) || 0;
-    origTop = parseInt(el.style.top) || 0;
-    e.preventDefault();
-  }
-  function onMouseMove(e) {
-    if (!dragging) return;
-    const dx = e.clientX - startX;
-    const dy = e.clientY - startY;
-    el.style.left = (origLeft + dx) + 'px';
-    el.style.top = (origTop + dy) + 'px';
-  }
-  function onMouseUp() {
-    dragging = false;
-  }
-
-  header.addEventListener('mousedown', onMouseDown);
-  document.addEventListener('mousemove', onMouseMove);
-  document.addEventListener('mouseup', onMouseUp);
-
-  // Return cleanup function
-  return () => {
-    header.removeEventListener('mousedown', onMouseDown);
-    document.removeEventListener('mousemove', onMouseMove);
-    document.removeEventListener('mouseup', onMouseUp);
-  };
-}
-
-// bd-9wxm9: Enable top-edge resize on agent windows (drag upward to expand)
-function enableTopResize(el) {
-  const handle = el.querySelector('.agent-window-resize-handle');
-  if (!handle) return;
-  let resizing = false, startY = 0, origHeight = 0;
-
-  handle.addEventListener('mousedown', (e) => {
-    resizing = true;
-    startY = e.clientY;
-    origHeight = el.offsetHeight;
-    handle.classList.add('active');
-    el.style.transition = 'none'; // disable height transition while dragging
-    e.preventDefault();
-  });
-  document.addEventListener('mousemove', (e) => {
-    if (!resizing) return;
-    const dy = startY - e.clientY; // drag up = positive
-    const newH = Math.max(100, Math.min(window.innerHeight - 40, origHeight + dy));
-    el.style.height = newH + 'px';
-  });
-  document.addEventListener('mouseup', () => {
-    if (!resizing) return;
-    resizing = false;
-    handle.classList.remove('active');
-    el.style.transition = '';
-  });
-}
 
 // Right sidebar moved to right-sidebar.js (bd-7t6nt)
 
@@ -6334,666 +6201,9 @@ function initControlPanel() {
   });
 }
 
-// --- Agents View overlay — Shift+A (bd-jgvas) ---
 
-function toggleAgentsView() {
-  if (agentsViewOpen) {
-    closeAgentsView();
-  } else {
-    openAgentsView();
-  }
-}
+// openAgentsView through autoScroll moved to agent-windows.js (bd-7t6nt)
 
-function openAgentsView() {
-  const overlay = document.getElementById('agents-view');
-  if (!overlay || !graphData) return;
-
-  // Collect all agent nodes from graph
-  const agentNodes = graphData.nodes.filter(n => n.issue_type === 'agent' && !n._hidden);
-  if (agentNodes.length === 0) return;
-
-  // Sort: active first, idle second, rest last; alphabetical within group
-  const statusOrder = { active: 0, idle: 1 };
-  agentNodes.sort((a, b) => {
-    const sa = statusOrder[a.status] ?? 2;
-    const sb = statusOrder[b.status] ?? 2;
-    if (sa !== sb) return sa - sb;
-    return (a.title || a.id).localeCompare(b.title || b.id);
-  });
-
-  // Count by status
-  const counts = { active: 0, idle: 0, crashed: 0 };
-  for (const n of agentNodes) {
-    if (n.status === 'active') counts.active++;
-    else if (n.status === 'idle') counts.idle++;
-    else if (n.status === 'crashed') counts.crashed++;
-  }
-
-  // bd-bwi52: Tabbed single-panel interface (replaces grid)
-  overlay.innerHTML = `
-    <div class="agents-view-header">
-      <span class="agents-view-title">AGENTS</span>
-      <input class="agents-view-search" type="text" placeholder="filter agents..." />
-      <div class="agents-view-stats">
-        <span class="active">${counts.active} active</span>
-        <span class="idle">${counts.idle} idle</span>
-        ${counts.crashed ? `<span class="crashed">${counts.crashed} crashed</span>` : ''}
-        <span>${agentNodes.length} total</span>
-      </div>
-      <button class="agents-view-close">ESC close</button>
-    </div>
-    <div class="agents-tab-bar"></div>
-    <div class="agents-tab-content"></div>
-  `;
-
-  overlay.querySelector('.agents-view-close').onclick = () => closeAgentsView();
-
-  // Filter/search: filter tabs by name (bd-jgvas Phase 2, bd-bwi52)
-  const searchEl = overlay.querySelector('.agents-view-search');
-  searchEl.addEventListener('input', () => {
-    const q = searchEl.value.toLowerCase().trim();
-    const tabBar = overlay.querySelector('.agents-tab-bar');
-    if (!tabBar) return;
-    for (const tab of tabBar.children) {
-      const name = (tab.dataset.agentName || '').toLowerCase();
-      tab.style.display = (!q || name.includes(q)) ? '' : 'none';
-    }
-  });
-  setTimeout(() => searchEl.focus(), 100);
-
-  const tabBar = overlay.querySelector('.agents-tab-bar');
-  const contentArea = overlay.querySelector('.agents-tab-content');
-
-  // Ensure agent windows exist for all agents
-  for (const node of agentNodes) {
-    _ensureAgentWindow(node, contentArea);
-    // Create tab button
-    const agentName = node.title || node.id.replace('agent:', '');
-    const agentStatus = (node.status || '').toLowerCase();
-    const tab = document.createElement('button');
-    tab.className = 'agent-tab';
-    tab.dataset.agentId = node.id;
-    tab.dataset.agentName = agentName;
-    const dotColor = agentStatus === 'active' ? '#2d8a4e' :
-                     agentStatus === 'idle' ? '#d4a017' :
-                     agentStatus === 'crashed' ? '#d04040' : '#666';
-    tab.innerHTML = `<span class="agent-tab-dot" style="background:${dotColor}"></span>${escapeHtml(agentName)}`;
-    tab.onclick = () => selectAgentTab(node.id);
-    tabBar.appendChild(tab);
-  }
-
-  // Select first agent or previously selected
-  const firstId = (_selectedAgentTab && agentNodes.find(n => n.id === _selectedAgentTab))
-    ? _selectedAgentTab : agentNodes[0].id;
-  selectAgentTab(firstId);
-
-  overlay.classList.add('open');
-  agentsViewOpen = true;
-}
-
-// bd-bwi52: Ensure an agent window (data + DOM) exists, placing it in contentArea
-function _ensureAgentWindow(node, contentArea) {
-  const existing = agentWindows.get(node.id);
-  if (existing) {
-    // Move into content area (from bottom tray or previous location)
-    existing.collapsed = false;
-    existing.el.classList.remove('collapsed');
-    contentArea.appendChild(existing.el);
-    return;
-  }
-
-  const el = document.createElement('div');
-  el.className = 'agent-window';
-  el.dataset.agentId = node.id;
-
-  const agentName = node.title || node.id.replace('agent:', '');
-  const agentStatus = (node.status || '').toLowerCase();
-  const statusColor = agentStatus === 'active' ? '#2d8a4e' :
-                       agentStatus === 'idle' ? '#d4a017' :
-                       agentStatus === 'crashed' ? '#d04040' : '#666';
-
-  const assigned = getAssignedBeads(node.id);
-  const beadsList = renderBeadsListHtml(assigned);
-
-  const avRigBadge = node.rig
-    ? `<span class="agent-window-rig" style="color:${rigColor(node.rig)};border-color:${rigColor(node.rig)}33">${escapeHtml(node.rig)}</span>`
-    : '';
-
-  const avStatusClass = agentStatus === 'active' ? 'status-active' : agentStatus === 'idle' ? 'status-idle' : agentStatus === 'crashed' ? 'status-crashed' : '';
-
-  el.innerHTML = `
-    <div class="agent-window-header">
-      <span class="agent-window-name" style="cursor:pointer" title="Click to zoom to agent">${escapeHtml(agentName)}</span>
-      ${avRigBadge}
-      <span class="agent-window-badge" style="color:${statusColor}">${agentStatus || '?'}</span>
-      <span class="agent-window-badge">${assigned.length}</span>
-    </div>
-    <div class="agent-status-bar">
-      <span><span class="status-label">Status:</span> <span class="agent-status-state ${avStatusClass}">${agentStatus || '?'}</span></span>
-      <span class="agent-status-idle-dur"></span>
-      <span class="agent-status-tool"></span>
-    </div>
-    ${beadsList ? `<div class="agent-window-beads">${beadsList}</div>` : ''}
-    <div class="agent-feed"><div class="agent-window-empty">waiting for events...</div></div>
-    <div class="agent-mail-compose">
-      <input class="agent-mail-input" type="text" placeholder="Send message to ${escapeHtml(agentName)}..." />
-      <button class="agent-mail-send">&#x2709;</button>
-    </div>
-  `;
-
-  el.querySelector('.agent-window-name').onclick = (e) => {
-    e.stopPropagation();
-    const agentNode = graphData.nodes.find(n => n.id === node.id);
-    if (agentNode) handleNodeClick(agentNode);
-  };
-
-  const beadsContainer = el.querySelector('.agent-window-beads');
-  if (beadsContainer) {
-    beadsContainer.onclick = (e) => {
-      const beadEl = e.target.closest('.agent-window-bead');
-      if (!beadEl) return;
-      const beadId = beadEl.dataset.beadId;
-      if (!beadId) return;
-      e.stopPropagation();
-      const beadNode = graphData.nodes.find(n => n.id === beadId);
-      if (beadNode) handleNodeClick(beadNode);
-    };
-  }
-
-  // Mail compose
-  const mailInput = el.querySelector('.agent-mail-input');
-  const mailSend = el.querySelector('.agent-mail-send');
-  const doSend = async () => {
-    const text = mailInput.value.trim();
-    if (!text) return;
-    mailInput.value = '';
-    mailInput.disabled = true;
-    mailSend.disabled = true;
-    try {
-      await api.sendMail(agentName, text);
-      const win = agentWindows.get(node.id);
-      if (win) {
-        const empty = win.feedEl.querySelector('.agent-window-empty');
-        if (empty) empty.remove();
-        const ts = new Date().toTimeString().slice(0, 8);
-        win.feedEl.appendChild(createEntry(ts, '\u25b6', `sent: ${text}`, 'mail mail-sent'));
-        autoScroll(win);
-      }
-    } catch (err) {
-      console.error('[beads3d] mail send failed:', err);
-      mailInput.value = text;
-      const compose = el.querySelector('.agent-mail-compose');
-      compose.classList.add('send-error');
-      setTimeout(() => compose.classList.remove('send-error'), 2000);
-    }
-    mailInput.disabled = false;
-    mailSend.disabled = false;
-    mailInput.focus();
-  };
-  mailSend.onclick = doSend;
-  mailInput.onkeydown = (e) => { if (e.key === 'Enter') doSend(); };
-
-  contentArea.appendChild(el);
-
-  const feedEl = el.querySelector('.agent-feed');
-  const statusEl = el.querySelector('.agent-status-bar');
-  agentWindows.set(node.id, {
-    el, feedEl, statusEl, node,
-    entries: [],
-    pendingTool: null,
-    collapsed: false,
-    lastStatus: agentStatus || null,
-    lastTool: null,
-    idleSince: agentStatus === 'idle' ? Date.now() : null,
-    crashError: null,
-  });
-}
-
-// bd-bwi52: Switch to an agent's tab
-function selectAgentTab(agentId) {
-  _selectedAgentTab = agentId;
-  const overlay = document.getElementById('agents-view');
-  if (!overlay) return;
-
-  // Update tab bar active state + clear unread badge on selected tab (bd-hubs7)
-  const tabs = overlay.querySelectorAll('.agent-tab');
-  for (const tab of tabs) {
-    const isActive = tab.dataset.agentId === agentId;
-    tab.classList.toggle('active', isActive);
-    if (isActive) {
-      const badge = tab.querySelector('.agent-tab-unread');
-      if (badge) badge.remove();
-    }
-  }
-
-  // Show only the selected agent's window
-  const contentArea = overlay.querySelector('.agents-tab-content');
-  if (contentArea) {
-    for (const child of contentArea.children) {
-      child.style.display = (child.dataset.agentId === agentId) ? '' : 'none';
-    }
-  }
-
-  // Scroll feed to bottom
-  const win = agentWindows.get(agentId);
-  if (win) autoScroll(win);
-}
-
-// bd-hubs7: Update tab status dot color from lifecycle events
-function _updateTabStatus(agentId, status) {
-  const color = status === 'active' ? '#2d8a4e' :
-                status === 'idle' ? '#d4a017' :
-                status === 'crashed' ? '#d04040' : '#666';
-  // Update overlay tab dot (bd-hubs7)
-  if (agentsViewOpen) {
-    const overlay = document.getElementById('agents-view');
-    if (overlay) {
-      const dot = overlay.querySelector(`.agent-tab[data-agent-id="${agentId}"] .agent-tab-dot`);
-      if (dot) dot.style.background = color;
-    }
-  }
-  // Update bottom tray chip dot (bd-7h9sd)
-  const chip = document.querySelector(`.agent-tray-chip[data-agent-id="${agentId}"] .agent-tray-dot`);
-  if (chip) chip.style.background = color;
-}
-
-// bd-hubs7: Increment unread badge on non-selected tabs
-function _incrementTabUnread(agentId) {
-  if (!agentsViewOpen || agentId === _selectedAgentTab) return;
-  const overlay = document.getElementById('agents-view');
-  if (!overlay) return;
-  const tab = overlay.querySelector(`.agent-tab[data-agent-id="${agentId}"]`);
-  if (!tab) return;
-  let badge = tab.querySelector('.agent-tab-unread');
-  if (!badge) {
-    badge = document.createElement('span');
-    badge.className = 'agent-tab-unread';
-    badge.textContent = '1';
-    tab.appendChild(badge);
-  } else {
-    const count = parseInt(badge.textContent || '0', 10) + 1;
-    badge.textContent = count > 99 ? '99+' : String(count);
-  }
-}
-
-function closeAgentsView() {
-  const overlay = document.getElementById('agents-view');
-  if (!overlay) return;
-
-  // bd-7h9sd: Move windows back to hidden container (not visible in tray)
-  const tray = document.getElementById('agent-windows');
-  if (tray) {
-    for (const [, win] of agentWindows) {
-      if (win.el.parentElement !== tray) {
-        win.el.style.display = 'none'; // keep hidden in tray
-        tray.appendChild(win.el);
-      }
-    }
-  }
-
-  overlay.classList.remove('open');
-  overlay.innerHTML = '';
-  agentsViewOpen = false;
-}
-
-// bd-bwi52: Create agent window inside tabbed view + add tab button
-function createAgentWindowInGrid(node) {
-  if (!node || agentWindows.has(node.id)) return;
-  const overlay = document.getElementById('agents-view');
-  if (!overlay) return;
-  const contentArea = overlay.querySelector('.agents-tab-content');
-  if (!contentArea) return;
-
-  _ensureAgentWindow(node, contentArea);
-
-  // Add tab button
-  const tabBar = overlay.querySelector('.agents-tab-bar');
-  if (tabBar) {
-    const agentName = node.title || node.id.replace('agent:', '');
-    const agentStatus = (node.status || '').toLowerCase();
-    const dotColor = agentStatus === 'active' ? '#2d8a4e' :
-                     agentStatus === 'idle' ? '#d4a017' :
-                     agentStatus === 'crashed' ? '#d04040' : '#666';
-    const tab = document.createElement('button');
-    tab.className = 'agent-tab';
-    tab.dataset.agentId = node.id;
-    tab.dataset.agentName = agentName;
-    tab.innerHTML = `<span class="agent-tab-dot" style="background:${dotColor}"></span>${escapeHtml(agentName)}`;
-    tab.onclick = () => selectAgentTab(node.id);
-    tabBar.appendChild(tab);
-  }
-
-  // Hide if not currently selected
-  const win = agentWindows.get(node.id);
-  if (win && _selectedAgentTab && _selectedAgentTab !== node.id) {
-    win.el.style.display = 'none';
-  }
-
-  updateAgentsViewStats();
-}
-
-// Update the stats line in the overlay header (bd-jgvas Phase 2)
-function updateAgentsViewStats() {
-  const overlay = document.getElementById('agents-view');
-  if (!overlay) return;
-  const statsEl = overlay.querySelector('.agents-view-stats');
-  if (!statsEl || !graphData) return;
-  const agentNodes = graphData.nodes.filter(n => n.issue_type === 'agent' && !n._hidden);
-  const counts = { active: 0, idle: 0, crashed: 0 };
-  for (const n of agentNodes) {
-    if (n.status === 'active') counts.active++;
-    else if (n.status === 'idle') counts.idle++;
-    else if (n.status === 'crashed') counts.crashed++;
-  }
-  statsEl.innerHTML = `
-    <span class="active">${counts.active} active</span>
-    <span class="idle">${counts.idle} idle</span>
-    ${counts.crashed ? `<span class="crashed">${counts.crashed} crashed</span>` : ''}
-    <span>${agentNodes.length} total</span>
-  `;
-}
-
-// --- Unified Activity Stream (bd-9ndk0.3) ---
-const _unifiedFeed = { el: null, entries: [], maxEntries: 500, pendingTools: new Map() };
-function initUnifiedFeed() {
-  _unifiedFeed.el = document.getElementById('unified-feed');
-  if (!_unifiedFeed.el) return;
-  _unifiedFeed.el.innerHTML = '<div class="uf-empty">waiting for agent events...</div>';
-  // Toggle button
-  const toggleBtn = document.getElementById('unified-feed-toggle');
-  if (toggleBtn) {
-    toggleBtn.onclick = () => {
-      const active = _unifiedFeed.el.classList.toggle('active');
-      toggleBtn.textContent = active ? 'split' : 'unified';
-    };
-  }
-}
-function appendUnifiedEntry(agentId, evt) {
-  if (!_unifiedFeed.el) return;
-  const type = evt.type;
-  const p = evt.payload || {};
-  const ts = evt.ts ? new Date(evt.ts) : new Date();
-  const timeStr = ts.toTimeString().slice(0, 8);
-  // Extract short agent name from ID (e.g. "agent:cool-trout" → "cool-trout")
-  const agentName = agentId.replace(/^agent:/, '');
-
-  // Handle PreToolUse / PostToolUse pairing
-  if (type === 'PreToolUse') {
-    const label = formatToolLabel(p);
-    const toolClass = `tool-${(p.tool_name || 'tool').toLowerCase()}`;
-    const entry = createUnifiedEntry(timeStr, agentName, TOOL_ICONS[p.tool_name] || '·', label, toolClass + ' running');
-    _unifiedFeed.el.appendChild(entry);
-    _unifiedFeed.entries.push(entry);
-    _unifiedFeed.pendingTools.set(agentId, { entry, startTs: ts.getTime() });
-    trimUnifiedFeed();
-    autoScrollUnified();
-    return;
-  }
-  if (type === 'PostToolUse') {
-    const pending = _unifiedFeed.pendingTools.get(agentId);
-    if (pending) {
-      const dur = (ts.getTime() - pending.startTs) / 1000;
-      pending.entry.classList.remove('running');
-      const durEl = pending.entry.querySelector('.uf-entry-dur');
-      if (durEl && dur > 0.1) durEl.textContent = `${dur.toFixed(1)}s`;
-      const iconEl = pending.entry.querySelector('.uf-entry-icon');
-      if (iconEl) iconEl.textContent = '✓';
-      _unifiedFeed.pendingTools.delete(agentId);
-    }
-    return;
-  }
-  // Map event types to display
-  let icon, text, classes;
-  if (type === 'AgentStarted') { icon = '●'; text = 'started'; classes = 'lifecycle lifecycle-started'; }
-  else if (type === 'AgentIdle') { icon = '◌'; text = 'idle'; classes = 'lifecycle lifecycle-idle'; }
-  else if (type === 'AgentCrashed') { icon = '✕'; text = 'crashed!'; classes = 'lifecycle lifecycle-crashed'; }
-  else if (type === 'AgentStopped') { icon = '○'; text = 'stopped'; classes = 'lifecycle lifecycle-stopped'; }
-  else if (type === 'SessionStart') { icon = '▸'; text = 'session start'; classes = 'lifecycle'; }
-  else if (type === 'MutationCreate') { icon = '+'; text = `new: ${p.title || 'bead'}`; classes = 'mutation'; }
-  else if (type === 'MutationClose') { icon = '✓'; text = `closed ${p.issue_id || ''}`; classes = 'mutation mutation-close'; }
-  else if (type === 'MutationStatus') { icon = '~'; text = p.new_status || 'updated'; classes = 'mutation'; }
-  else if (type === 'MutationUpdate') {
-    if (p.assignee) { icon = '→'; text = `claimed by ${p.assignee}`; classes = 'mutation'; }
-    else return;
-  }
-  else if (type === 'DecisionCreated') { icon = '?'; text = (p.question || 'decision').slice(0, 50); classes = 'decision decision-pending'; }
-  else if (type === 'DecisionResponded') { icon = '✓'; text = `decided: ${p.chosen_label || 'resolved'}`; classes = 'decision decision-resolved'; }
-  else if (type === 'DecisionExpired') { icon = '⏰'; text = 'decision expired'; classes = 'decision decision-expired'; }
-  else if (type === 'MailSent') { icon = '✉'; text = `from ${p.from || '?'}: ${p.subject || ''}`; classes = 'mail mail-received'; }
-  else if (type === 'MailRead') { icon = '✉'; text = 'mail read'; classes = 'mail'; }
-  // bd-7rk7e: Show user/system prompts and stop checkpoints
-  else if (type === 'UserPromptSubmit') {
-    const prompt = p.prompt || p.Prompt || '';
-    if (!prompt) return;
-    icon = '▸'; text = prompt.length > 120 ? prompt.slice(0, 120) + '…' : prompt; classes = 'prompt';
-  }
-  else if (type === 'Stop') {
-    // bd-at94i: Show agent reasoning from last_assistant_message
-    const msg = p.last_assistant_message || '';
-    if (msg) {
-      const msgDisplay = msg.length > 200 ? msg.slice(0, 200) + '…' : msg;
-      const msgEntry = createUnifiedEntry(timeStr, agentName, '💬', msgDisplay, 'assistant-msg');
-      _unifiedFeed.el.appendChild(msgEntry);
-      _unifiedFeed.entries.push(msgEntry);
-    }
-    icon = '⏸'; text = 'checkpoint'; classes = 'lifecycle';
-  }
-  else return;
-
-  const entry = createUnifiedEntry(timeStr, agentName, icon, text, classes);
-  _unifiedFeed.el.appendChild(entry);
-  _unifiedFeed.entries.push(entry);
-  trimUnifiedFeed();
-  autoScrollUnified();
-}
-function createUnifiedEntry(time, agent, icon, text, classes) {
-  // Remove empty placeholder
-  if (_unifiedFeed.el) {
-    const empty = _unifiedFeed.el.querySelector('.uf-empty');
-    if (empty) empty.remove();
-  }
-  const el = document.createElement('div');
-  el.className = `uf-entry ${classes}`;
-  el.innerHTML = `
-    <span class="uf-entry-time">${escapeHtml(time)}</span>
-    <span class="uf-entry-agent">${escapeHtml(agent)}</span>
-    <span class="uf-entry-icon">${escapeHtml(icon)}</span>
-    <span class="uf-entry-text">${escapeHtml(text)}</span>
-    <span class="uf-entry-dur"></span>
-  `;
-  return el;
-}
-function trimUnifiedFeed() {
-  while (_unifiedFeed.entries.length > _unifiedFeed.maxEntries) {
-    const old = _unifiedFeed.entries.shift();
-    if (old && old.parentNode) old.parentNode.removeChild(old);
-  }
-}
-function autoScrollUnified() {
-  if (!_unifiedFeed.el) return;
-  const isNear = _unifiedFeed.el.scrollTop + _unifiedFeed.el.clientHeight >= _unifiedFeed.el.scrollHeight - 30;
-  if (isNear || _unifiedFeed.entries.length <= 1) {
-    requestAnimationFrame(() => { _unifiedFeed.el.scrollTop = _unifiedFeed.el.scrollHeight; });
-  }
-}
-
-function appendAgentEvent(agentId, evt) {
-  // Also append to unified feed (bd-9ndk0.3)
-  appendUnifiedEntry(agentId, evt);
-
-  const win = agentWindows.get(agentId);
-  if (!win) return;
-
-  // Clear the empty placeholder
-  const empty = win.feedEl.querySelector('.agent-window-empty');
-  if (empty) empty.remove();
-
-  const type = evt.type;
-  const p = evt.payload || {};
-  const ts = evt.ts ? new Date(evt.ts) : new Date();
-  const timeStr = ts.toTimeString().slice(0, 8); // HH:MM:SS
-
-  // Handle PreToolUse / PostToolUse pairing
-  if (type === 'PreToolUse') {
-    const toolName = p.tool_name || 'tool';
-    const icon = TOOL_ICONS[toolName] || '·';
-    const toolClass = `tool-${toolName.toLowerCase()}`;
-    const label = formatToolLabel(p);
-
-    const entry = createEntry(timeStr, icon, label, toolClass + ' running');
-    win.feedEl.appendChild(entry);
-    win.entries.push(entry);
-    win.pendingTool = { toolName, startTs: ts.getTime(), entry };
-    // bd-5ok9s: track last tool used
-    win.lastTool = toolName;
-    win.lastStatus = 'active';
-    win.idleSince = null;
-    win.crashError = null;
-    _updateAgentStatusBar(win);
-    autoScroll(win);
-    return;
-  }
-
-  if (type === 'PostToolUse') {
-    if (win.pendingTool) {
-      const dur = (ts.getTime() - win.pendingTool.startTs) / 1000;
-      win.pendingTool.entry.classList.remove('running');
-      const durEl = win.pendingTool.entry.querySelector('.agent-entry-dur');
-      if (durEl && dur > 0.1) durEl.textContent = `${dur.toFixed(1)}s`;
-      const iconEl = win.pendingTool.entry.querySelector('.agent-entry-icon');
-      if (iconEl) iconEl.textContent = '✓';
-      win.pendingTool = null;
-    }
-    return; // Don't add a separate row
-  }
-
-  // Lifecycle events — bd-5ok9s: update status tracking
-  if (type === 'AgentStarted') {
-    win.feedEl.appendChild(createEntry(timeStr, '●', 'started', 'lifecycle lifecycle-started'));
-    win.lastStatus = 'active';
-    win.idleSince = null;
-    win.crashError = null;
-    win.lastTool = null;
-  } else if (type === 'AgentIdle') {
-    win.feedEl.appendChild(createEntry(timeStr, '◌', 'idle', 'lifecycle lifecycle-idle'));
-    win.lastStatus = 'idle';
-    win.idleSince = ts.getTime();
-    win.crashError = null;
-  } else if (type === 'AgentCrashed') {
-    win.feedEl.appendChild(createEntry(timeStr, '✕', 'crashed!', 'lifecycle lifecycle-crashed'));
-    win.lastStatus = 'crashed';
-    win.idleSince = null;
-    win.crashError = p.error || 'unknown error';
-  } else if (type === 'AgentStopped') {
-    win.feedEl.appendChild(createEntry(timeStr, '○', 'stopped', 'lifecycle lifecycle-stopped'));
-    win.lastStatus = 'stopped';
-    win.idleSince = null;
-  } else if (type === 'SessionStart') {
-    win.feedEl.appendChild(createEntry(timeStr, '▸', 'session start', 'lifecycle'));
-    win.lastStatus = 'active';
-    win.idleSince = null;
-    win.crashError = null;
-  }
-  // Mutation events
-  else if (type === 'MutationCreate') {
-    const title = p.title || 'new bead';
-    win.feedEl.appendChild(createEntry(timeStr, '+', `new: ${title}`, 'mutation'));
-  } else if (type === 'MutationClose') {
-    const issueId = p.issue_id || '';
-    win.feedEl.appendChild(createEntry(timeStr, '✓', `closed ${issueId}`, 'mutation mutation-close'));
-  } else if (type === 'MutationStatus') {
-    const status = p.new_status || 'updated';
-    win.feedEl.appendChild(createEntry(timeStr, '~', status, 'mutation'));
-  } else if (type === 'MutationUpdate') {
-    // Skip most updates (too noisy), but show assignee claims
-    if (p.assignee) {
-      win.feedEl.appendChild(createEntry(timeStr, '→', `claimed by ${p.assignee}`, 'mutation'));
-    }
-    return;
-  }
-  // OJ events
-  else if (type === 'OjJobCreated') {
-    win.feedEl.appendChild(createEntry(timeStr, '⚙', 'job created', 'lifecycle'));
-  } else if (type === 'OjJobCompleted') {
-    win.feedEl.appendChild(createEntry(timeStr, '✓', 'job done', 'lifecycle lifecycle-started'));
-  } else if (type === 'OjJobFailed') {
-    win.feedEl.appendChild(createEntry(timeStr, '✕', 'job failed!', 'lifecycle lifecycle-crashed'));
-  }
-  // Mail events (bd-t76aw)
-  else if (type === 'MailSent') {
-    const from = p.from || 'unknown';
-    const subject = p.subject || 'no subject';
-    win.feedEl.appendChild(createEntry(timeStr, '✉', `from ${from}: ${subject}`, 'mail mail-received'));
-  } else if (type === 'MailRead') {
-    win.feedEl.appendChild(createEntry(timeStr, '✉', 'mail read', 'mail'));
-  }
-  // Decision events (bd-0j7hr)
-  else if (type === 'DecisionCreated') {
-    const q = (p.question || 'decision').slice(0, 50);
-    win.feedEl.appendChild(createEntry(timeStr, '?', q, 'decision decision-pending'));
-  } else if (type === 'DecisionResponded') {
-    const choice = p.chosen_label || 'resolved';
-    win.feedEl.appendChild(createEntry(timeStr, '✓', `decided: ${choice}`, 'decision decision-resolved'));
-  } else if (type === 'DecisionExpired') {
-    win.feedEl.appendChild(createEntry(timeStr, '⏰', 'decision expired', 'decision decision-expired'));
-  } else if (type === 'DecisionEscalated') {
-    win.feedEl.appendChild(createEntry(timeStr, '!', 'decision escalated', 'decision decision-escalated'));
-  }
-  // UserPromptSubmit — show what agents are being asked (bd-7rk7e)
-  else if (type === 'UserPromptSubmit') {
-    const prompt = p.prompt || p.Prompt || '';
-    if (prompt) {
-      const display = prompt.length > 120 ? prompt.slice(0, 120) + '…' : prompt;
-      win.feedEl.appendChild(createEntry(timeStr, '▸', display, 'prompt'));
-    }
-  }
-  // Stop hook events — show agent reasoning/last output (bd-at94i)
-  else if (type === 'Stop') {
-    const msg = p.last_assistant_message || '';
-    if (msg) {
-      // Show the assistant's last message (truncated) as agent reasoning
-      const display = msg.length > 200 ? msg.slice(0, 200) + '…' : msg;
-      win.feedEl.appendChild(createEntry(timeStr, '💬', display, 'assistant-msg'));
-    }
-    win.feedEl.appendChild(createEntry(timeStr, '⏸', 'checkpoint', 'lifecycle'));
-  }
-  // Skip other event types silently
-  else {
-    return;
-  }
-
-  // bd-5ok9s: update status bar after any lifecycle event
-  _updateAgentStatusBar(win);
-  // bd-hubs7: update tab status dot + unread badge
-  _updateTabStatus(agentId, win.lastStatus);
-  _incrementTabUnread(agentId);
-  autoScroll(win);
-}
-
-// formatToolLabel moved to event-format.js (bd-7t6nt)
-
-function createEntry(time, icon, text, classes) {
-  const el = document.createElement('div');
-  el.className = `agent-entry ${classes}`;
-  el.innerHTML = `
-    <span class="agent-entry-time">${escapeHtml(time)}</span>
-    <span class="agent-entry-icon">${escapeHtml(icon)}</span>
-    <span class="agent-entry-text">${escapeHtml(text)}</span>
-    <span class="agent-entry-dur"></span>
-  `;
-  return el;
-}
-
-function autoScroll(win) {
-  const feed = win.feedEl;
-  // Only auto-scroll if user hasn't scrolled up
-  const isNearBottom = feed.scrollTop + feed.clientHeight >= feed.scrollHeight - 30;
-  if (isNearBottom || win.entries.length <= 1) {
-    requestAnimationFrame(() => { feed.scrollTop = feed.scrollHeight; });
-  }
-}
-
-// resolveAgentIdLoose moved to event-format.js (bd-7t6nt)
 
 function connectBusStream() {
   try {
@@ -7082,7 +6292,7 @@ function connectBusStream() {
         if (!agentWindows.has(agentId) && graphData) {
           const agentNode = graphData.nodes.find(n => n.id === agentId);
           if (agentNode) {
-            if (agentsViewOpen) {
+            if (getAgentsViewOpen()) {
               // Create window inside the overlay grid
               createAgentWindowInGrid(agentNode);
             } else {
@@ -7093,7 +6303,7 @@ function connectBusStream() {
         if (agentWindows.has(agentId)) {
           appendAgentEvent(agentId, evt);
           // bd-bwi52: Flash tab for non-selected agents when events arrive
-          if (agentsViewOpen && agentId !== _selectedAgentTab) {
+          if (getAgentsViewOpen() && agentId !== getSelectedAgentTab()) {
             const overlay = document.getElementById('agents-view');
             if (overlay) {
               const tab = overlay.querySelector(`.agent-tab[data-agent-id="${agentId}"]`);
@@ -7161,6 +6371,7 @@ async function main() {
     });
     initLeftSidebar();
     startLeftSidebarIdleTimer();
+    startAgentWindowIdleTimer();
     if (_pollIntervalId) clearInterval(_pollIntervalId);
     _pollIntervalId = setInterval(refresh, POLL_INTERVAL);
     graph.cameraPosition({ x: 0, y: 0, z: 400 });
@@ -7199,9 +6410,9 @@ async function main() {
     window.__beads3d_toggleAgentsView = toggleAgentsView;
     window.__beads3d_openAgentsView = openAgentsView;
     window.__beads3d_closeAgentsView = closeAgentsView;
-    window.__beads3d_agentsViewOpen = () => agentsViewOpen;
+    window.__beads3d_agentsViewOpen = () => getAgentsViewOpen();
     window.__beads3d_selectAgentTab = selectAgentTab;
-    window.__beads3d_selectedAgentTab = () => _selectedAgentTab;
+    window.__beads3d_selectedAgentTab = () => getSelectedAgentTab();
     window.__beads3d_resolveAgentIdLoose = resolveAgentIdLoose;
     // Expose event sprite internals for testing (bd-9qeto)
     window.__beads3d_spawnStatusPulse = spawnStatusPulse;
@@ -7227,52 +6438,4 @@ async function main() {
 
 main();
 
-// bd-5ok9s: update the agent status bar with current state
-function _updateAgentStatusBar(win) {
-  if (!win.statusEl) return;
-  const stateEl = win.statusEl.querySelector('.agent-status-state');
-  const idleDurEl = win.statusEl.querySelector('.agent-status-idle-dur');
-  const toolEl = win.statusEl.querySelector('.agent-status-tool');
-
-  if (stateEl) {
-    const s = win.lastStatus || '?';
-    stateEl.textContent = s;
-    stateEl.className = 'agent-status-state ' + (
-      s === 'active' ? 'status-active' :
-      s === 'idle' ? 'status-idle' :
-      s === 'crashed' ? 'status-crashed' : ''
-    );
-  }
-
-  if (idleDurEl) {
-    if (win.lastStatus === 'idle' && win.idleSince) {
-      const dur = Math.floor((Date.now() - win.idleSince) / 1000);
-      idleDurEl.innerHTML = '<span class="status-label">Idle:</span> <span class="status-idle-dur">' + formatDuration(dur) + '</span>';
-    } else if (win.lastStatus === 'crashed' && win.crashError) {
-      idleDurEl.innerHTML = '<span class="status-crashed">' + escapeStatusText(win.crashError) + '</span>';
-    } else {
-      idleDurEl.textContent = '';
-    }
-  }
-
-  if (toolEl) {
-    if (win.lastTool) {
-      toolEl.innerHTML = '<span class="status-label">Last:</span> <span class="status-tool">' + escapeStatusText(win.lastTool) + '</span>';
-    } else {
-      toolEl.textContent = '';
-    }
-  }
-}
-
-// formatDuration, escapeStatusText, left sidebar moved to left-sidebar.js (bd-7t6nt)
-
-// bd-5ok9s: live-update idle durations every second
-setInterval(() => {
-  for (const [, win] of agentWindows) {
-    if (win.lastStatus === 'idle' && win.idleSince) {
-      _updateAgentStatusBar(win);
-    }
-  }
-}, 1000);
-
-// Left sidebar functions and idle timer moved to left-sidebar.js (bd-7t6nt)
+// _updateAgentStatusBar, idle timer moved to agent-windows.js (bd-7t6nt)
