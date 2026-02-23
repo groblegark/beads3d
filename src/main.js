@@ -308,6 +308,131 @@ function spawnFireworkBurst(node) {
   }
 }
 
+// Shockwave ring colors by status (bd-3fnon)
+const SHOCKWAVE_COLORS = {
+  open:        0x2d8a4e, // green
+  in_progress: 0xd4a017, // amber
+  blocked:     0xd04040, // red
+  hooked:      0xc06020, // burnt orange
+  review:      0x4a9eff, // blue
+  on_ice:      0x3a5a7a, // muted blue
+  closed:      0x2d8a4e, // green (completed)
+  deferred:    0x3a5a7a, // muted blue
+};
+
+// Camera shake state (bd-3fnon)
+let _cameraShake = null; // { startTime, duration, intensity, origPos }
+
+// Spawn dramatic shockwave ring on status change (bd-3fnon)
+function spawnShockwave(node, oldStatus, newStatus) {
+  if (!node || !graph || !_particlePool) return;
+  const color = SHOCKWAVE_COLORS[newStatus] || 0x4a9eff;
+  const pos = { x: node.x || 0, y: node.y || 0, z: node.z || 0 };
+
+  // Primary expanding torus ring — radius 0→40 over 1.0s
+  const torusGeo = new THREE.TorusGeometry(1, 0.3, 8, 48);
+  const torusMat = new THREE.MeshBasicMaterial({
+    color, transparent: true, opacity: 1.0, depthWrite: false,
+    blending: THREE.AdditiveBlending,
+  });
+  const torus = new THREE.Mesh(torusGeo, torusMat);
+  torus.position.set(pos.x, pos.y, pos.z);
+  torus.lookAt(graph.camera().position);
+  graph.scene().add(torus);
+  eventSprites.push({
+    mesh: torus, node, birth: performance.now() / 1000, lifetime: 1.0,
+    type: 'shockwave', startScale: 0.1, endScale: 40.0,
+  });
+
+  // Secondary inner ring — staggered 0.15s, half expansion speed
+  const torus2Geo = new THREE.TorusGeometry(1, 0.2, 8, 48);
+  const torus2Mat = new THREE.MeshBasicMaterial({
+    color, transparent: true, opacity: 0.7, depthWrite: false,
+    blending: THREE.AdditiveBlending,
+  });
+  const torus2 = new THREE.Mesh(torus2Geo, torus2Mat);
+  torus2.position.set(pos.x, pos.y, pos.z);
+  torus2.lookAt(graph.camera().position);
+  graph.scene().add(torus2);
+  eventSprites.push({
+    mesh: torus2, node, birth: performance.now() / 1000 + 0.15, lifetime: 1.5,
+    type: 'shockwave', startScale: 0.1, endScale: 20.0,
+  });
+
+  // 20-30 particles ejected along ring plane (camera-facing)
+  const cam = graph.camera();
+  const forward = new THREE.Vector3();
+  cam.getWorldDirection(forward);
+  // Compute ring plane axes perpendicular to camera forward
+  const up = new THREE.Vector3(0, 1, 0);
+  const right = new THREE.Vector3().crossVectors(forward, up).normalize();
+  const planeUp = new THREE.Vector3().crossVectors(right, forward).normalize();
+
+  const ringCount = 20 + Math.floor(Math.random() * 10);
+  for (let i = 0; i < ringCount; i++) {
+    const angle = (i / ringCount) * Math.PI * 2 + Math.random() * 0.3;
+    const speed = 5 + Math.random() * 3;
+    const vx = right.x * Math.cos(angle) * speed + planeUp.x * Math.sin(angle) * speed;
+    const vy = right.y * Math.cos(angle) * speed + planeUp.y * Math.sin(angle) * speed;
+    const vz = right.z * Math.cos(angle) * speed + planeUp.z * Math.sin(angle) * speed;
+    _particlePool.emit(pos, color, 1, {
+      velocity: [vx, vy, vz],
+      spread: 0.3,
+      lifetime: 0.8 + Math.random() * 0.4,
+      size: 1.5 + Math.random(),
+    });
+  }
+
+  // Energy ripple: flash connected nodes when shockwave passes
+  if (graphData && graphData.links) {
+    const neighbors = [];
+    for (const l of graphData.links) {
+      const src = typeof l.source === 'object' ? l.source : null;
+      const tgt = typeof l.target === 'object' ? l.target : null;
+      if (!src || !tgt) continue;
+      if (src.id === node.id && tgt) neighbors.push(tgt);
+      else if (tgt.id === node.id && src) neighbors.push(src);
+    }
+    // Stagger flash by distance
+    for (const nb of neighbors) {
+      const dx = (nb.x || 0) - pos.x;
+      const dy = (nb.y || 0) - pos.y;
+      const dz = (nb.z || 0) - pos.z;
+      const dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
+      const delay = Math.min(dist / 40, 0.8); // shockwave travel time (40 units/s)
+      setTimeout(() => {
+        if (!_particlePool || !graph) return;
+        const nbPos = { x: nb.x || 0, y: nb.y || 0, z: nb.z || 0 };
+        _particlePool.emit(nbPos, color, 8, {
+          velocity: [0, 2, 0],
+          spread: 2.0,
+          lifetime: 0.4,
+          size: 1.5,
+        });
+      }, delay * 1000);
+    }
+  }
+
+  // Camera shake for high-priority beads (P0/P1)
+  if (node.priority <= 1) {
+    const cam = graph.camera();
+    _cameraShake = {
+      startTime: performance.now() / 1000,
+      duration: 0.3,
+      intensity: 0.5,
+      origPos: cam.position.clone(),
+    };
+  }
+
+  // Prune oldest sprites
+  while (eventSprites.length > EVENT_SPRITE_MAX) {
+    const old = eventSprites.shift();
+    graph.scene().remove(old.mesh);
+    old.mesh.geometry.dispose();
+    old.mesh.material.dispose();
+  }
+}
+
 // Spawn sparks that travel along a new edge between two nodes (bd-9qeto)
 function spawnEdgeSpark(sourceNode, targetNode, color) {
   if (!sourceNode || !targetNode || !graph) return;
@@ -416,6 +541,18 @@ function updateEventSprites(t) {
       // Follow node position
       if (s.node) {
         s.mesh.position.set(s.node.x || 0, s.node.y || 0, s.node.z || 0);
+      }
+    } else if (s.type === 'shockwave') {
+      // Expanding torus ring with inverse-square opacity falloff (bd-3fnon)
+      const scale = s.startScale + (s.endScale - s.startScale) * progress;
+      s.mesh.scale.setScalar(scale);
+      // Inverse square falloff for opacity
+      const falloff = 1 / (1 + progress * progress * 4);
+      s.mesh.material.opacity = falloff * 0.9;
+      // Follow node position and face camera
+      if (s.node) {
+        s.mesh.position.set(s.node.x || 0, s.node.y || 0, s.node.z || 0);
+        s.mesh.lookAt(graph.camera().position);
       }
     } else if (s.type === 'burst') {
       // Outward burst particles with gravity-like deceleration
@@ -1978,6 +2115,23 @@ function startAnimation() {
 
     // Update event sprites — status pulses + edge sparks (bd-9qeto)
     updateEventSprites(t);
+
+    // Camera shake for shockwave effects (bd-3fnon)
+    if (_cameraShake) {
+      const elapsed = t - _cameraShake.startTime;
+      if (elapsed > _cameraShake.duration) {
+        graph.camera().position.copy(_cameraShake.origPos);
+        _cameraShake = null;
+      } else {
+        const dampen = 1 - elapsed / _cameraShake.duration;
+        const jitter = _cameraShake.intensity * dampen;
+        graph.camera().position.set(
+          _cameraShake.origPos.x + (Math.random() - 0.5) * jitter * 2,
+          _cameraShake.origPos.y + (Math.random() - 0.5) * jitter * 2,
+          _cameraShake.origPos.z + (Math.random() - 0.5) * jitter * 2,
+        );
+      }
+    }
 
     // GPU particle pool update + selection VFX (bd-m9525)
     if (_particlePool) {
@@ -4626,8 +4780,9 @@ function applyMutationOptimistic(evt) {
       // Rebuild THREE.js object if status changed (affects color, pulse ring, etc.)
       if (oldStatus !== node.status && graph) {
         graph.nodeThreeObject(graph.nodeThreeObject());
-        // Event sprite: status change pulse (bd-9qeto)
+        // Event sprite: status change pulse (bd-9qeto) + shockwave ring (bd-3fnon)
         spawnStatusPulse(node, oldStatus, node.status);
+        spawnShockwave(node, oldStatus, node.status);
       }
       return true;
     }
