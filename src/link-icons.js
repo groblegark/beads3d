@@ -18,7 +18,8 @@ function makeLinkIconTexture(drawFn, color) {
 
 // Shield glyph — for "blocks" deps
 function drawShield(ctx, s, color) {
-  const cx = s / 2, cy = s / 2;
+  const cx = s / 2,
+    cy = s / 2;
   ctx.beginPath();
   ctx.moveTo(cx, cy - 22);
   ctx.bezierCurveTo(cx + 20, cy - 18, cx + 22, cy, cx + 18, cy + 14);
@@ -31,8 +32,10 @@ function drawShield(ctx, s, color) {
   ctx.stroke();
   // X inside shield
   ctx.beginPath();
-  ctx.moveTo(cx - 7, cy - 5); ctx.lineTo(cx + 7, cy + 7);
-  ctx.moveTo(cx + 7, cy - 5); ctx.lineTo(cx - 7, cy + 7);
+  ctx.moveTo(cx - 7, cy - 5);
+  ctx.lineTo(cx + 7, cy + 7);
+  ctx.moveTo(cx + 7, cy - 5);
+  ctx.lineTo(cx - 7, cy + 7);
   ctx.strokeStyle = color;
   ctx.lineWidth = 2.5;
   ctx.stroke();
@@ -40,7 +43,9 @@ function drawShield(ctx, s, color) {
 
 // Clock glyph — for "waits-for" deps
 function drawClock(ctx, s, color) {
-  const cx = s / 2, cy = s / 2, r = 18;
+  const cx = s / 2,
+    cy = s / 2,
+    r = 18;
   ctx.beginPath();
   ctx.arc(cx, cy, r, 0, Math.PI * 2);
   ctx.strokeStyle = color;
@@ -48,8 +53,10 @@ function drawClock(ctx, s, color) {
   ctx.stroke();
   // Clock hands
   ctx.beginPath();
-  ctx.moveTo(cx, cy); ctx.lineTo(cx, cy - 12); // 12 o'clock
-  ctx.moveTo(cx, cy); ctx.lineTo(cx + 8, cy + 3); // ~2 o'clock
+  ctx.moveTo(cx, cy);
+  ctx.lineTo(cx, cy - 12); // 12 o'clock
+  ctx.moveTo(cx, cy);
+  ctx.lineTo(cx + 8, cy + 3); // ~2 o'clock
   ctx.strokeStyle = color;
   ctx.lineWidth = 2.5;
   ctx.stroke();
@@ -57,7 +64,8 @@ function drawClock(ctx, s, color) {
 
 // Chain link glyph — for "parent-child" deps
 function drawChain(ctx, s, color) {
-  const cx = s / 2, cy = s / 2;
+  const cx = s / 2,
+    cy = s / 2;
   ctx.strokeStyle = color;
   ctx.lineWidth = 2.5;
   // Top oval
@@ -72,7 +80,8 @@ function drawChain(ctx, s, color) {
 
 // Dot glyph — for "relates-to" or default
 function drawDot(ctx, s, color) {
-  const cx = s / 2, cy = s / 2;
+  const cx = s / 2,
+    cy = s / 2;
   ctx.beginPath();
   ctx.arc(cx, cy, 8, 0, Math.PI * 2);
   ctx.fillStyle = color;
@@ -86,7 +95,8 @@ function drawDot(ctx, s, color) {
 
 // Person glyph — for "assigned_to" deps (agent ↔ bead)
 function drawPerson(ctx, s, color) {
-  const cx = s / 2, cy = s / 2;
+  const cx = s / 2,
+    cy = s / 2;
   ctx.strokeStyle = color;
   ctx.lineWidth = 2.5;
   // Head
@@ -114,7 +124,8 @@ function drawPerson(ctx, s, color) {
 
 // Warning triangle glyph — for rig conflict edges (bd-90ikf)
 function drawWarning(ctx, s, color) {
-  const cx = s / 2, cy = s / 2;
+  const cx = s / 2,
+    cy = s / 2;
   ctx.strokeStyle = color;
   ctx.lineWidth = 2.5;
   // Triangle
@@ -133,12 +144,12 @@ function drawWarning(ctx, s, color) {
 }
 
 export const LINK_ICON_MATERIALS = {
-  'blocks':       makeLinkIconTexture(drawShield, '#d04040'),
-  'waits-for':    makeLinkIconTexture(drawClock,  '#d4a017'),
-  'parent-child': makeLinkIconTexture(drawChain,  '#8b45a6'),
-  'relates-to':   makeLinkIconTexture(drawDot,    '#4a9eff'),
-  'assigned_to':  makeLinkIconTexture(drawPerson, '#ff6b35'),
-  'rig_conflict': makeLinkIconTexture(drawWarning,'#ff3030'),
+  blocks: makeLinkIconTexture(drawShield, '#d04040'),
+  'waits-for': makeLinkIconTexture(drawClock, '#d4a017'),
+  'parent-child': makeLinkIconTexture(drawChain, '#8b45a6'),
+  'relates-to': makeLinkIconTexture(drawDot, '#4a9eff'),
+  assigned_to: makeLinkIconTexture(drawPerson, '#ff6b35'),
+  rig_conflict: makeLinkIconTexture(drawWarning, '#ff3030'),
 };
 export const LINK_ICON_DEFAULT = makeLinkIconTexture(drawDot, '#2a2a3a');
 export const LINK_ICON_SCALE = 12; // sprite size in world units (bd-t1g9o: increased for visibility)

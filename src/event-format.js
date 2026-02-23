@@ -20,7 +20,10 @@ export function dootLabel(evt) {
     const input = p.tool_input || {};
     if (tool === 'Bash' || tool === 'bash') {
       const cmd = input.command || input.cmd || '';
-      const short = cmd.replace(/^cd [^ ]+ && /, '').split('\n')[0].slice(0, 60);
+      const short = cmd
+        .replace(/^cd [^ ]+ && /, '')
+        .split('\n')[0]
+        .slice(0, 60);
       return short || 'bash';
     }
     if (tool === 'Read' || tool === 'read') {
@@ -92,7 +95,11 @@ export function dootLabel(evt) {
   if (type === 'DecisionEscalated') return 'escalated';
   if (type === 'DecisionExpired') return 'expired';
 
-  return type.replace(/([A-Z])/g, ' $1').trim().toLowerCase().slice(0, 20);
+  return type
+    .replace(/([A-Z])/g, ' $1')
+    .trim()
+    .toLowerCase()
+    .slice(0, 20);
 }
 
 // Color based on event type
@@ -154,6 +161,14 @@ export function resolveAgentIdLoose(evt) {
 
 // Tool icon map for agent feed entries
 export const TOOL_ICONS = {
-  Read: 'R', Edit: 'E', Bash: '$', Grep: '?', Write: 'W', Task: 'T',
-  Glob: 'G', WebFetch: 'F', WebSearch: 'S', NotebookEdit: 'N',
+  Read: 'R',
+  Edit: 'E',
+  Bash: '$',
+  Grep: '?',
+  Write: 'W',
+  Task: 'T',
+  Glob: 'G',
+  WebFetch: 'F',
+  WebSearch: 'S',
+  NotebookEdit: 'N',
 };

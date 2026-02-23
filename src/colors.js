@@ -2,54 +2,54 @@
 // Dark background, bioluminescent nodes, organic feel
 
 export const STATUS_COLORS = {
-  open:        '#2d8a4e',  // green — alive, ready
-  in_progress: '#d4a017',  // amber — active metabolism
-  blocked:     '#d04040',  // red — blocked by dependency (bd-7haep)
-  hooked:      '#c06020',  // burnt orange — waiting on hook (bd-7haep)
-  deferred:    '#3a5a7a',  // muted blue — deferred/dormant (bd-7haep)
-  review:      '#4a9eff',  // blue — signaling
-  on_ice:      '#3a5a7a',  // muted blue — dormant
-  closed:      '#333340',  // dark — inert
-  tombstone:   '#1a1a22',  // near-black — dead
+  open: '#2d8a4e', // green — alive, ready
+  in_progress: '#d4a017', // amber — active metabolism
+  blocked: '#d04040', // red — blocked by dependency (bd-7haep)
+  hooked: '#c06020', // burnt orange — waiting on hook (bd-7haep)
+  deferred: '#3a5a7a', // muted blue — deferred/dormant (bd-7haep)
+  review: '#4a9eff', // blue — signaling
+  on_ice: '#3a5a7a', // muted blue — dormant
+  closed: '#333340', // dark — inert
+  tombstone: '#1a1a22', // near-black — dead
 };
 
 export const TYPE_COLORS = {
-  epic:     '#8b45a6',  // purple — organelle
-  feature:  '#2d8a4e',  // green
-  bug:      '#d04040',  // red — pathogen
-  task:     '#4a9eff',  // blue
-  agent:    '#ff6b35',  // orange — ribosome
-  decision: '#d4a017',  // amber — signal molecule
-  gate:     '#d4a017',
-  chore:    '#666',
-  doc:      '#5a8a5a',
-  test:     '#4a7a9e',
+  epic: '#8b45a6', // purple — organelle
+  feature: '#2d8a4e', // green
+  bug: '#d04040', // red — pathogen
+  task: '#4a9eff', // blue
+  agent: '#ff6b35', // orange — ribosome
+  decision: '#d4a017', // amber — signal molecule
+  gate: '#d4a017',
+  chore: '#666',
+  doc: '#5a8a5a',
+  test: '#4a7a9e',
 };
 
 export const PRIORITY_SIZES = {
-  0: 16,  // P0 critical — largest (bd-d8dfd: increased)
-  1: 11,  // P1 high
-  2: 8,   // P2 medium
-  3: 6,   // P3 low
-  4: 5,   // P4 backlog — smallest
+  0: 16, // P0 critical — largest (bd-d8dfd: increased)
+  1: 11, // P1 high
+  2: 8, // P2 medium
+  3: 6, // P3 low
+  4: 5, // P4 backlog — smallest
 };
 
 export const DEP_TYPE_COLORS = {
-  blocks:       '#d04040',
-  'waits-for':  '#d4a017',
+  blocks: '#d04040',
+  'waits-for': '#d4a017',
   'relates-to': '#4a9eff88',
-  'parent-child':'#8b45a688',
-  'assigned_to': '#ff6b3566',  // reduced opacity — high density in large graphs (bd-ld2fa)
-  'rig_conflict':'#ff3030',    // bright red — agents on same rig+branch (bd-90ikf)
-  default:      '#3a3a5a',
+  'parent-child': '#8b45a688',
+  assigned_to: '#ff6b3566', // reduced opacity — high density in large graphs (bd-ld2fa)
+  rig_conflict: '#ff3030', // bright red — agents on same rig+branch (bd-90ikf)
+  default: '#3a3a5a',
 };
 
 // Decision state → color (bd-zr374)
 export const DECISION_COLORS = {
-  pending:  '#d4a017',  // amber — awaiting response
-  resolved: '#2d8a4e',  // green — answered
-  expired:  '#d04040',  // red — timed out
-  canceled: '#666',     // gray — canceled
+  pending: '#d4a017', // amber — awaiting response
+  resolved: '#2d8a4e', // green — answered
+  expired: '#d04040', // red — timed out
+  canceled: '#666', // gray — canceled
 };
 
 export function nodeColor(issue) {

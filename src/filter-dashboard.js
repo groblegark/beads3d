@@ -29,25 +29,28 @@ export function toggleFilterDashboard() {
 // Sync dashboard button states to match current filter state
 export function syncFilterDashboard() {
   // Status buttons
-  document.querySelectorAll('.fd-status').forEach(btn => {
+  document.querySelectorAll('.fd-status').forEach((btn) => {
     const status = btn.dataset.status;
     const STATUS_GROUPS = { in_progress: ['in_progress', 'blocked', 'hooked', 'deferred'] };
     const group = STATUS_GROUPS[status] || [status];
-    btn.classList.toggle('active', group.some(s => _state.statusFilter.has(s)));
+    btn.classList.toggle(
+      'active',
+      group.some((s) => _state.statusFilter.has(s)),
+    );
   });
 
   // Type buttons
-  document.querySelectorAll('.fd-type').forEach(btn => {
+  document.querySelectorAll('.fd-type').forEach((btn) => {
     btn.classList.toggle('active', _state.typeFilter.has(btn.dataset.type));
   });
 
   // Priority buttons
-  document.querySelectorAll('.fd-priority').forEach(btn => {
+  document.querySelectorAll('.fd-priority').forEach((btn) => {
     btn.classList.toggle('active', _state.priorityFilter.has(btn.dataset.priority));
   });
 
   // Age buttons
-  document.querySelectorAll('.fd-age').forEach(btn => {
+  document.querySelectorAll('.fd-age').forEach((btn) => {
     const days = parseInt(btn.dataset.days, 10);
     btn.classList.toggle('active', days === _state.activeAgeDays);
   });
@@ -66,17 +69,20 @@ export function syncFilterDashboard() {
 export function syncToolbarControls() {
   // Status
   const STATUS_GROUPS = { in_progress: ['in_progress', 'blocked', 'hooked', 'deferred'] };
-  document.querySelectorAll('.filter-status').forEach(btn => {
+  document.querySelectorAll('.filter-status').forEach((btn) => {
     const status = btn.dataset.status;
     const group = STATUS_GROUPS[status] || [status];
-    btn.classList.toggle('active', group.some(s => _state.statusFilter.has(s)));
+    btn.classList.toggle(
+      'active',
+      group.some((s) => _state.statusFilter.has(s)),
+    );
   });
   // Type
-  document.querySelectorAll('.filter-type').forEach(btn => {
+  document.querySelectorAll('.filter-type').forEach((btn) => {
     btn.classList.toggle('active', _state.typeFilter.has(btn.dataset.type));
   });
   // Age
-  document.querySelectorAll('.filter-age').forEach(btn => {
+  document.querySelectorAll('.filter-age').forEach((btn) => {
     const days = parseInt(btn.dataset.days, 10);
     btn.classList.toggle('active', days === _state.activeAgeDays);
   });
@@ -99,9 +105,9 @@ export function updateAssigneeButtons() {
   const sorted = [...assignees].sort();
 
   // Only rebuild if set changed
-  const current = [...body.querySelectorAll('.fd-btn')].map(b => b.dataset.assignee);
+  const current = [...body.querySelectorAll('.fd-btn')].map((b) => b.dataset.assignee);
   if (current.length === sorted.length && current.every((a, i) => a === sorted[i])) {
-    body.querySelectorAll('.fd-btn').forEach(btn => {
+    body.querySelectorAll('.fd-btn').forEach((btn) => {
       btn.classList.toggle('active', _state.assigneeFilter === btn.dataset.assignee);
     });
     return;
@@ -120,7 +126,7 @@ export function updateAssigneeButtons() {
       } else {
         _state.assigneeFilter = name;
       }
-      body.querySelectorAll('.fd-btn').forEach(b => {
+      body.querySelectorAll('.fd-btn').forEach((b) => {
         b.classList.toggle('active', _state.assigneeFilter === b.dataset.assignee);
       });
       _applyFilters();
@@ -151,18 +157,18 @@ function _currentFilterState() {
 
 function _applyFilterState(state) {
   _state.statusFilter.clear();
-  (state.status || []).forEach(s => _state.statusFilter.add(s));
+  (state.status || []).forEach((s) => _state.statusFilter.add(s));
   _state.typeFilter.clear();
-  (state.types || []).forEach(t => _state.typeFilter.add(t));
+  (state.types || []).forEach((t) => _state.typeFilter.add(t));
   _state.priorityFilter.clear();
-  (state.priority || []).forEach(p => _state.priorityFilter.add(String(p)));
+  (state.priority || []).forEach((p) => _state.priorityFilter.add(String(p)));
   _state.activeAgeDays = state.age_days ?? 7;
   _state.assigneeFilter = state.assignee || '';
   if (state.agents) {
     _state.agentFilterShow = state.agents.show !== false;
     _state.agentFilterOrphaned = !!state.agents.orphaned;
     _state.agentFilterRigExclude.clear();
-    (state.agents.rig_exclude || []).forEach(r => _state.agentFilterRigExclude.add(r));
+    (state.agents.rig_exclude || []).forEach((r) => _state.agentFilterRigExclude.add(r));
     _state.agentFilterNameExclude = state.agents.name_exclude || [];
     // Update the exclude input field
     const excludeInput = document.getElementById('fd-agent-exclude');
@@ -185,8 +191,8 @@ export async function loadFilterProfiles() {
     // Clear existing options except default
     select.innerHTML = '<option value="">— default —</option>';
     const profiles = Object.keys(config)
-      .filter(k => k.startsWith(PROFILE_KEY_PREFIX))
-      .map(k => k.slice(PROFILE_KEY_PREFIX.length))
+      .filter((k) => k.startsWith(PROFILE_KEY_PREFIX))
+      .map((k) => k.slice(PROFILE_KEY_PREFIX.length))
       .sort();
     for (const name of profiles) {
       const opt = document.createElement('option');
@@ -278,14 +284,14 @@ export async function applyUrlFilterParams() {
   // ?status=open,in_progress — comma-separated status filter
   if (_state.URL_STATUS) {
     _state.statusFilter.clear();
-    _state.URL_STATUS.split(',').forEach(s => _state.statusFilter.add(s.trim()));
+    _state.URL_STATUS.split(',').forEach((s) => _state.statusFilter.add(s.trim()));
     needRefresh = true;
   }
 
   // ?types=epic,bug — comma-separated type filter
   if (_state.URL_TYPES) {
     _state.typeFilter.clear();
-    _state.URL_TYPES.split(',').forEach(t => _state.typeFilter.add(t.trim()));
+    _state.URL_TYPES.split(',').forEach((t) => _state.typeFilter.add(t.trim()));
     needRefresh = true;
   }
 
@@ -332,10 +338,22 @@ export function initFilterDashboard() {
   // Close button
   document.getElementById('fd-close')?.addEventListener('click', toggleFilterDashboard);
 
-  // Collapsible sections
-  panel.querySelectorAll('.fd-section-header').forEach(header => {
-    header.addEventListener('click', () => {
-      header.parentElement.classList.toggle('collapsed');
+  // Collapsible sections (bd-7zczp: add keyboard + ARIA)
+  panel.querySelectorAll('.fd-section-header').forEach((header) => {
+    header.setAttribute('role', 'button');
+    header.setAttribute('tabindex', '0');
+    const section = header.parentElement;
+    header.setAttribute('aria-expanded', !section.classList.contains('collapsed'));
+    const toggle = () => {
+      section.classList.toggle('collapsed');
+      header.setAttribute('aria-expanded', !section.classList.contains('collapsed'));
+    };
+    header.addEventListener('click', toggle);
+    header.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        toggle();
+      }
     });
   });
 
@@ -344,15 +362,15 @@ export function initFilterDashboard() {
   };
 
   // Status buttons — sync with toolbar
-  panel.querySelectorAll('.fd-status').forEach(btn => {
+  panel.querySelectorAll('.fd-status').forEach((btn) => {
     btn.addEventListener('click', () => {
       const status = btn.dataset.status;
       const group = STATUS_GROUPS[status] || [status];
       btn.classList.toggle('active');
       if (_state.statusFilter.has(status)) {
-        group.forEach(s => _state.statusFilter.delete(s));
+        group.forEach((s) => _state.statusFilter.delete(s));
       } else {
-        group.forEach(s => _state.statusFilter.add(s));
+        group.forEach((s) => _state.statusFilter.add(s));
       }
       syncToolbarControls();
       _applyFilters();
@@ -360,7 +378,7 @@ export function initFilterDashboard() {
   });
 
   // Type buttons — sync with toolbar
-  panel.querySelectorAll('.fd-type').forEach(btn => {
+  panel.querySelectorAll('.fd-type').forEach((btn) => {
     btn.addEventListener('click', () => {
       const type = btn.dataset.type;
       btn.classList.toggle('active');
@@ -375,7 +393,7 @@ export function initFilterDashboard() {
   });
 
   // Priority buttons (bd-8o2gd phase 2)
-  panel.querySelectorAll('.fd-priority').forEach(btn => {
+  panel.querySelectorAll('.fd-priority').forEach((btn) => {
     btn.addEventListener('click', () => {
       const p = btn.dataset.priority;
       btn.classList.toggle('active');
@@ -389,11 +407,11 @@ export function initFilterDashboard() {
   });
 
   // Age buttons — sync with toolbar (triggers re-fetch)
-  panel.querySelectorAll('.fd-age').forEach(btn => {
+  panel.querySelectorAll('.fd-age').forEach((btn) => {
     btn.addEventListener('click', () => {
       const newDays = parseInt(btn.dataset.days, 10);
       if (newDays === _state.activeAgeDays) return;
-      panel.querySelectorAll('.fd-age').forEach(b => b.classList.remove('active'));
+      panel.querySelectorAll('.fd-age').forEach((b) => b.classList.remove('active'));
       btn.classList.add('active');
       _state.activeAgeDays = newDays;
       syncToolbarControls();
@@ -421,7 +439,12 @@ export function initFilterDashboard() {
   if (agentExcludeInput) {
     agentExcludeInput.addEventListener('input', () => {
       const val = agentExcludeInput.value.trim();
-      _state.agentFilterNameExclude = val ? val.split(',').map(p => p.trim().toLowerCase()).filter(Boolean) : [];
+      _state.agentFilterNameExclude = val
+        ? val
+            .split(',')
+            .map((p) => p.trim().toLowerCase())
+            .filter(Boolean)
+        : [];
       _applyFilters();
     });
   }
@@ -429,12 +452,20 @@ export function initFilterDashboard() {
   // Share button — copy shareable URL to clipboard (bd-8o2gd phase 4)
   document.getElementById('fd-share')?.addEventListener('click', () => {
     const url = getShareableUrl();
-    navigator.clipboard.writeText(url).then(() => {
-      const btn = document.getElementById('fd-share');
-      if (btn) { btn.textContent = 'copied!'; setTimeout(() => { btn.textContent = 'share'; }, 1500); }
-    }).catch(() => {
-      prompt('Copy this URL:', url);
-    });
+    navigator.clipboard
+      .writeText(url)
+      .then(() => {
+        const btn = document.getElementById('fd-share');
+        if (btn) {
+          btn.textContent = 'copied!';
+          setTimeout(() => {
+            btn.textContent = 'share';
+          }, 1500);
+        }
+      })
+      .catch(() => {
+        prompt('Copy this URL:', url);
+      });
   });
 
   // Reset button
@@ -502,7 +533,7 @@ export function initFilterDashboard() {
 }
 
 export function updateFilterCount() {
-  const visible = _state.graphData.nodes.filter(n => !n._hidden).length;
+  const visible = _state.graphData.nodes.filter((n) => !n._hidden).length;
   const total = _state.graphData.nodes.length;
   const el = document.getElementById('filter-count');
   if (el) {

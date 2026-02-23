@@ -170,25 +170,32 @@ function renderFullDetail(issue) {
     sections.push(`<div class="detail-section"><h4>Notes</h4><pre>${escapeHtml(issue.notes)}</pre></div>`);
   }
   if (issue.acceptance_criteria) {
-    sections.push(`<div class="detail-section"><h4>Acceptance Criteria</h4><pre>${escapeHtml(issue.acceptance_criteria)}</pre></div>`);
+    sections.push(
+      `<div class="detail-section"><h4>Acceptance Criteria</h4><pre>${escapeHtml(issue.acceptance_criteria)}</pre></div>`,
+    );
   }
 
   // Dependencies
   if (issue.dependencies && issue.dependencies.length > 0) {
-    const deps = issue.dependencies.map(d =>
-      `<div class="dep-item">${escapeHtml(d.type || 'dep')} &rarr; ${escapeHtml(d.title || d.depends_on_id || d.id)}</div>`
-    ).join('');
+    const deps = issue.dependencies
+      .map(
+        (d) =>
+          `<div class="dep-item">${escapeHtml(d.type || 'dep')} &rarr; ${escapeHtml(d.title || d.depends_on_id || d.id)}</div>`,
+      )
+      .join('');
     sections.push(`<div class="detail-section"><h4>Dependencies</h4>${deps}</div>`);
   }
 
   // Blocked by
   if (issue.blocked_by && issue.blocked_by.length > 0) {
-    sections.push(`<div class="detail-section"><h4>Blocked By</h4>${issue.blocked_by.map(b => `<div class="dep-item">${escapeHtml(b)}</div>`).join('')}</div>`);
+    sections.push(
+      `<div class="detail-section"><h4>Blocked By</h4>${issue.blocked_by.map((b) => `<div class="dep-item">${escapeHtml(b)}</div>`).join('')}</div>`,
+    );
   }
 
   // Labels
   if (issue.labels && issue.labels.length > 0) {
-    const labels = issue.labels.map(l => `<span class="tag">${escapeHtml(l)}</span>`).join(' ');
+    const labels = issue.labels.map((l) => `<span class="tag">${escapeHtml(l)}</span>`).join(' ');
     sections.push(`<div class="detail-section"><h4>Labels</h4>${labels}</div>`);
   }
 
@@ -212,13 +219,17 @@ function renderDecisionDetail(node, resp) {
   const sections = [];
 
   // State badge
-  const state = dec.selected_option ? 'resolved' : (node.status === 'closed' ? 'resolved' : 'pending');
+  const state = dec.selected_option ? 'resolved' : node.status === 'closed' ? 'resolved' : 'pending';
   const stateColor = state === 'resolved' ? '#2d8a4e' : state === 'expired' ? '#d04040' : '#d4a017';
-  sections.push(`<div class="decision-state" style="color:${stateColor};font-weight:bold;margin-bottom:8px">${state.toUpperCase()}</div>`);
+  sections.push(
+    `<div class="decision-state" style="color:${stateColor};font-weight:bold;margin-bottom:8px">${state.toUpperCase()}</div>`,
+  );
 
   // Prompt
   if (dec.prompt) {
-    sections.push(`<div class="detail-section"><h4>Question</h4><pre class="decision-prompt">${escapeHtml(dec.prompt)}</pre></div>`);
+    sections.push(
+      `<div class="detail-section"><h4>Question</h4><pre class="decision-prompt">${escapeHtml(dec.prompt)}</pre></div>`,
+    );
   }
 
   // Context
@@ -227,22 +238,33 @@ function renderDecisionDetail(node, resp) {
   }
 
   // Options (DecisionPoint.Options is a JSON string in Go, must parse)
-  const opts = typeof dec.options === 'string' ? (() => { try { return JSON.parse(dec.options); } catch { return []; } })() : (dec.options || []);
+  const opts =
+    typeof dec.options === 'string'
+      ? (() => {
+          try {
+            return JSON.parse(dec.options);
+          } catch {
+            return [];
+          }
+        })()
+      : dec.options || [];
   if (opts.length > 0) {
-    const optHtml = opts.map((opt, i) => {
-      const selected = dec.selected_option === opt.id;
-      const cls = selected ? 'decision-opt selected' : 'decision-opt';
-      const label = opt.label || opt.short || opt.id;
-      const beadRef = opt.bead_id ? ` <span class="decision-opt-bead">(${escapeHtml(opt.bead_id)})</span>` : '';
-      return `<button class="${cls}" data-opt-id="${escapeHtml(opt.id)}" data-opt-idx="${i}">${escapeHtml(label)}${beadRef}</button>`;
-    }).join('');
+    const optHtml = opts
+      .map((opt, i) => {
+        const selected = dec.selected_option === opt.id;
+        const cls = selected ? 'decision-opt selected' : 'decision-opt';
+        const label = opt.label || opt.short || opt.id;
+        const beadRef = opt.bead_id ? ` <span class="decision-opt-bead">(${escapeHtml(opt.bead_id)})</span>` : '';
+        return `<button class="${cls}" data-opt-id="${escapeHtml(opt.id)}" data-opt-idx="${i}">${escapeHtml(label)}${beadRef}</button>`;
+      })
+      .join('');
     sections.push(`<div class="detail-section"><h4>Options</h4><div class="decision-options">${optHtml}</div></div>`);
   }
 
   // Resolution result
   if (dec.selected_option) {
-    const selectedOpt = opts.find(o => o.id === dec.selected_option);
-    const selectedLabel = selectedOpt ? (selectedOpt.label || selectedOpt.short || selectedOpt.id) : dec.selected_option;
+    const selectedOpt = opts.find((o) => o.id === dec.selected_option);
+    const selectedLabel = selectedOpt ? selectedOpt.label || selectedOpt.short || selectedOpt.id : dec.selected_option;
     let resolvedInfo = `<div class="decision-selected">${escapeHtml(selectedLabel)}</div>`;
     if (dec.responded_by) resolvedInfo += `<div style="color:#888;font-size:11px">by ${escapeHtml(dec.responded_by)}`;
     if (dec.responded_at) resolvedInfo += ` at ${new Date(dec.responded_at).toLocaleString()}`;
@@ -264,7 +286,9 @@ function renderDecisionDetail(node, resp) {
 
   // Iteration info
   if (dec.iteration > 0 || dec.max_iterations > 0) {
-    sections.push(`<div class="detail-section detail-timestamps">iteration ${dec.iteration || 0}/${dec.max_iterations || 3}</div>`);
+    sections.push(
+      `<div class="detail-section detail-timestamps">iteration ${dec.iteration || 0}/${dec.max_iterations || 3}</div>`,
+    );
   }
 
   // Metadata
@@ -288,7 +312,7 @@ function bindDecisionHandlers(panel, node, resp) {
   const graph = _getGraph();
 
   // Option buttons
-  panel.querySelectorAll('.decision-opt').forEach(btn => {
+  panel.querySelectorAll('.decision-opt').forEach((btn) => {
     btn.addEventListener('click', async () => {
       const optId = btn.dataset.optId;
       btn.classList.add('selected');
@@ -298,9 +322,14 @@ function bindDecisionHandlers(panel, node, resp) {
         // Optimistic state update
         node._decisionState = 'resolved';
         const stateEl = panel.querySelector('.decision-state');
-        if (stateEl) { stateEl.textContent = 'RESOLVED'; stateEl.style.color = '#2d8a4e'; }
+        if (stateEl) {
+          stateEl.textContent = 'RESOLVED';
+          stateEl.style.color = '#2d8a4e';
+        }
         // Disable all buttons
-        panel.querySelectorAll('.decision-opt').forEach(b => { b.disabled = true; });
+        panel.querySelectorAll('.decision-opt').forEach((b) => {
+          b.disabled = true;
+        });
         const respondSection = panel.querySelector('.decision-respond-section');
         if (respondSection) respondSection.remove();
         _showStatusToast(`resolved ${node.id}: ${optId}`);
@@ -327,8 +356,13 @@ function bindDecisionHandlers(panel, node, resp) {
         await _api.decisionResolve(node.id, '', text);
         node._decisionState = 'resolved';
         const stateEl = panel.querySelector('.decision-state');
-        if (stateEl) { stateEl.textContent = 'RESOLVED'; stateEl.style.color = '#2d8a4e'; }
-        panel.querySelectorAll('.decision-opt').forEach(b => { b.disabled = true; });
+        if (stateEl) {
+          stateEl.textContent = 'RESOLVED';
+          stateEl.style.color = '#2d8a4e';
+        }
+        panel.querySelectorAll('.decision-opt').forEach((b) => {
+          b.disabled = true;
+        });
         input.value = 'Sent!';
         input.disabled = true;
         _showStatusToast(`resolved ${node.id}`);
@@ -340,7 +374,9 @@ function bindDecisionHandlers(panel, node, resp) {
       }
     };
     sendBtn.addEventListener('click', doSend);
-    input.addEventListener('keydown', (e) => { if (e.key === 'Enter') doSend(); });
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') doSend();
+    });
   }
 }
 

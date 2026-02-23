@@ -2,7 +2,14 @@
 // Extracted from main.js to reduce monolith size (bd-7t6nt).
 
 import { CSS2DRenderer, CSS2DObject } from 'three/examples/jsm/renderers/CSS2DRenderer.js';
-import { spawnStatusPulse, spawnShockwave, spawnCollapseEffect, triggerClaimComet, intensifyAura, _pendingFireworks } from './vfx.js';
+import {
+  spawnStatusPulse,
+  spawnShockwave,
+  spawnCollapseEffect,
+  triggerClaimComet,
+  intensifyAura,
+  _pendingFireworks,
+} from './vfx.js';
 
 // Callbacks set by main.js to avoid circular imports
 let _api = null;
@@ -46,10 +53,10 @@ function _updateConnectionStatus() {
   const statusEl = document.getElementById('status');
   if (!statusEl) return;
   const states = [_sseState.mutation, _sseState.bus];
-  if (states.every(s => s === 'connected')) {
+  if (states.every((s) => s === 'connected')) {
     statusEl.textContent = 'connected';
     statusEl.className = 'connected';
-  } else if (states.some(s => s === 'disconnected')) {
+  } else if (states.some((s) => s === 'disconnected')) {
     const retryBtn = statusEl.querySelector('.retry-btn');
     if (!retryBtn) {
       statusEl.innerHTML = 'disconnected <button class="retry-btn" title="Retry SSE connection">retry</button>';
@@ -59,7 +66,7 @@ function _updateConnectionStatus() {
         _api.reconnectAll();
       });
     }
-  } else if (states.some(s => s === 'reconnecting')) {
+  } else if (states.some((s) => s === 'reconnecting')) {
     const attempt = _sseState._lastAttempt || '?';
     statusEl.textContent = `reconnecting (${attempt})...`;
     statusEl.className = 'reconnecting';
@@ -71,30 +78,35 @@ function _updateConnectionStatus() {
 
 export function connectLiveUpdates() {
   try {
-    _api.connectEvents((evt) => {
-      const applied = applyMutationOptimistic(evt);
-      // Always schedule a background refresh for consistency, but with longer
-      // delay if we already applied the change visually (bd-c1x6p: increased
-      // debounce from 5s/1.5s to 10s/3s to reduce layout disruption frequency).
-      clearTimeout(_refreshTimer);
-      _refreshTimer = setTimeout(_refresh, applied ? 10000 : 3000);
-    }, {
-      onStatus: (state, info) => {
-        _sseState.mutation = state;
-        if (info.attempt) _sseState._lastAttempt = info.attempt;
-        _updateConnectionStatus();
-        // On reconnect, refresh to catch missed mutations (bd-ki6im)
-        if (state === 'connected' && _sseState._mutationWasDown) {
-          _sseState._mutationWasDown = false;
-          clearTimeout(_refreshTimer);
-          _refreshTimer = setTimeout(_refresh, 500);
-        }
-        if (state === 'reconnecting' || state === 'disconnected') {
-          _sseState._mutationWasDown = true;
-        }
+    _api.connectEvents(
+      (evt) => {
+        const applied = applyMutationOptimistic(evt);
+        // Always schedule a background refresh for consistency, but with longer
+        // delay if we already applied the change visually (bd-c1x6p: increased
+        // debounce from 5s/1.5s to 10s/3s to reduce layout disruption frequency).
+        clearTimeout(_refreshTimer);
+        _refreshTimer = setTimeout(_refresh, applied ? 10000 : 3000);
       },
-    });
-  } catch { /* polling fallback */ }
+      {
+        onStatus: (state, info) => {
+          _sseState.mutation = state;
+          if (info.attempt) _sseState._lastAttempt = info.attempt;
+          _updateConnectionStatus();
+          // On reconnect, refresh to catch missed mutations (bd-ki6im)
+          if (state === 'connected' && _sseState._mutationWasDown) {
+            _sseState._mutationWasDown = false;
+            clearTimeout(_refreshTimer);
+            _refreshTimer = setTimeout(_refresh, 500);
+          }
+          if (state === 'reconnecting' || state === 'disconnected') {
+            _sseState._mutationWasDown = true;
+          }
+        },
+      },
+    );
+  } catch {
+    /* polling fallback */
+  }
 }
 
 // Apply a mutation event optimistically to the in-memory graph data.
@@ -108,7 +120,7 @@ export function applyMutationOptimistic(evt) {
   if (!id) return false;
 
   // Find the node in the current graph
-  const node = graphData.nodes.find(n => n.id === id);
+  const node = graphData.nodes.find((n) => n.id === id);
 
   switch (evt.type) {
     case 'status': {
@@ -211,12 +223,12 @@ export function findAgentNode(evt) {
   if (evt.type === 'MailSent' || evt.type === 'MailRead') {
     const to = (p.to || '').replace(/^@/, '');
     if (to && graphData) {
-      const visible = graphData.nodes.filter(n => n.issue_type === 'agent' && !n._hidden);
+      const visible = graphData.nodes.filter((n) => n.issue_type === 'agent' && !n._hidden);
       for (const node of visible) {
         if (node.title === to || node.id === `agent:${to}`) return node;
       }
       // Fall back to hidden agents
-      const hidden = graphData.nodes.filter(n => n.issue_type === 'agent' && n._hidden);
+      const hidden = graphData.nodes.filter((n) => n.issue_type === 'agent' && n._hidden);
       for (const node of hidden) {
         if (node.title === to || node.id === `agent:${to}`) return node;
       }
@@ -225,18 +237,18 @@ export function findAgentNode(evt) {
   }
 
   const candidates = [
-    p.issue_id,      // mutation events: the bead being mutated
-    p.agent_id,      // agent lifecycle events
-    p.agentID,       // alternate casing
-    p.assignee,      // mutation events: the agent assigned to the bead
-    p.requested_by,  // decision events: requesting agent (bd-0j7hr)
-    p.actor,         // hook events (short agent name) or mutations ("daemon")
-  ].filter(c => c && c !== 'daemon');
+    p.issue_id, // mutation events: the bead being mutated
+    p.agent_id, // agent lifecycle events
+    p.agentID, // alternate casing
+    p.assignee, // mutation events: the agent assigned to the bead
+    p.requested_by, // decision events: requesting agent (bd-0j7hr)
+    p.actor, // hook events (short agent name) or mutations ("daemon")
+  ].filter((c) => c && c !== 'daemon');
 
   if (candidates.length === 0) return null;
 
   // Pass 1a: Prefer VISIBLE agent nodes (bd-gal6f: avoid doots on hidden agents)
-  const visibleAgents = graphData.nodes.filter(n => n.issue_type === 'agent' && !n._hidden);
+  const visibleAgents = graphData.nodes.filter((n) => n.issue_type === 'agent' && !n._hidden);
   for (const candidate of candidates) {
     for (const node of visibleAgents) {
       if (node.id === candidate || node.title === candidate || node.assignee === candidate) return node;
@@ -246,7 +258,7 @@ export function findAgentNode(evt) {
     }
   }
   // Pass 1b: Fall back to hidden agent nodes (still better than random bead)
-  const allAgents = graphData.nodes.filter(n => n.issue_type === 'agent' && n._hidden);
+  const allAgents = graphData.nodes.filter((n) => n.issue_type === 'agent' && n._hidden);
   for (const candidate of candidates) {
     for (const node of allAgents) {
       if (node.id === candidate || node.title === candidate || node.assignee === candidate) return node;
@@ -257,14 +269,14 @@ export function findAgentNode(evt) {
   }
 
   // Pass 2: Fall back to any visible node (bd-5knqx live doot fix)
-  const allVisible = graphData.nodes.filter(n => !n._hidden);
+  const allVisible = graphData.nodes.filter((n) => !n._hidden);
   if (p.issue_id) {
-    const byId = allVisible.find(n => n.id === p.issue_id);
+    const byId = allVisible.find((n) => n.id === p.issue_id);
     if (byId) return byId;
   }
   const actor = p.actor;
   if (actor && actor !== 'daemon') {
-    const byAssignee = allVisible.find(n => n.assignee === actor && n.status === 'in_progress');
+    const byAssignee = allVisible.find((n) => n.assignee === actor && n.status === 'in_progress');
     if (byAssignee) return byAssignee;
   }
   return null;
@@ -305,7 +317,8 @@ export function spawnDoot(node, text, color) {
     node,
     birth: performance.now() / 1000,
     lifetime: DOOT_LIFETIME,
-    jx, jz,
+    jx,
+    jz,
   });
 
   // Prune oldest if over limit
@@ -332,11 +345,7 @@ export function updateDoots(t) {
 
     // Rise upward, follow node position (nodes can move during force layout)
     const rise = age * DOOT_RISE_SPEED;
-    d.css2d.position.set(
-      (d.node.x || 0) + d.jx,
-      (d.node.y || 0) + 10 + rise,
-      (d.node.z || 0) + d.jz,
-    );
+    d.css2d.position.set((d.node.x || 0) + d.jx, (d.node.y || 0) + 10 + rise, (d.node.z || 0) + d.jz);
 
     // Fade out over last 40% of lifetime
     const fadeStart = d.lifetime * 0.6;
@@ -349,7 +358,7 @@ export function updateDoots(t) {
 const DOOT_POPUP_DURATION = 30000; // 30s auto-dismiss
 const DOOT_POPUP_MAX = 3; // max simultaneous popups
 
-function showDootPopup(node) {
+export function showDootPopup(node) {
   if (!node || !node.id || node.issue_type === 'agent') return;
 
   const existing = dootPopups.get(node.id);

@@ -147,8 +147,8 @@ export function createFairyLights(count = 300, radius = 250) {
   const positions = new Float32Array(count * 3);
   const sizes = new Float32Array(count);
   const alphas = new Float32Array(count);
-  const phases = new Float32Array(count);    // per-particle phase offset
-  const speeds = new Float32Array(count);    // drift speed multiplier
+  const phases = new Float32Array(count); // per-particle phase offset
+  const speeds = new Float32Array(count); // drift speed multiplier
   const hueShifts = new Float32Array(count); // slight color variation
 
   for (let i = 0; i < count; i++) {
@@ -375,8 +375,8 @@ export function createParticlePool(maxParticles = 2000) {
   const positions = new Float32Array(maxParticles * 3);
   const velocities = new Float32Array(maxParticles * 3);
   const colors = new Float32Array(maxParticles * 3);
-  const lives = new Float32Array(maxParticles);       // current life (0 = dead)
-  const maxLives = new Float32Array(maxParticles);     // initial life (for fade calc)
+  const lives = new Float32Array(maxParticles); // current life (0 = dead)
+  const maxLives = new Float32Array(maxParticles); // initial life (for fade calc)
   const sizes = new Float32Array(maxParticles);
 
   const geometry = new THREE.BufferGeometry();
@@ -471,7 +471,12 @@ export function createParticlePool(maxParticles = 2000) {
       for (let i = 0; i < maxParticles; i++) {
         if (lives[i] <= 0) continue;
         lives[i] -= dt;
-        if (lives[i] <= 0) { lives[i] = 0; sizes[i] = 0; changed = true; continue; }
+        if (lives[i] <= 0) {
+          lives[i] = 0;
+          sizes[i] = 0;
+          changed = true;
+          continue;
+        }
         // Integrate velocity (CPU-side for simplicity; GPU upgrade later)
         positions[i * 3] += velocities[i * 3] * dt;
         positions[i * 3 + 1] += velocities[i * 3 + 1] * dt;
@@ -500,7 +505,7 @@ export function createParticlePool(maxParticles = 2000) {
 // --- Update all shader uniforms ---
 // Call this in the animation loop to advance time-based effects.
 export function updateShaderTime(scene, time) {
-  scene.traverse(obj => {
+  scene.traverse((obj) => {
     if (obj.material && obj.material.uniforms && obj.material.uniforms.time) {
       obj.material.uniforms.time.value = time;
     }

@@ -4,17 +4,99 @@ import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPa
 // CSS2DRenderer, CSS2DObject moved to mutations.js (bd-7t6nt)
 import { BeadsAPI } from './api.js';
 import { nodeColor, nodeSize, linkColor, colorToHex, rigColor } from './colors.js';
-import { createFresnelMaterial, createStarField, updateShaderTime, createMateriaMaterial, createMateriaHaloTexture, createParticlePool, createFairyLights } from './shaders.js';
+import {
+  createFresnelMaterial,
+  createStarField,
+  updateShaderTime,
+  createMateriaMaterial,
+  createMateriaHaloTexture,
+  createParticlePool,
+  createFairyLights,
+} from './shaders.js';
 import { LINK_ICON_MATERIALS, LINK_ICON_DEFAULT, LINK_ICON_SCALE } from './link-icons.js';
-import { initRightSidebar, updateRightSidebar, updateEpicProgress, updateDepHealth, updateDecisionQueue, setOnNodeClick } from './right-sidebar.js';
+import { updateRightSidebar, updateEpicProgress, updateDepHealth, updateDecisionQueue } from './right-sidebar.js';
 import { dootLabel, dootColor, resolveAgentIdLoose } from './event-format.js';
-import { setFilterDeps, toggleFilterDashboard, syncFilterDashboard, updateAssigneeButtons, initFilterDashboard, updateFilterCount } from './filter-dashboard.js';
-import { setDetailDeps, showDetail, hideDetail } from './detail-panel.js';
-import { setLeftSidebarDeps, toggleLeftSidebar, initLeftSidebar, updateAgentRosterFromEvent, updateLeftSidebarFocus, getLeftSidebarOpen, setLeftSidebarOpen, startLeftSidebarIdleTimer } from './left-sidebar.js';
-import { setAgentWindowDeps, agentWindows, getAgentsViewOpen, getSelectedAgentTab, refreshAgentWindowBeads, showAgentWindow, closeAgentWindow, toggleAgentsView, openAgentsView, closeAgentsView, selectAgentTab, createAgentWindowInGrid, initUnifiedFeed, appendAgentEvent, startAgentWindowIdleTimer } from './agent-windows.js';
-import { setVfxDeps, _vfxConfig, _auraEmitters, _pendingFireworks, _activeCollapses, getCameraShake, clearCameraShake, eventSprites, EVENT_SPRITE_MAX, spawnStatusPulse, spawnFireworkBurst, spawnShockwave, spawnCollapseEffect, spawnEdgeSpark, spawnCometTrail, spawnEnergyBeam, triggerClaimComet, updateEventSprites, updateInProgressAura, intensifyAura } from './vfx.js';
-import { setControlPanelDeps, toggleControlPanel, initControlPanel } from './control-panel.js';
-import { setMutationDeps, doots, css2dRenderer, dootPopups, connectLiveUpdates, initCSS2DRenderer, updateDoots, findAgentNode, spawnDoot, dismissDootPopup, applyMutationOptimistic, updateBusConnectionState } from './mutations.js';
+import { updateAssigneeButtons, updateFilterCount } from './filter-dashboard.js';
+import { showDetail, hideDetail } from './detail-panel.js';
+import {
+  setLeftSidebarDeps,
+  initLeftSidebar,
+  updateAgentRosterFromEvent,
+  updateLeftSidebarFocus,
+  setLeftSidebarOpen,
+  startLeftSidebarIdleTimer,
+} from './left-sidebar.js';
+import {
+  agentWindows,
+  getAgentsViewOpen,
+  getSelectedAgentTab,
+  refreshAgentWindowBeads,
+  showAgentWindow,
+  closeAgentWindow,
+  toggleAgentsView,
+  openAgentsView,
+  closeAgentsView,
+  selectAgentTab,
+  createAgentWindowInGrid,
+  appendAgentEvent,
+  startAgentWindowIdleTimer,
+} from './agent-windows.js';
+import {
+  setVfxDeps,
+  _vfxConfig,
+  _auraEmitters,
+  _pendingFireworks,
+  _activeCollapses,
+  getCameraShake,
+  clearCameraShake,
+  eventSprites,
+  EVENT_SPRITE_MAX,
+  spawnStatusPulse,
+  spawnFireworkBurst,
+  spawnShockwave,
+  spawnCollapseEffect,
+  spawnEdgeSpark,
+  spawnCometTrail,
+  spawnEnergyBeam,
+  triggerClaimComet,
+  updateEventSprites,
+  updateInProgressAura,
+  intensifyAura,
+  setVfxIntensity,
+  presetVFX,
+} from './vfx.js';
+// setControlPanelDeps, toggleControlPanel, initControlPanel moved to camera.js (bd-7t6nt)
+import {
+  doots,
+  css2dRenderer,
+  dootPopups,
+  connectLiveUpdates,
+  initCSS2DRenderer,
+  updateDoots,
+  findAgentNode,
+  spawnDoot,
+  showDootPopup,
+  dismissDootPopup,
+  applyMutationOptimistic,
+  updateBusConnectionState,
+} from './mutations.js';
+import { setContextMenuDeps, handleNodeRightClick, hideContextMenu, showStatusToast } from './context-menu.js';
+import {
+  setCameraDeps,
+  _keysDown,
+  _camVelocity,
+  cameraFrozen,
+  isBoxSelecting,
+  setupControls,
+  setupBoxSelect,
+  captureScreenshot,
+  exportGraphJSON,
+  centerCameraOnSelection,
+  unfreezeCamera,
+  hideBulkMenu,
+  showBulkMenu,
+  updateCameraMovement,
+} from './camera.js';
 
 // --- Config ---
 const params = new URLSearchParams(window.location.search);
@@ -32,11 +114,11 @@ const api = new BeadsAPI(API_BASE);
 
 // --- Shared geometries (reused across all nodes to reduce GC + draw overhead) ---
 const GEO = {
-  sphereHi:   new THREE.SphereGeometry(1, 12, 12),   // unit sphere, scaled per-node
-  sphereLo:   new THREE.SphereGeometry(1, 6, 6),      // low-poly glow shell
-  torus:      new THREE.TorusGeometry(1, 0.15, 6, 20), // unit torus for rings
-  octa:       new THREE.OctahedronGeometry(1, 0),      // blocked spikes
-  box:        new THREE.BoxGeometry(1, 1, 1),           // descent stage, general purpose
+  sphereHi: new THREE.SphereGeometry(1, 12, 12), // unit sphere, scaled per-node
+  sphereLo: new THREE.SphereGeometry(1, 6, 6), // low-poly glow shell
+  torus: new THREE.TorusGeometry(1, 0.15, 6, 20), // unit torus for rings
+  octa: new THREE.OctahedronGeometry(1, 0), // blocked spikes
+  box: new THREE.BoxGeometry(1, 1, 1), // descent stage, general purpose
 };
 
 // Shared materia halo texture (bd-c7d5z) — lazy-initialized on first use
@@ -47,18 +129,18 @@ let _materiaHaloTex = null;
 // --- State ---
 let graphData = { nodes: [], links: [] };
 let graph;
-let searchFilter = '';
-let statusFilter = new Set(); // empty = show all
-let typeFilter = new Set();
-let priorityFilter = new Set(); // empty = show all priorities (bd-8o2gd phase 2)
-let assigneeFilter = ''; // empty = show all assignees (bd-8o2gd phase 2)
-let filterDashboardOpen = false; // slide-out filter panel state (bd-8o2gd phase 2)
-let startTime = performance.now();
+const searchFilter = '';
+const statusFilter = new Set(); // empty = show all
+const typeFilter = new Set();
+const priorityFilter = new Set(); // empty = show all priorities (bd-8o2gd phase 2)
+const assigneeFilter = ''; // empty = show all assignees (bd-8o2gd phase 2)
+const filterDashboardOpen = false; // slide-out filter panel state (bd-8o2gd phase 2)
+const startTime = performance.now();
 let selectedNode = null;
-let highlightNodes = new Set();
-let highlightLinks = new Set();
+const highlightNodes = new Set();
+const highlightLinks = new Set();
 let bloomPass = null;
-let bloomEnabled = false;
+const bloomEnabled = false;
 let layoutGuides = []; // THREE objects added as layout visual aids (cleaned up on layout switch)
 
 // Search navigation state
@@ -67,38 +149,37 @@ let searchResultIdx = -1; // current position in results (-1 = none)
 let minimapVisible = true;
 
 // Multi-selection state (rubber-band / shift+drag)
-let multiSelected = new Set(); // set of node IDs currently multi-selected
-let revealedNodes = new Set(); // node IDs force-shown by click-to-reveal (hq-vorf47)
+const multiSelected = new Set(); // set of node IDs currently multi-selected
+const revealedNodes = new Set(); // node IDs force-shown by click-to-reveal (hq-vorf47)
 let focusedMoleculeNodes = new Set(); // node IDs in the focused molecule (bd-lwut6)
-let isBoxSelecting = false;
-let boxSelectStart = null; // {x, y} screen coords
-let cameraFrozen = false; // true when multi-select has locked orbit controls (bd-casin)
+// isBoxSelecting, boxSelectStart, cameraFrozen, _keysDown, _camVelocity, CAM_* moved to camera.js (bd-7t6nt)
 let labelsVisible = true; // true when persistent info labels are shown on all nodes (bd-1o2f7, bd-oypa2: default on)
-
-// Quake-style smooth camera movement (bd-zab4q)
-const _keysDown = new Set(); // currently held arrow keys
-const _camVelocity = { x: 0, y: 0, z: 0 }; // world-space camera velocity
-const CAM_ACCEL = 1.2;      // acceleration per frame while key held
-const CAM_MAX_SPEED = 16;   // max strafe speed (units/frame)
-const CAM_FRICTION = 0.88;  // velocity multiplier per frame when no key held (lower = more friction)
 // openPanels moved to detail-panel.js (bd-7t6nt)
-let activeAgeDays = 7; // age filter: show beads updated within N days (0 = all) (bd-uc0mw)
+const activeAgeDays = 7; // age filter: show beads updated within N days (0 = all) (bd-uc0mw)
 
 // Agent filter state (bd-8o2gd: configurable filter dashboard, phase 1)
-let agentFilterShow = true;        // master toggle — show/hide all agent nodes
-let agentFilterOrphaned = false;   // show agents with no visible connected beads
-let agentFilterRigExclude = new Set(); // hide agents on these rigs (exact match)
-let agentFilterNameExclude = []; // glob patterns to hide agents by name (bd-8o2gd phase 4)
+const agentFilterShow = true; // master toggle — show/hide all agent nodes
+const agentFilterOrphaned = false; // show agents with no visible connected beads
+const agentFilterRigExclude = new Set(); // hide agents on these rigs (exact match)
+const agentFilterNameExclude = []; // glob patterns to hide agents by name (bd-8o2gd phase 4)
 
 // Edge type filter (bd-a0vbd): hide specific edge types to reduce graph density
-let depTypeHidden = new Set(['rig_conflict']); // default: hide rig conflict edges
+const depTypeHidden = new Set(['rig_conflict']); // default: hide rig conflict edges
 
 // _pendingFireworks and _activeCollapses moved to vfx.js (bd-7t6nt)
-let maxEdgesPerNode = 0; // 0 = unlimited; cap edges per node to reduce hub hairballs (bd-ke2xc)
+const maxEdgesPerNode = 0; // 0 = unlimited; cap edges per node to reduce hub hairballs (bd-ke2xc)
 
 // Simple glob matcher: supports * (any chars) and ? (single char) (bd-8o2gd phase 4)
 function globMatch(pattern, str) {
-  const re = new RegExp('^' + pattern.replace(/[.+^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*').replace(/\?/g, '.') + '$', 'i');
+  const re = new RegExp(
+    '^' +
+      pattern
+        .replace(/[.+^${}()|[\]\\]/g, '\\$&')
+        .replace(/\*/g, '.*')
+        .replace(/\?/g, '.') +
+      '$',
+    'i',
+  );
   return re.test(str);
 }
 
@@ -113,7 +194,7 @@ function isTextInputFocused() {
 // Resource cleanup refs (bd-7n4g8)
 let _bloomResizeHandler = null;
 let _pollIntervalId = null;
-let _searchDebounceTimer = null;
+const _searchDebounceTimer = null;
 
 // Live event doots — HTML overlay elements via CSS2DRenderer (bd-bwkdk)
 // doots, css2dRenderer, dootPopups moved to mutations.js (bd-7t6nt)
@@ -126,16 +207,16 @@ let _searchDebounceTimer = null;
 // leftSidebarOpen, _agentRoster moved to left-sidebar.js (bd-7t6nt)
 
 // Epic cycling state — Shift+S/D navigation (bd-pnngb)
-let _epicNodes = [];       // sorted array of epic nodes, rebuilt on refresh
-let _epicCycleIndex = -1;  // current position in _epicNodes (-1 = none)
+let _epicNodes = []; // sorted array of epic nodes, rebuilt on refresh
+let _epicCycleIndex = -1; // current position in _epicNodes (-1 = none)
 
 // --- GPU Particle Pool + Selection VFX (bd-m9525) ---
-let _particlePool = null;  // GPU particle pool instance
-let _hoveredNode = null;   // currently hovered node for glow warmup
-let _hoverGlowTimer = 0;   // accumulator for hover glow particle emission
+let _particlePool = null; // GPU particle pool instance
+let _hoveredNode = null; // currently hovered node for glow warmup
+let _hoverGlowTimer = 0; // accumulator for hover glow particle emission
 let _selectionOrbitTimer = 0; // accumulator for orbit ring particle emission
-let _energyStreamTimer = 0;  // accumulator for dependency energy stream particles
-let _flyToTrailActive = false; // true during camera fly-to for particle trail
+let _energyStreamTimer = 0; // accumulator for dependency energy stream particles
+const _flyToTrailActive = false; // true during camera fly-to for particle trail
 
 // --- VFX system moved to vfx.js (bd-7t6nt) ---
 // _vfxConfig, eventSprites, spawn functions, updateEventSprites, updateInProgressAura, intensifyAura
@@ -154,8 +235,10 @@ function createPerfOverlay() {
   if (_perfOverlayEl) return;
   const el = document.createElement('div');
   el.id = 'perf-overlay';
-  el.style.cssText = 'position:fixed;top:8px;right:8px;z-index:10000;font-family:monospace;font-size:11px;background:rgba(0,0,5,0.85);color:#ccc;padding:6px 10px;border-radius:4px;border:1px solid #2a2a3a;pointer-events:none;display:none;min-width:120px;';
-  el.innerHTML = '<div id="perf-fps" style="font-size:14px;font-weight:bold">-- FPS</div><canvas id="perf-graph" width="120" height="30" style="display:none;margin-top:4px;border:1px solid #222"></canvas><div id="perf-stats" style="margin-top:4px;font-size:9px;color:#888;line-height:1.4"></div>';
+  el.style.cssText =
+    'position:fixed;top:8px;right:8px;z-index:10000;font-family:monospace;font-size:11px;background:rgba(0,0,5,0.85);color:#ccc;padding:6px 10px;border-radius:4px;border:1px solid #2a2a3a;pointer-events:none;display:none;min-width:120px;';
+  el.innerHTML =
+    '<div id="perf-fps" style="font-size:14px;font-weight:bold">-- FPS</div><canvas id="perf-graph" width="120" height="30" style="display:none;margin-top:4px;border:1px solid #222"></canvas><div id="perf-stats" style="margin-top:4px;font-size:9px;color:#888;line-height:1.4"></div>';
   document.body.appendChild(el);
   _perfOverlayEl = el;
   _perfCanvasEl = document.getElementById('perf-graph');
@@ -185,7 +268,8 @@ function updatePerfOverlay(t) {
   if (_perfGraphVisible && _perfCanvasEl) {
     _perfCanvasEl.style.display = 'block';
     const ctx = _perfCanvasEl.getContext('2d');
-    const w = 120, h = 30;
+    const w = 120,
+      h = 30;
     ctx.clearRect(0, 0, w, h);
     ctx.fillStyle = 'rgba(0,0,5,0.5)';
     ctx.fillRect(0, 0, w, h);
@@ -212,7 +296,14 @@ function updatePerfOverlay(t) {
     if (statsEl) {
       const lines = [];
       const mem = performance.memory;
-      if (mem) lines.push('heap: ' + (mem.usedJSHeapSize / 1048576).toFixed(1) + ' / ' + (mem.totalJSHeapSize / 1048576).toFixed(1) + ' MB');
+      if (mem)
+        lines.push(
+          'heap: ' +
+            (mem.usedJSHeapSize / 1048576).toFixed(1) +
+            ' / ' +
+            (mem.totalJSHeapSize / 1048576).toFixed(1) +
+            ' MB',
+        );
       if (_particlePool) lines.push('particles: ' + _particlePool.activeCount + ' / 2000');
       if (graphData) lines.push('nodes: ' + graphData.nodes.length + '  links: ' + graphData.links.length);
       lines.push('sprites: ' + eventSprites.length);
@@ -234,7 +325,7 @@ function togglePerfGraph() {
 }
 
 // Agent tether strength — 0 = off, 1 = max pull (bd-uzj5j)
-let _agentTetherStrength = 0.5;
+const _agentTetherStrength = 0.5;
 
 // --- Minimap ---
 const minimapCanvas = document.getElementById('minimap');
@@ -255,9 +346,11 @@ function renderMinimap() {
   ctx.fillRect(0, 0, w, h);
 
   // Compute bounding box of all visible nodes (top-down: X, Z)
-  let minX = Infinity, maxX = -Infinity;
-  let minZ = Infinity, maxZ = -Infinity;
-  const visibleNodes = graphData.nodes.filter(n => !n._hidden && n.x !== undefined);
+  let minX = Infinity,
+    maxX = -Infinity;
+  let minZ = Infinity,
+    maxZ = -Infinity;
+  const visibleNodes = graphData.nodes.filter((n) => !n._hidden && n.x !== undefined);
 
   for (const n of visibleNodes) {
     if (n.x < minX) minX = n.x;
@@ -270,8 +363,8 @@ function renderMinimap() {
 
   // Add padding
   const pad = 40;
-  const rangeX = (maxX - minX) || 1;
-  const rangeZ = (maxZ - minZ) || 1;
+  const rangeX = maxX - minX || 1;
+  const rangeZ = maxZ - minZ || 1;
   const scale = Math.min((w - pad * 2) / rangeX, (h - pad * 2) / rangeZ);
 
   // Map world coords to minimap coords
@@ -302,7 +395,7 @@ function renderMinimap() {
   for (const n of visibleNodes) {
     const mx = toMiniX(n.x);
     const my = toMiniY(n.z || 0);
-    const r = n.issue_type === 'epic' ? 3 : (n._blocked ? 2.5 : 1.5);
+    const r = n.issue_type === 'epic' ? 3 : n._blocked ? 2.5 : 1.5;
     const color = nodeColor(n);
 
     ctx.fillStyle = color;
@@ -335,7 +428,7 @@ function renderMinimap() {
   ctx.globalAlpha = 0.6;
 
   // Viewport rectangle (approximate based on camera height and FOV)
-  const fovRad = (camera.fov / 2) * Math.PI / 180;
+  const fovRad = ((camera.fov / 2) * Math.PI) / 180;
   const camHeight = Math.abs(camPos.y) || 200;
   const halfW = Math.tan(fovRad) * camHeight * camera.aspect;
   const halfH = Math.tan(fovRad) * camHeight;
@@ -374,7 +467,7 @@ minimapCanvas.addEventListener('click', (e) => {
   graph.cameraPosition(
     { x: wx, y: camY, z: wz + camY * 0.3 }, // offset Z slightly to look down
     { x: wx, y: 0, z: wz },
-    600
+    600,
   );
 });
 
@@ -397,7 +490,12 @@ function createNodeLabelSprite(node) {
   const lines = [];
   if (showId) lines.push({ text: node.id, bold: true, color: '#4a9eff' });
   if (showTitle) lines.push({ text: title, bold: false, color: '#e0e0e0' });
-  if (showStatus) lines.push({ text: `${node.status || ''}${node.assignee ? ' · ' + node.assignee : ''} · ${pLabel}`, bold: false, color: '#888' });
+  if (showStatus)
+    lines.push({
+      text: `${node.status || ''}${node.assignee ? ' · ' + node.assignee : ''} · ${pLabel}`,
+      bold: false,
+      color: '#888',
+    });
   if (lines.length === 0) lines.push({ text: node.id, bold: true, color: '#4a9eff' });
 
   const canvas = document.createElement('canvas');
@@ -421,13 +519,19 @@ function createNodeLabelSprite(node) {
   // Background with rounded corners (bd-j8ala: configurable bg opacity)
   const bgOpacity = window.__beads3d_labelBgOpacity ?? 0.85;
   ctx.fillStyle = `rgba(10, 10, 18, ${bgOpacity})`;
-  const r = 6, cw = canvas.width, ch = canvas.height;
+  const r = 6,
+    cw = canvas.width,
+    ch = canvas.height;
   ctx.beginPath();
   ctx.moveTo(r, 0);
-  ctx.lineTo(cw - r, 0); ctx.arcTo(cw, 0, cw, r, r);
-  ctx.lineTo(cw, ch - r); ctx.arcTo(cw, ch, cw - r, ch, r);
-  ctx.lineTo(r, ch); ctx.arcTo(0, ch, 0, ch - r, r);
-  ctx.lineTo(0, r); ctx.arcTo(0, 0, r, 0, r);
+  ctx.lineTo(cw - r, 0);
+  ctx.arcTo(cw, 0, cw, r, r);
+  ctx.lineTo(cw, ch - r);
+  ctx.arcTo(cw, ch, cw - r, ch, r);
+  ctx.lineTo(r, ch);
+  ctx.arcTo(0, ch, 0, ch - r, r);
+  ctx.lineTo(0, r);
+  ctx.arcTo(0, 0, r, 0, r);
   ctx.closePath();
   ctx.fill();
 
@@ -453,7 +557,7 @@ function createNodeLabelSprite(node) {
     transparent: true,
     depthWrite: false,
     depthTest: false,
-    sizeAttenuation: false,  // flat screen-space labels — no perspective zoom
+    sizeAttenuation: false, // flat screen-space labels — no perspective zoom
   });
   const sprite = new THREE.Sprite(material);
 
@@ -461,7 +565,7 @@ function createNodeLabelSprite(node) {
   // bd-oypa2: read label size from control panel slider (default 11 → spriteH 0.06)
   const aspect = canvas.width / canvas.height;
   const labelSizeVal = window.__beads3d_labelSize || 11;
-  const spriteH = labelSizeVal * 0.00545;  // 11→0.06, 6→0.033, 24→0.131
+  const spriteH = labelSizeVal * 0.00545; // 11→0.06, 6→0.033, 24→0.131
   sprite.scale.set(spriteH * aspect, spriteH, 1);
 
   // Position above the node
@@ -501,7 +605,7 @@ function resolveOverlappingLabels() {
   for (const node of graphData.nodes) {
     const threeObj = node.__threeObj;
     if (!threeObj) continue;
-    threeObj.traverse(child => {
+    threeObj.traverse((child) => {
       if (!child.userData.nodeLabel) return;
       // Reset to base position before computing new offsets
       if (child.userData.baseLabelY !== undefined) {
@@ -652,8 +756,8 @@ function resolveOverlappingLabels() {
     l.sprite.getWorldPosition(worldPos);
     const camDist = camera.position.distanceTo(worldPos);
     // For perspective camera: world units per pixel = 2 * dist * tan(fov/2) / height
-    const fovRad = camera.fov * Math.PI / 180;
-    const worldPerPx = 2 * camDist * Math.tan(fovRad / 2) / height;
+    const fovRad = (camera.fov * Math.PI) / 180;
+    const worldPerPx = (2 * camDist * Math.tan(fovRad / 2)) / height;
     l.sprite.position.y -= l.offsetY * worldPerPx; // screen Y is inverted vs world Y
   }
 }
@@ -671,7 +775,7 @@ function _labelPriority(label) {
     // Spread agent priorities by name hash to break ties in overlap resolution (bd-w0hbr)
     let h = 0;
     for (let i = 0; i < (n.id?.length || 0); i++) h = ((h << 3) - h + n.id.charCodeAt(i)) | 0;
-    pri += (Math.abs(h) % 20);
+    pri += Math.abs(h) % 20;
   }
   // In-progress beads are more important than open/closed
   if (n.status === 'in_progress') pri += 50;
@@ -687,7 +791,7 @@ function initGraph() {
     .showNavInfo(false)
 
     // Custom node rendering — organic vacuole look (shared geometries for perf)
-    .nodeThreeObject(n => {
+    .nodeThreeObject((n) => {
       if (n._hidden) return new THREE.Group();
 
       // Revealed-but-filtered nodes render as ghosts — reduced opacity (hq-vorf47)
@@ -700,26 +804,31 @@ function initGraph() {
 
       // Materia orb core — FFVII-style inner glow (bd-c7d5z, replaces MeshBasicMaterial)
       const breathSpeed = n.status === 'in_progress' ? 2.0 : 0.0; // bd-pe8k2: only in_progress pulses
-      const coreIntensity = n.status === 'closed' ? 0.5 : (n.status === 'in_progress' ? 1.8 : 1.4);
+      const coreIntensity = n.status === 'closed' ? 0.5 : n.status === 'in_progress' ? 1.8 : 1.4;
       const coreOpacity = n.status === 'closed' ? 0.4 : 0.85;
-      const core = new THREE.Mesh(GEO.sphereHi, createMateriaMaterial(hexColor, {
-        opacity: coreOpacity * ghostFade,
-        coreIntensity,
-        breathSpeed,
-      }));
+      const core = new THREE.Mesh(
+        GEO.sphereHi,
+        createMateriaMaterial(hexColor, {
+          opacity: coreOpacity * ghostFade,
+          coreIntensity,
+          breathSpeed,
+        }),
+      );
       core.scale.setScalar(size);
       group.add(core);
 
       // Materia halo sprite — soft radial gradient billboard (bd-c7d5z, replaces Fresnel shell)
       if (!_materiaHaloTex) _materiaHaloTex = createMateriaHaloTexture(64);
-      const halo = new THREE.Sprite(new THREE.SpriteMaterial({
-        map: _materiaHaloTex,
-        color: hexColor,
-        transparent: true,
-        opacity: 0.2 * ghostFade,
-        blending: THREE.AdditiveBlending,
-        depthWrite: false,
-      }));
+      const halo = new THREE.Sprite(
+        new THREE.SpriteMaterial({
+          map: _materiaHaloTex,
+          color: hexColor,
+          transparent: true,
+          opacity: 0.2 * ghostFade,
+          blending: THREE.AdditiveBlending,
+          depthWrite: false,
+        }),
+      );
       halo.scale.setScalar(size * 3.0);
       group.add(halo);
 
@@ -738,9 +847,14 @@ function initGraph() {
         group.add(cabin);
 
         // Viewport window — small sphere on front face
-        const window = new THREE.Mesh(GEO.sphereHi, new THREE.MeshBasicMaterial({
-          color: 0x88ccff, transparent: true, opacity: 0.8,
-        }));
+        const window = new THREE.Mesh(
+          GEO.sphereHi,
+          new THREE.MeshBasicMaterial({
+            color: 0x88ccff,
+            transparent: true,
+            opacity: 0.8,
+          }),
+        );
         window.scale.setScalar(s * 0.25);
         window.position.set(0, s * 0.15, s * 0.55);
         group.add(window);
@@ -800,7 +914,9 @@ function initGraph() {
 
         // Wake trail — elongated sprite behind agent's direction of travel (beads-v0wa)
         const trailMat = new THREE.SpriteMaterial({
-          color: 0xff6b35, transparent: true, opacity: 0.0, // starts invisible
+          color: 0xff6b35,
+          transparent: true,
+          opacity: 0.0, // starts invisible
         });
         const trail = new THREE.Sprite(trailMat);
         trail.scale.set(size * 0.4, size * 3, 1);
@@ -812,9 +928,11 @@ function initGraph() {
         if (n.rig) {
           const rc = rigColor(n.rig);
           const rigSprite = makeTextSprite(n.rig, {
-            fontSize: 18, color: rc,
+            fontSize: 18,
+            color: rc,
             background: 'rgba(8, 8, 16, 0.85)',
-            sizeAttenuation: false, screenHeight: 0.025,
+            sizeAttenuation: false,
+            screenHeight: 0.025,
           });
           rigSprite.position.y = -size * 2.2;
           rigSprite.renderOrder = 999;
@@ -827,26 +945,40 @@ function initGraph() {
       if (n.issue_type === 'gate' || n.issue_type === 'decision') {
         // Replace sphere core with elongated octahedron (diamond)
         group.remove(core);
-        const diamond = new THREE.Mesh(GEO.octa, new THREE.MeshBasicMaterial({
-          color: hexColor, transparent: true, opacity: 0.9 * ghostFade,
-        }));
+        const diamond = new THREE.Mesh(
+          GEO.octa,
+          new THREE.MeshBasicMaterial({
+            color: hexColor,
+            transparent: true,
+            opacity: 0.9 * ghostFade,
+          }),
+        );
         diamond.scale.set(size * 0.8, size * 1.4, size * 0.8); // tall diamond
         group.add(diamond);
 
         // "?" question mark above node — screen-space for readability
         const qSprite = makeTextSprite('?', {
-          fontSize: 32, color: '#d4a017', opacity: 0.95 * ghostFade,
+          fontSize: 32,
+          color: '#d4a017',
+          opacity: 0.95 * ghostFade,
           background: 'rgba(10, 10, 18, 0.85)',
-          sizeAttenuation: false, screenHeight: 0.04,
+          sizeAttenuation: false,
+          screenHeight: 0.04,
         });
         qSprite.position.y = size * 2.5;
         qSprite.renderOrder = 998;
         group.add(qSprite);
 
         // Pulsing glow wireframe for pending decisions
-        const pulseGlow = new THREE.Mesh(GEO.octa, new THREE.MeshBasicMaterial({
-          color: 0xd4a017, transparent: true, opacity: 0.25 * ghostFade, wireframe: true,
-        }));
+        const pulseGlow = new THREE.Mesh(
+          GEO.octa,
+          new THREE.MeshBasicMaterial({
+            color: 0xd4a017,
+            transparent: true,
+            opacity: 0.25 * ghostFade,
+            wireframe: true,
+          }),
+        );
         pulseGlow.scale.set(size * 1.2, size * 2.0, size * 1.2);
         pulseGlow.userData.decisionPulse = true;
         group.add(pulseGlow);
@@ -854,18 +986,29 @@ function initGraph() {
 
       // Blocked: spiky octahedron
       if (n._blocked) {
-        const spike = new THREE.Mesh(GEO.octa, new THREE.MeshBasicMaterial({
-          color: 0xd04040, transparent: true, opacity: 0.2, wireframe: true,
-        }));
+        const spike = new THREE.Mesh(
+          GEO.octa,
+          new THREE.MeshBasicMaterial({
+            color: 0xd04040,
+            transparent: true,
+            opacity: 0.2,
+            wireframe: true,
+          }),
+        );
         spike.scale.setScalar(size * 2.4);
         group.add(spike);
       }
 
       // Pending decision badge — small amber dot with count (bd-o6tgy)
       if (n._pendingDecisions > 0 && n.issue_type !== 'gate' && n.issue_type !== 'decision') {
-        const badge = new THREE.Mesh(GEO.sphereHi, new THREE.MeshBasicMaterial({
-          color: 0xd4a017, transparent: true, opacity: 0.9,
-        }));
+        const badge = new THREE.Mesh(
+          GEO.sphereHi,
+          new THREE.MeshBasicMaterial({
+            color: 0xd4a017,
+            transparent: true,
+            opacity: 0.9,
+          }),
+        );
         badge.scale.setScalar(Math.min(3 + n._pendingDecisions, 6));
         badge.position.set(size * 1.2, size * 1.2, 0); // top-right offset
         badge.userData.decisionBadge = true;
@@ -876,9 +1019,11 @@ function initGraph() {
       // Lights up when backend adds commit_count field to GraphNode
       if (n.commit_count > 0 && n.issue_type !== 'agent') {
         const ccSprite = makeTextSprite(`${n.commit_count}`, {
-          fontSize: 16, color: '#a0d050',
+          fontSize: 16,
+          color: '#a0d050',
           background: 'rgba(8, 8, 16, 0.85)',
-          sizeAttenuation: false, screenHeight: 0.02,
+          sizeAttenuation: false,
+          screenHeight: 0.02,
         });
         ccSprite.position.set(-size * 1.2, -size * 1.2, 0); // bottom-left
         ccSprite.renderOrder = 998;
@@ -898,12 +1043,12 @@ function initGraph() {
       return group;
     })
     .nodeLabel(() => '')
-    .nodeVisibility(n => !n._hidden)
+    .nodeVisibility((n) => !n._hidden)
 
     // Link rendering — width responds to selection state
-    .linkColor(l => linkColor(l))
+    .linkColor((l) => linkColor(l))
     .linkOpacity(0.55)
-    .linkWidth(l => {
+    .linkWidth((l) => {
       if (selectedNode) {
         const lk = linkKey(l);
         return highlightLinks.has(lk) ? (l.dep_type === 'blocks' ? 2.0 : 1.2) : 0.15;
@@ -914,16 +1059,16 @@ function initGraph() {
     })
     .linkDirectionalArrowLength(5)
     .linkDirectionalArrowRelPos(1)
-    .linkDirectionalArrowColor(l => linkColor(l))
-    .linkVisibility(l => {
-      const src = typeof l.source === 'object' ? l.source : graphData.nodes.find(n => n.id === l.source);
-      const tgt = typeof l.target === 'object' ? l.target : graphData.nodes.find(n => n.id === l.target);
+    .linkDirectionalArrowColor((l) => linkColor(l))
+    .linkVisibility((l) => {
+      const src = typeof l.source === 'object' ? l.source : graphData.nodes.find((n) => n.id === l.source);
+      const tgt = typeof l.target === 'object' ? l.target : graphData.nodes.find((n) => n.id === l.target);
       return src && tgt && !src._hidden && !tgt._hidden && !depTypeHidden.has(l.dep_type);
     })
 
     // Link icons — sprite at midpoint showing dep type (shield=blocks, clock=waits, chain=parent)
     .linkThreeObjectExtend(true)
-    .linkThreeObject(l => {
+    .linkThreeObject((l) => {
       const baseMat = LINK_ICON_MATERIALS[l.dep_type] || LINK_ICON_DEFAULT;
       const sprite = new THREE.Sprite(baseMat.clone());
       sprite.scale.setScalar(LINK_ICON_SCALE);
@@ -934,7 +1079,9 @@ function initGraph() {
         group.userData.isAgentLink = true;
         group.add(sprite);
         const tubeMat = new THREE.MeshBasicMaterial({
-          color: 0xff6b35, transparent: true, opacity: 0.12,
+          color: 0xff6b35,
+          transparent: true,
+          opacity: 0.12,
         });
         const tube = new THREE.Mesh(new THREE.CylinderGeometry(0.6, 0.6, 1, 6, 1, true), tubeMat);
         tube.userData.isGlowTube = true;
@@ -959,7 +1106,9 @@ function initGraph() {
             child.material.opacity = 0.85 * dimTarget;
           } else if (child.userData.isGlowTube) {
             child.position.set(mid.x, mid.y, mid.z);
-            const dx = end.x - start.x, dy = end.y - start.y, dz = end.z - start.z;
+            const dx = end.x - start.x,
+              dy = end.y - start.y,
+              dz = end.z - start.z;
             const dist = Math.sqrt(dx * dx + dy * dy + dz * dz) || 1;
             child.scale.set(1, dist, 1);
             child.lookAt(end.x, end.y, end.z);
@@ -978,16 +1127,21 @@ function initGraph() {
     })
 
     // Directional particles — blocking links + agent tethers (beads-1gx1)
-    .linkDirectionalParticles(l => l.dep_type === 'blocks' ? 2 : l.dep_type === 'assigned_to' ? 3 : 0)
-    .linkDirectionalParticleWidth(l => l.dep_type === 'assigned_to' ? 1.8 : 1.0)
-    .linkDirectionalParticleSpeed(l => l.dep_type === 'assigned_to' ? 0.008 : 0.003)
-    .linkDirectionalParticleColor(l => linkColor(l))
+    .linkDirectionalParticles((l) => (l.dep_type === 'blocks' ? 2 : l.dep_type === 'assigned_to' ? 3 : 0))
+    .linkDirectionalParticleWidth((l) => (l.dep_type === 'assigned_to' ? 1.8 : 1.0))
+    .linkDirectionalParticleSpeed((l) => (l.dep_type === 'assigned_to' ? 0.008 : 0.003))
+    .linkDirectionalParticleColor((l) => linkColor(l))
 
     // Interaction
     .onNodeHover(handleNodeHover)
     .onNodeClick(handleNodeClick)
     .onNodeRightClick(handleNodeRightClick)
-    .onBackgroundClick(() => { clearSelection(); hideTooltip(); hideDetail(); hideContextMenu(); })
+    .onBackgroundClick(() => {
+      clearSelection();
+      hideTooltip();
+      hideDetail();
+      hideContextMenu();
+    })
     // DAG dragging: dragged node pulls its subtree with spring physics (beads-6253)
     .onNodeDrag((node) => {
       if (!node || node._hidden) return;
@@ -1058,9 +1212,9 @@ function initGraph() {
   // Bloom post-processing
   bloomPass = new UnrealBloomPass(
     new THREE.Vector2(window.innerWidth, window.innerHeight),
-    0.7,   // strength — subtle glow (bd-s9b4v: reduced from 1.2)
-    0.4,   // radius — tighter spread (bd-s9b4v: reduced from 0.6)
-    0.35   // threshold — higher so only bright nodes bloom (bd-s9b4v: raised from 0.2)
+    0.7, // strength — subtle glow (bd-s9b4v: reduced from 1.2)
+    0.4, // radius — tighter spread (bd-s9b4v: reduced from 0.6)
+    0.35, // threshold — higher so only bright nodes bloom (bd-s9b4v: raised from 0.2)
   );
   bloomPass.enabled = bloomEnabled;
   const composer = graph.postProcessingComposer();
@@ -1146,8 +1300,8 @@ function updateSelectionVFX(t) {
       _energyStreamTimer = 0;
       for (const l of graphData.links) {
         if (!highlightLinks.has(linkKey(l))) continue;
-        const src = typeof l.source === 'object' ? l.source : graphData.nodes.find(n => n.id === l.source);
-        const tgt = typeof l.target === 'object' ? l.target : graphData.nodes.find(n => n.id === l.target);
+        const src = typeof l.source === 'object' ? l.source : graphData.nodes.find((n) => n.id === l.source);
+        const tgt = typeof l.target === 'object' ? l.target : graphData.nodes.find((n) => n.id === l.target);
         if (!src || !tgt) continue;
         // Spawn particle at random point along the link
         const progress = Math.random();
@@ -1162,10 +1316,9 @@ function updateSelectionVFX(t) {
         const dz = (tgt.z || 0) - (src.z || 0);
         const len = Math.sqrt(dx * dx + dy * dy + dz * dz) || 1;
         const speed = _vfxConfig.streamSpeed;
-        const linkColorHex = l.dep_type === 'blocks' ? 0xd04040 :
-                             l.dep_type === 'assigned_to' ? 0xff6b35 : 0x4a9eff;
+        const linkColorHex = l.dep_type === 'blocks' ? 0xd04040 : l.dep_type === 'assigned_to' ? 0xff6b35 : 0x4a9eff;
         _particlePool.emit(pos, linkColorHex, 1, {
-          velocity: [dx / len * speed, dy / len * speed, dz / len * speed],
+          velocity: [(dx / len) * speed, (dy / len) * speed, (dz / len) * speed],
           spread: 0.5,
           lifetime: Math.min(len / (speed * 60), _vfxConfig.particleLifetime * 1.9),
           size: 1.0,
@@ -1180,7 +1333,7 @@ function updateSelectionVFX(t) {
     if (pulseBeat && !updateSelectionVFX._lastPulse) {
       for (const nodeId of highlightNodes) {
         if (nodeId === selectedNode.id) continue;
-        const node = graphData.nodes.find(n => n.id === nodeId);
+        const node = graphData.nodes.find((n) => n.id === nodeId);
         if (!node) continue;
         const pos = { x: node.x || 0, y: node.y || 0, z: node.z || 0 };
         const color = nodeColor(node);
@@ -1325,7 +1478,7 @@ function spreadSubgraph(componentIds) {
   if (!componentIds || componentIds.size < 2) return;
 
   // Collect component nodes for O(n²) pairwise check (n is small — typically < 20)
-  const componentNodeList = graphData.nodes.filter(n => componentIds.has(n.id));
+  const componentNodeList = graphData.nodes.filter((n) => componentIds.has(n.id));
   const count = componentNodeList.length;
   if (count < 2) return;
 
@@ -1343,13 +1496,13 @@ function spreadSubgraph(componentIds) {
       const a = componentNodeList[i];
       for (let j = i + 1; j < componentNodeList.length; j++) {
         const b = componentNodeList[j];
-        let dx = (a.x || 0) - (b.x || 0);
-        let dy = (a.y || 0) - (b.y || 0);
-        let dz = (a.z || 0) - (b.z || 0);
+        const dx = (a.x || 0) - (b.x || 0);
+        const dy = (a.y || 0) - (b.y || 0);
+        const dz = (a.z || 0) - (b.z || 0);
         const dist = Math.sqrt(dx * dx + dy * dy + dz * dz) || 0.1;
         if (dist < MIN_PAIR_DIST) {
           // Inverse-distance force: stronger when closer
-          const push = strength * (MIN_PAIR_DIST - dist) / dist;
+          const push = (strength * (MIN_PAIR_DIST - dist)) / dist;
           // Add small random jitter to break symmetry for overlapping nodes
           const jx = (Math.random() - 0.5) * 0.1;
           const jy = (Math.random() - 0.5) * 0.1;
@@ -1364,11 +1517,17 @@ function spreadSubgraph(componentIds) {
     }
 
     // Phase 2: Radial expansion from live centroid — prevents collapse
-    let cx = 0, cy = 0, cz = 0;
+    let cx = 0,
+      cy = 0,
+      cz = 0;
     for (const n of componentNodeList) {
-      cx += (n.x || 0); cy += (n.y || 0); cz += (n.z || 0);
+      cx += n.x || 0;
+      cy += n.y || 0;
+      cz += n.z || 0;
     }
-    cx /= count; cy /= count; cz /= count;
+    cx /= count;
+    cy /= count;
+    cz /= count;
 
     const radialStrength = alpha * 0.08;
     for (const n of componentNodeList) {
@@ -1377,7 +1536,7 @@ function spreadSubgraph(componentIds) {
       const dz = (n.z || 0) - cz;
       const dist = Math.sqrt(dx * dx + dy * dy + dz * dz) || 0.1;
       if (dist < MIN_RADIAL_DIST) {
-        const push = radialStrength * (MIN_RADIAL_DIST - dist) / dist;
+        const push = (radialStrength * (MIN_RADIAL_DIST - dist)) / dist;
         n.vx += dx * push;
         n.vy += dy * push;
         n.vz += dz * push;
@@ -1407,7 +1566,9 @@ function clearSelection() {
   // Clear revealed subgraph and re-apply filters (hq-vorf47)
   if (revealedNodes.size > 0) {
     revealedNodes.clear();
-    graphData.nodes.forEach(n => { n._revealed = false; });
+    graphData.nodes.forEach((n) => {
+      n._revealed = false;
+    });
     applyFilters();
   }
   // Clear molecule focus state (bd-lwut6)
@@ -1427,7 +1588,7 @@ function clearSelection() {
 // Selects the node, highlights its connected subgraph, flies camera to it,
 // and opens the detail panel.
 function focusDeepLinkBead(beadId) {
-  const node = graphData.nodes.find(n => n.id === beadId);
+  const node = graphData.nodes.find((n) => n.id === beadId);
   if (!node) {
     console.warn(`[beads3d] Deep-link bead "${beadId}" not found in graph`);
     return;
@@ -1462,7 +1623,7 @@ function focusDeepLinkBead(beadId) {
 // Brings a molecule's connected subgraph into view with all labels readable.
 // Triggered via ?molecule=<id> URL parameter or programmatically.
 function focusMolecule(moleculeId) {
-  const node = graphData.nodes.find(n => n.id === moleculeId);
+  const node = graphData.nodes.find((n) => n.id === moleculeId);
   if (!node) {
     console.warn(`[beads3d] Molecule "${moleculeId}" not found in graph`);
     return;
@@ -1507,89 +1668,7 @@ function focusMolecule(moleculeId) {
   console.log(`[beads3d] Molecule focus: ${moleculeId} (${component.size} nodes)`);
 }
 
-// --- Camera freeze / center on multi-select (bd-casin) ---
-
-// Fly camera to center on the selected nodes + their immediate connections,
-// then freeze orbit controls. Call unfreezeCamera() (Escape) to restore.
-function centerCameraOnSelection() {
-  if (multiSelected.size === 0) return;
-
-  // Collect selected node IDs + their direct neighbors
-  const relevantIds = new Set(multiSelected);
-  for (const l of graphData.links) {
-    const srcId = typeof l.source === 'object' ? l.source.id : l.source;
-    const tgtId = typeof l.target === 'object' ? l.target.id : l.target;
-    if (multiSelected.has(srcId) || multiSelected.has(tgtId)) {
-      relevantIds.add(srcId);
-      relevantIds.add(tgtId);
-    }
-  }
-
-  // Calculate bounding-box center of relevant nodes
-  let cx = 0, cy = 0, cz = 0, count = 0;
-  for (const node of graphData.nodes) {
-    if (!relevantIds.has(node.id)) continue;
-    cx += (node.x || 0);
-    cy += (node.y || 0);
-    cz += (node.z || 0);
-    count++;
-  }
-  if (count === 0) return;
-  cx /= count; cy /= count; cz /= count;
-
-  // Calculate radius (max distance from center) to set camera distance
-  let maxDist = 0;
-  for (const node of graphData.nodes) {
-    if (!relevantIds.has(node.id)) continue;
-    const dx = (node.x || 0) - cx;
-    const dy = (node.y || 0) - cy;
-    const dz = (node.z || 0) - cz;
-    const d = Math.sqrt(dx * dx + dy * dy + dz * dz);
-    if (d > maxDist) maxDist = d;
-  }
-
-  // Camera distance: enough to see the whole cluster with some padding
-  const distance = Math.max(maxDist * 2.5, 120);
-  const lookAt = { x: cx, y: cy, z: cz };
-  // Position camera along the current camera direction, but at the right distance
-  const cam = graph.camera();
-  const dir = new THREE.Vector3(
-    cam.position.x - cx, cam.position.y - cy, cam.position.z - cz
-  ).normalize();
-  const camPos = {
-    x: cx + dir.x * distance,
-    y: cy + dir.y * distance,
-    z: cz + dir.z * distance,
-  };
-
-  graph.cameraPosition(camPos, lookAt, 1000);
-
-  // Freeze orbit controls + pin all node positions after the fly animation
-  cameraFrozen = true;
-  setTimeout(() => {
-    const controls = graph.controls();
-    if (controls) controls.enabled = false;
-    // Pin every node so forces don't drift them (bd-casin)
-    for (const node of graphData.nodes) {
-      node.fx = node.x;
-      node.fy = node.y;
-      node.fz = node.z;
-    }
-  }, 1050);
-}
-
-function unfreezeCamera() {
-  if (!cameraFrozen) return;
-  cameraFrozen = false;
-  const controls = graph.controls();
-  if (controls) controls.enabled = true;
-  // Unpin all nodes so forces resume (bd-casin)
-  for (const node of graphData.nodes) {
-    node.fx = undefined;
-    node.fy = undefined;
-    node.fz = undefined;
-  }
-}
+// centerCameraOnSelection, unfreezeCamera moved to camera.js (bd-7t6nt)
 
 // --- Node opacity helpers ---
 
@@ -1627,15 +1706,22 @@ function restoreAllNodeOpacity() {
     if (!threeObj) continue;
 
     // Revert selection-shown labels (bd-xk0tx): LOD pass will re-apply budget (beads-bu3r)
-    threeObj.traverse(child => {
+    threeObj.traverse((child) => {
       if (child.userData.nodeLabel) {
         child.visible = false; // LOD pass (resolveOverlappingLabels) re-shows the right ones
       }
     });
 
     if (!node._wasDimmed) continue;
-    threeObj.traverse(child => {
-      if (!child.material || child.userData.selectionRing || child.userData.materiaCore || child.userData.decisionPulse || child.userData.nodeLabel) return;
+    threeObj.traverse((child) => {
+      if (
+        !child.material ||
+        child.userData.selectionRing ||
+        child.userData.materiaCore ||
+        child.userData.decisionPulse ||
+        child.userData.nodeLabel
+      )
+        return;
       restoreMaterialOpacity(child.material);
     });
     node._wasDimmed = false;
@@ -1664,12 +1750,19 @@ function startAnimation() {
       const dimFactor = isHighlighted ? 1.0 : 0.35;
 
       // Skip traversal when nothing to update (agents always animate — beads-v0wa)
-      if (!hasSelection && !isMultiSelected && node.status !== 'in_progress' && node.issue_type !== 'agent' && !labelsVisible) continue;
+      if (
+        !hasSelection &&
+        !isMultiSelected &&
+        node.status !== 'in_progress' &&
+        node.issue_type !== 'agent' &&
+        !labelsVisible
+      )
+        continue;
 
       // Track dimmed nodes for restoration in clearSelection()
       if (hasSelection && !isHighlighted) node._wasDimmed = true;
 
-      threeObj.traverse(child => {
+      threeObj.traverse((child) => {
         if (!child.material) return;
 
         // Label sprites: show on highlighted nodes when selected (bd-xk0tx)
@@ -1708,13 +1801,17 @@ function startAnimation() {
           const dz = (node.z || 0) - prev.z;
           const speed = Math.sqrt(dx * dx + dy * dy + dz * dz);
           // Smoothly update previous position
-          prev.x += dx * 0.1; prev.y += dy * 0.1; prev.z += dz * 0.1;
+          prev.x += dx * 0.1;
+          prev.y += dy * 0.1;
+          prev.z += dz * 0.1;
           // Trail visible only when moving (speed > threshold)
           const trailOpacity = Math.min(speed * 0.15, 0.35) * dimFactor;
           child.material.opacity = trailOpacity;
           // Position trail behind the agent (opposite of travel direction)
           if (speed > 0.5) {
-            const nx = -dx / speed, ny = -dy / speed, nz = -dz / speed;
+            const nx = -dx / speed,
+              ny = -dy / speed,
+              nz = -dz / speed;
             child.position.set(nx * 6, ny * 6, nz * 6);
           }
         } else if (child.userData.decisionPulse) {
@@ -1731,53 +1828,8 @@ function startAnimation() {
       });
     }
 
-    // Quake-style smooth camera movement (bd-zab4q)
-    if (_keysDown.size > 0 || Math.abs(_camVelocity.x) > 0.01 || Math.abs(_camVelocity.y) > 0.01 || Math.abs(_camVelocity.z) > 0.01) {
-      const camera = graph.camera();
-      const controls = graph.controls();
-      // Build desired direction from held keys
-      const right = new THREE.Vector3();
-      camera.getWorldDirection(new THREE.Vector3());
-      right.setFromMatrixColumn(camera.matrixWorld, 0).normalize();
-
-      // Forward vector for W/S: camera look direction projected onto XZ plane (bd-pwaen)
-      const forward = new THREE.Vector3();
-      camera.getWorldDirection(forward);
-      forward.y = 0; // project to XZ plane — no diving into ground
-      forward.normalize();
-
-      // Accelerate in held directions
-      // Strafe: ArrowLeft/A = left, ArrowRight/D = right
-      if (_keysDown.has('ArrowLeft') || _keysDown.has('a'))  { _camVelocity.x -= right.x * CAM_ACCEL; _camVelocity.y -= right.y * CAM_ACCEL; _camVelocity.z -= right.z * CAM_ACCEL; }
-      if (_keysDown.has('ArrowRight') || _keysDown.has('d')) { _camVelocity.x += right.x * CAM_ACCEL; _camVelocity.y += right.y * CAM_ACCEL; _camVelocity.z += right.z * CAM_ACCEL; }
-      // Vertical: ArrowUp/Down (unchanged — moves camera up/down in Y)
-      if (_keysDown.has('ArrowUp'))    { _camVelocity.y += CAM_ACCEL; }
-      if (_keysDown.has('ArrowDown'))  { _camVelocity.y -= CAM_ACCEL; }
-      // Forward/back: W/S move along camera look direction in XZ plane (bd-pwaen)
-      if (_keysDown.has('w')) { _camVelocity.x += forward.x * CAM_ACCEL; _camVelocity.z += forward.z * CAM_ACCEL; }
-      if (_keysDown.has('s')) { _camVelocity.x -= forward.x * CAM_ACCEL; _camVelocity.z -= forward.z * CAM_ACCEL; }
-
-      // Clamp speed
-      const speed = Math.sqrt(_camVelocity.x ** 2 + _camVelocity.y ** 2 + _camVelocity.z ** 2);
-      if (speed > CAM_MAX_SPEED) {
-        const s = CAM_MAX_SPEED / speed;
-        _camVelocity.x *= s; _camVelocity.y *= s; _camVelocity.z *= s;
-      }
-
-      // Apply velocity to camera + orbit target
-      const delta = new THREE.Vector3(_camVelocity.x, _camVelocity.y, _camVelocity.z);
-      camera.position.add(delta);
-      if (controls && controls.target) controls.target.add(delta);
-
-      // Friction: decelerate when no keys held (or gentle drag when keys held)
-      const friction = _keysDown.size > 0 ? 0.95 : CAM_FRICTION;
-      _camVelocity.x *= friction;
-      _camVelocity.y *= friction;
-      _camVelocity.z *= friction;
-
-      // Full stop below threshold
-      if (speed < 0.01) { _camVelocity.x = 0; _camVelocity.y = 0; _camVelocity.z = 0; }
-    }
+    // Quake-style smooth camera movement — delegated to camera.js (bd-zab4q, bd-7t6nt)
+    updateCameraMovement();
 
     // Update live event doots — HTML overlay via CSS2DRenderer (bd-bwkdk)
     updateDoots(t);
@@ -1797,11 +1849,13 @@ function startAnimation() {
       } else {
         const dampen = 1 - elapsed / shake.duration;
         const jitter = shake.intensity * dampen;
-        graph.camera().position.set(
-          shake.origPos.x + (Math.random() - 0.5) * jitter * 2,
-          shake.origPos.y + (Math.random() - 0.5) * jitter * 2,
-          shake.origPos.z + (Math.random() - 0.5) * jitter * 2,
-        );
+        graph
+          .camera()
+          .position.set(
+            shake.origPos.x + (Math.random() - 0.5) * jitter * 2,
+            shake.origPos.y + (Math.random() - 0.5) * jitter * 2,
+            shake.origPos.z + (Math.random() - 0.5) * jitter * 2,
+          );
       }
     }
 
@@ -1857,7 +1911,7 @@ async function fetchViaGraph(statusEl) {
   };
   const result = await api.graph(graphArgs);
 
-  let nodes = (result.nodes || []).map(n => ({
+  let nodes = (result.nodes || []).map((n) => ({
     id: n.id,
     ...n,
     _blocked: !!(n.blocked_by && n.blocked_by.length > 0),
@@ -1867,10 +1921,10 @@ async function fetchViaGraph(statusEl) {
   // Promote "blocks" edges where target is an epic to "parent-child" so they render
   // with the chain glyph instead of the shield. Most epics use "blocks" deps rather
   // than explicit "parent-child" deps. (bd-uqkpq)
-  const nodeIds = new Set(nodes.map(n => n.id));
-  const nodeMap = Object.fromEntries(nodes.map(n => [n.id, n]));
+  const nodeIds = new Set(nodes.map((n) => n.id));
+  const nodeMap = Object.fromEntries(nodes.map((n) => [n.id, n]));
   const links = [];
-  for (const e of (result.edges || [])) {
+  for (const e of result.edges || []) {
     const hasSrc = nodeIds.has(e.source);
     const hasTgt = nodeIds.has(e.target);
     let depType = e.type || 'blocks';
@@ -1887,8 +1941,13 @@ async function fetchViaGraph(statusEl) {
       const missingId = hasSrc ? e.target : e.source;
       if (!nodeIds.has(missingId)) {
         nodes.push({
-          id: missingId, title: missingId, status: 'open', priority: 3,
-          issue_type: 'epic', _placeholder: true, _blocked: false,
+          id: missingId,
+          title: missingId,
+          status: 'open',
+          priority: 3,
+          issue_type: 'epic',
+          _placeholder: true,
+          _blocked: false,
         });
         nodeIds.add(missingId);
         nodeMap[missingId] = nodes[nodes.length - 1];
@@ -1915,10 +1974,11 @@ async function fetchViaGraph(statusEl) {
         });
       }
       // Only add edge if not already present from server
-      const edgeExists = links.some(l =>
-        (l.source === agentId || l.source?.id === agentId) &&
-        (l.target === n.id || l.target?.id === n.id) &&
-        l.dep_type === 'assigned_to',
+      const edgeExists = links.some(
+        (l) =>
+          (l.source === agentId || l.source?.id === agentId) &&
+          (l.target === n.id || l.target?.id === n.id) &&
+          l.dep_type === 'assigned_to',
       );
       if (!edgeExists) {
         links.push({ source: agentId, target: n.id, dep_type: 'assigned_to' });
@@ -1937,12 +1997,15 @@ async function fetchViaGraph(statusEl) {
   // one edge connecting them to a visible bead (bd-t25i1)
   const LINKED_ONLY = new Set(['decision', 'gate', 'molecule']); // bd-zbyn7: include gate (decisions are type=gate)
   const connectedIds = new Set();
-  for (const l of links) { connectedIds.add(l.source); connectedIds.add(l.target); }
-  nodes = nodes.filter(n => !LINKED_ONLY.has(n.issue_type) || connectedIds.has(n.id));
+  for (const l of links) {
+    connectedIds.add(l.source);
+    connectedIds.add(l.target);
+  }
+  nodes = nodes.filter((n) => !LINKED_ONLY.has(n.issue_type) || connectedIds.has(n.id));
 
   // Max-edges-per-node cap: prune low-priority edges from hub nodes (bd-ke2xc)
   if (maxEdgesPerNode > 0) {
-    const DEP_RANK = { 'blocks': 0, 'parent-child': 1, 'waits-for': 2, 'relates-to': 3, 'assigned_to': 4, 'rig_conflict': 5 };
+    const DEP_RANK = { blocks: 0, 'parent-child': 1, 'waits-for': 2, 'relates-to': 3, assigned_to: 4, rig_conflict: 5 };
     // Count edges per node
     const edgeCounts = new Map(); // nodeId → [link, ...]
     for (const l of links) {
@@ -1965,7 +2028,7 @@ async function fetchViaGraph(statusEl) {
     }
     if (removedLinks.size > 0) {
       const before = links.length;
-      links.splice(0, links.length, ...links.filter(l => !removedLinks.has(l)));
+      links.splice(0, links.length, ...links.filter((l) => !removedLinks.has(l)));
       console.log(`[beads3d] Edge cap: pruned ${before - links.length} edges (max ${maxEdgesPerNode}/node)`);
     }
   }
@@ -1978,9 +2041,11 @@ async function fetchViaGraph(statusEl) {
 }
 
 async function fetchViaList(statusEl) {
-  const SKIP_TYPES = new Set(DEEP_LINK_MOLECULE
-    ? ['message', 'config', 'wisp', 'convoy', 'formula', 'advice', 'role'] // bd-lwut6: include molecules; bd-zbyn7: include gate/decision
-    : ['message', 'config', 'wisp', 'convoy', 'molecule', 'formula', 'advice', 'role']);
+  const SKIP_TYPES = new Set(
+    DEEP_LINK_MOLECULE
+      ? ['message', 'config', 'wisp', 'convoy', 'formula', 'advice', 'role'] // bd-lwut6: include molecules; bd-zbyn7: include gate/decision
+      : ['message', 'config', 'wisp', 'convoy', 'molecule', 'formula', 'advice', 'role'],
+  );
 
   // Parallel fetch: open/active beads + blocked + stats (bd-7haep: include all active statuses)
   const [openIssues, inProgress, hookedIssues, deferredIssues, blocked, stats] = await Promise.all([
@@ -2027,9 +2092,9 @@ async function fetchViaList(statusEl) {
 
 function buildGraphData(issues) {
   const issueMap = new Map();
-  issues.forEach(i => issueMap.set(i.id, i));
+  issues.forEach((i) => issueMap.set(i.id, i));
 
-  const nodes = issues.map(issue => ({
+  const nodes = issues.map((issue) => ({
     id: issue.id,
     ...issue,
     _blocked: !!(issue.blocked_by && issue.blocked_by.length > 0),
@@ -2038,7 +2103,7 @@ function buildGraphData(issues) {
   const links = [];
   const seenLinks = new Set();
 
-  issues.forEach(issue => {
+  issues.forEach((issue) => {
     // blocked_by → create links
     if (issue.blocked_by && Array.isArray(issue.blocked_by)) {
       for (const blockerId of issue.blocked_by) {
@@ -2048,8 +2113,12 @@ function buildGraphData(issues) {
 
         if (!issueMap.has(blockerId)) {
           const placeholder = {
-            id: blockerId, title: blockerId, status: 'open',
-            priority: 3, issue_type: 'task', _placeholder: true,
+            id: blockerId,
+            title: blockerId,
+            status: 'open',
+            priority: 3,
+            issue_type: 'task',
+            _placeholder: true,
           };
           issueMap.set(blockerId, placeholder);
           nodes.push({ ...placeholder, _blocked: false });
@@ -2071,8 +2140,11 @@ function buildGraphData(issues) {
 
         if (!issueMap.has(toId)) {
           const placeholder = {
-            id: toId, title: dep.title || toId, status: dep.status || 'open',
-            priority: dep.priority ?? 3, issue_type: dep.issue_type || 'task',
+            id: toId,
+            title: dep.title || toId,
+            status: dep.status || 'open',
+            priority: dep.priority ?? 3,
+            issue_type: dep.issue_type || 'task',
             _placeholder: true,
           };
           issueMap.set(toId, placeholder);
@@ -2080,7 +2152,8 @@ function buildGraphData(issues) {
         }
 
         links.push({
-          source: fromId, target: toId,
+          source: fromId,
+          target: toId,
           dep_type: dep.type || dep.dependency_type || 'blocks',
         });
       }
@@ -2093,8 +2166,12 @@ function buildGraphData(issues) {
         seenLinks.add(key);
         if (!issueMap.has(issue.parent)) {
           const placeholder = {
-            id: issue.parent, title: issue.parent, status: 'open',
-            priority: 3, issue_type: 'epic', _placeholder: true,
+            id: issue.parent,
+            title: issue.parent,
+            status: 'open',
+            priority: 3,
+            issue_type: 'epic',
+            _placeholder: true,
           };
           issueMap.set(issue.parent, placeholder);
           nodes.push({ ...placeholder, _blocked: false });
@@ -2112,8 +2189,12 @@ function buildGraphData(issues) {
       const agentId = `agent:${assignee}`;
       if (!agentMap.has(assignee)) {
         agentMap.set(assignee, {
-          id: agentId, title: assignee, status: 'active',
-          priority: 3, issue_type: 'agent', _blocked: false,
+          id: agentId,
+          title: assignee,
+          status: 'active',
+          priority: 3,
+          issue_type: 'agent',
+          _blocked: false,
         });
       }
       links.push({ source: agentId, target: n.id, dep_type: 'assigned_to' });
@@ -2135,11 +2216,22 @@ function _liveUpdateProjectPulse() {
   if (!graphData) return;
   const pulseEl = document.getElementById('hud-project-pulse');
   if (!pulseEl) return;
-  const nodes = graphData.nodes.filter(n => !n._hidden);
-  let open = 0, active = 0, blocked = 0, agentCount = 0, pendingDecisions = 0;
+  const nodes = graphData.nodes.filter((n) => !n._hidden);
+  let open = 0,
+    active = 0,
+    blocked = 0,
+    agentCount = 0,
+    pendingDecisions = 0;
   for (const n of nodes) {
-    if (n.issue_type === 'agent') { agentCount++; continue; }
-    if ((n.issue_type === 'decision' || (n.issue_type === 'gate' && n.await_type === 'decision')) && n.status !== 'closed') pendingDecisions++;
+    if (n.issue_type === 'agent') {
+      agentCount++;
+      continue;
+    }
+    if (
+      (n.issue_type === 'decision' || (n.issue_type === 'gate' && n.await_type === 'decision')) &&
+      n.status !== 'closed'
+    )
+      pendingDecisions++;
     if (n._blocked) blocked++;
     else if (n.status === 'in_progress') active++;
     else if (n.status === 'open' || n.status === 'hooked' || n.status === 'deferred') open++;
@@ -2169,9 +2261,11 @@ function updateStats(stats, issues) {
     // Update Bottom HUD project pulse (bd-ddj44, bd-9ndk0.1)
     const pulseEl = document.getElementById('hud-project-pulse');
     if (pulseEl) {
-      const agentCount = issues.filter(n => n.issue_type === 'agent').length;
-      const pendingDecisions = issues.filter(n =>
-        (n.issue_type === 'decision' || (n.issue_type === 'gate' && n.await_type === 'decision')) && n.status !== 'closed'
+      const agentCount = issues.filter((n) => n.issue_type === 'agent').length;
+      const pendingDecisions = issues.filter(
+        (n) =>
+          (n.issue_type === 'decision' || (n.issue_type === 'gate' && n.await_type === 'decision')) &&
+          n.status !== 'closed',
       ).length;
       pulseEl.innerHTML = `
         <div class="pulse-stat"><span class="pulse-stat-label">open</span><span class="pulse-stat-value">${open}</span></div>
@@ -2193,9 +2287,12 @@ const tooltip = document.getElementById('tooltip');
 function handleNodeHover(node) {
   document.body.style.cursor = node ? 'pointer' : 'default';
   // Track hovered node for VFX glow warmup (bd-m9525)
-  _hoveredNode = (node && !node._hidden) ? node : null;
+  _hoveredNode = node && !node._hidden ? node : null;
   _hoverGlowTimer = 0;
-  if (!node || node._hidden) { hideTooltip(); return; }
+  if (!node || node._hidden) {
+    hideTooltip();
+    return;
+  }
 
   const pLabel = ['P0 CRIT', 'P1', 'P2', 'P3', 'P4'][node.priority] || '';
   const assignee = node.assignee ? `<br>assignee: ${escapeHtml(node.assignee)}` : '';
@@ -2291,16 +2388,21 @@ function getConnectedComponent(startId) {
 
 // Fly camera to fit a set of node IDs with padding (bd-tr0en)
 function zoomToNodes(nodeIds) {
-  let cx = 0, cy = 0, cz = 0, count = 0;
+  let cx = 0,
+    cy = 0,
+    cz = 0,
+    count = 0;
   for (const node of graphData.nodes) {
     if (!nodeIds.has(node.id)) continue;
-    cx += (node.x || 0);
-    cy += (node.y || 0);
-    cz += (node.z || 0);
+    cx += node.x || 0;
+    cy += node.y || 0;
+    cz += node.z || 0;
     count++;
   }
   if (count === 0) return;
-  cx /= count; cy /= count; cz /= count;
+  cx /= count;
+  cy /= count;
+  cz /= count;
 
   // For single-node components, use the original close-up zoom
   if (count === 1) {
@@ -2327,9 +2429,7 @@ function zoomToNodes(nodeIds) {
   const distance = Math.max(maxDist * 2.5, 150);
   const lookAt = { x: cx, y: cy, z: cz };
   const cam = graph.camera();
-  const dir = new THREE.Vector3(
-    cam.position.x - cx, cam.position.y - cy, cam.position.z - cz
-  ).normalize();
+  const dir = new THREE.Vector3(cam.position.x - cx, cam.position.y - cy, cam.position.z - cz).normalize();
   const camPos = {
     x: cx + dir.x * distance,
     y: cy + dir.y * distance,
@@ -2349,190 +2449,9 @@ function escapeHtml(str) {
   return div.innerHTML;
 }
 
-// --- Context menu (right-click) ---
-const ctxMenu = document.getElementById('context-menu');
-let ctxNode = null;
-
-function buildStatusSubmenu(currentStatus) {
-  const statuses = [
-    { value: 'open', label: 'open', color: '#2d8a4e' },
-    { value: 'in_progress', label: 'in progress', color: '#d4a017' },
-    { value: 'closed', label: 'closed', color: '#333340' },
-  ];
-  return statuses.map(s =>
-    `<div class="ctx-sub-item${s.value === currentStatus ? ' active' : ''}" data-action="set-status" data-value="${s.value}">` +
-    `<span class="ctx-dot" style="background:${s.color}"></span>${s.label}</div>`
-  ).join('');
-}
-
-function buildPrioritySubmenu(currentPriority) {
-  const priorities = [
-    { value: 0, label: 'P0 critical', color: '#ff3333' },
-    { value: 1, label: 'P1 high', color: '#ff8833' },
-    { value: 2, label: 'P2 medium', color: '#d4a017' },
-    { value: 3, label: 'P3 low', color: '#4a9eff' },
-    { value: 4, label: 'P4 backlog', color: '#666' },
-  ];
-  return priorities.map(p =>
-    `<div class="ctx-sub-item${p.value === currentPriority ? ' active' : ''}" data-action="set-priority" data-value="${p.value}">` +
-    `<span class="ctx-dot" style="background:${p.color}"></span>${p.label}</div>`
-  ).join('');
-}
-
-function handleNodeRightClick(node, event) {
-  event.preventDefault();
-  if (!node || node._hidden) return;
-  // Skip agent pseudo-nodes — they're not real beads
-  if (node.issue_type === 'agent') return;
-  ctxNode = node;
-  hideTooltip();
-
-  ctxMenu.innerHTML = `
-    <div class="ctx-header">${escapeHtml(node.id)}</div>
-    <div class="ctx-item ctx-submenu">status
-      <div class="ctx-submenu-panel">${buildStatusSubmenu(node.status)}</div>
-    </div>
-    <div class="ctx-item ctx-submenu">priority
-      <div class="ctx-submenu-panel">${buildPrioritySubmenu(node.priority)}</div>
-    </div>
-    <div class="ctx-item" data-action="claim">claim (assign to me)</div>
-    <div class="ctx-item" data-action="close-bead">close</div>
-    <div class="ctx-sep"></div>
-    <div class="ctx-item" data-action="expand-deps">expand dep tree<span class="ctx-key">e</span></div>
-    <div class="ctx-item" data-action="show-deps">show dependencies<span class="ctx-key">d</span></div>
-    <div class="ctx-item" data-action="show-blockers">show blockers<span class="ctx-key">b</span></div>
-    <div class="ctx-sep"></div>
-    <div class="ctx-item" data-action="copy-id">copy ID<span class="ctx-key">c</span></div>
-    <div class="ctx-item" data-action="copy-show">copy bd show ${escapeHtml(node.id)}</div>
-  `;
-
-  // Position menu, keeping it on screen
-  ctxMenu.style.display = 'block';
-  const rect = ctxMenu.getBoundingClientRect();
-  let x = event.clientX;
-  let y = event.clientY;
-  if (x + rect.width > window.innerWidth) x = window.innerWidth - rect.width - 8;
-  if (y + rect.height > window.innerHeight) y = window.innerHeight - rect.height - 8;
-  ctxMenu.style.left = x + 'px';
-  ctxMenu.style.top = y + 'px';
-
-  // Handle clicks on menu items (including submenu items, bd-9g7f0)
-  ctxMenu.onclick = (e) => {
-    // Check submenu items first (they're nested inside .ctx-item)
-    const subItem = e.target.closest('.ctx-sub-item');
-    if (subItem) {
-      handleContextAction(subItem.dataset.action, node, subItem);
-      return;
-    }
-    const item = e.target.closest('.ctx-item');
-    if (!item || item.classList.contains('ctx-submenu')) return; // skip submenu parents
-    handleContextAction(item.dataset.action, node, item);
-  };
-}
-
-function hideContextMenu() {
-  ctxMenu.style.display = 'none';
-  ctxMenu.onclick = null;
-  ctxNode = null;
-}
-
-// Apply an optimistic update to a node: immediately update local data + visuals,
-// fire the API call, and revert on failure.
-async function optimisticUpdate(node, changes, apiCall) {
-  // Snapshot current values for rollback
-  const snapshot = {};
-  for (const key of Object.keys(changes)) {
-    snapshot[key] = node[key];
-  }
-
-  // Apply changes immediately
-  Object.assign(node, changes);
-
-  // Force Three.js object rebuild for this node (picks up new color, size, status effects)
-  graph.nodeThreeObject(graph.nodeThreeObject());
-
-  try {
-    await apiCall();
-  } catch (err) {
-    // Revert on failure
-    Object.assign(node, snapshot);
-    graph.nodeThreeObject(graph.nodeThreeObject());
-    showStatusToast(`error: ${err.message}`, true);
-  }
-}
-
-async function handleContextAction(action, node, el) {
-  switch (action) {
-    case 'set-status': {
-      const value = el?.dataset.value;
-      if (!value || value === node.status) break;
-      hideContextMenu();
-      showStatusToast(`${node.id} → ${value}`);
-      await optimisticUpdate(node, { status: value }, () => api.update(node.id, { status: value }));
-      break;
-    }
-    case 'set-priority': {
-      const value = parseInt(el?.dataset.value, 10);
-      if (isNaN(value) || value === node.priority) break;
-      hideContextMenu();
-      showStatusToast(`${node.id} → P${value}`);
-      await optimisticUpdate(node, { priority: value }, () => api.update(node.id, { priority: value }));
-      break;
-    }
-    case 'claim':
-      hideContextMenu();
-      showStatusToast(`claimed ${node.id}`);
-      await optimisticUpdate(node, { status: 'in_progress' }, () => api.update(node.id, { status: 'in_progress' }));
-      break;
-    case 'close-bead':
-      hideContextMenu();
-      showStatusToast(`closed ${node.id}`);
-      await optimisticUpdate(node, { status: 'closed' }, () => api.close(node.id));
-      break;
-    case 'expand-deps':
-      expandDepTree(node);
-      hideContextMenu();
-      break;
-    case 'show-deps':
-      highlightSubgraph(node, 'downstream');
-      hideContextMenu();
-      break;
-    case 'show-blockers':
-      highlightSubgraph(node, 'upstream');
-      hideContextMenu();
-      break;
-    case 'copy-id':
-      copyToClipboard(node.id);
-      showCtxToast('copied!');
-      break;
-    case 'copy-show':
-      copyToClipboard(`bd show ${node.id}`);
-      showCtxToast('copied!');
-      break;
-  }
-}
-
-// Brief toast message overlaid on the status bar (bd-9g7f0)
-let _toastTimer = null;
-let _toastOrigText = null;
-let _toastOrigClass = null;
-function showStatusToast(msg, isError = false) {
-  const el = document.getElementById('status');
-  // Save the base state only on first (non-nested) toast
-  if (_toastTimer === null) {
-    _toastOrigText = el.textContent;
-    _toastOrigClass = el.className;
-  } else {
-    clearTimeout(_toastTimer);
-  }
-  el.textContent = msg;
-  el.className = isError ? 'error' : '';
-  _toastTimer = setTimeout(() => {
-    el.textContent = _toastOrigText;
-    el.className = _toastOrigClass;
-    _toastTimer = null;
-  }, 2000);
-}
+// Context menu (right-click) moved to context-menu.js (bd-7t6nt)
+// handleNodeRightClick, hideContextMenu, showStatusToast, buildStatusSubmenu,
+// buildPrioritySubmenu, optimisticUpdate, handleContextAction imported from context-menu.js
 
 // Floating toast notification for decision events (bd-tausm)
 function showDecisionToast(evt) {
@@ -2560,7 +2479,7 @@ function showDecisionToast(evt) {
     toast.addEventListener('click', () => {
       toast.remove();
       if (graphData) {
-        const decNode = graphData.nodes.find(n => n.id === p.decision_id);
+        const decNode = graphData.nodes.find((n) => n.id === p.decision_id);
         if (decNode) handleNodeClick(decNode);
       }
     });
@@ -2626,8 +2545,8 @@ async function expandDepTree(node) {
 
   try {
     const full = await api.show(node.id);
-    const existingIds = new Set(graphData.nodes.map(n => n.id));
-    const existingLinks = new Set(graphData.links.map(l => linkKey(l)));
+    const existingIds = new Set(graphData.nodes.map((n) => n.id));
+    const existingLinks = new Set(graphData.links.map((l) => linkKey(l)));
     let addedNodes = 0;
     let addedLinks = 0;
 
@@ -2692,18 +2611,22 @@ async function expandDepTree(node) {
     }
 
     // Fetch titles for newly added placeholder nodes (max 10, parallel)
-    const untitledNodes = graphData.nodes.filter(n => n._expanded && n.title === n.id);
-    await Promise.all(untitledNodes.slice(0, 10).map(async (n) => {
-      try {
-        const detail = await api.show(n.id);
-        n.title = detail.title || n.id;
-        n.status = detail.status || n.status;
-        n.issue_type = detail.issue_type || n.issue_type;
-        n.priority = detail.priority ?? n.priority;
-        n.assignee = detail.assignee || n.assignee;
-        n._blocked = !!(detail.blocked_by && detail.blocked_by.length > 0);
-      } catch { /* placeholder stays as-is */ }
-    }));
+    const untitledNodes = graphData.nodes.filter((n) => n._expanded && n.title === n.id);
+    await Promise.all(
+      untitledNodes.slice(0, 10).map(async (n) => {
+        try {
+          const detail = await api.show(n.id);
+          n.title = detail.title || n.id;
+          n.status = detail.status || n.status;
+          n.issue_type = detail.issue_type || n.issue_type;
+          n.priority = detail.priority ?? n.priority;
+          n.assignee = detail.assignee || n.assignee;
+          n._blocked = !!(detail.blocked_by && detail.blocked_by.length > 0);
+        } catch {
+          /* placeholder stays as-is */
+        }
+      }),
+    );
 
     // Update the graph — save/restore camera to prevent library auto-reposition (bd-7ccyd)
     const cam = graph.camera();
@@ -2712,7 +2635,10 @@ async function expandDepTree(node) {
     const savedTgt = ctl?.target?.clone();
     graph.graphData(graphData);
     cam.position.copy(savedPos);
-    if (ctl && savedTgt) { ctl.target.copy(savedTgt); ctl.update(); }
+    if (ctl && savedTgt) {
+      ctl.target.copy(savedTgt);
+      ctl.update();
+    }
 
     // Highlight the expanded subtree
     selectNode(node);
@@ -2727,47 +2653,22 @@ async function expandDepTree(node) {
   }
 }
 
-function copyToClipboard(text) {
-  navigator.clipboard.writeText(text).catch(() => {
-    // Fallback for non-HTTPS contexts
-    const ta = document.createElement('textarea');
-    ta.value = text;
-    ta.style.position = 'fixed';
-    ta.style.opacity = '0';
-    document.body.appendChild(ta);
-    ta.select();
-    document.execCommand('copy');
-    document.body.removeChild(ta);
-  });
-}
-
-function showCtxToast(msg) {
-  const items = ctxMenu.querySelectorAll('.ctx-item');
-  // Brief flash on the clicked item, then close
-  setTimeout(() => hideContextMenu(), 400);
-}
-
-// Close context menu on any click elsewhere or Escape
-document.addEventListener('click', (e) => {
-  if (ctxMenu.style.display === 'block' && !ctxMenu.contains(e.target)) {
-    hideContextMenu();
-  }
-});
-
-// Suppress browser context menu on the graph canvas
-document.getElementById('graph').addEventListener('contextmenu', (e) => e.preventDefault());
+// copyToClipboard, showCtxToast, context menu event listeners moved to context-menu.js (bd-7t6nt)
 
 // --- Filtering ---
 function applyFilters() {
   const q = searchFilter.toLowerCase();
-  graphData.nodes.forEach(n => {
+  graphData.nodes.forEach((n) => {
     n._revealed = false; // reset before re-evaluating (hq-vorf47)
     let hidden = false;
 
     // Text search
-    if (q && !(n.id || '').toLowerCase().includes(q) &&
-        !(n.title || '').toLowerCase().includes(q) &&
-        !(n.assignee || '').toLowerCase().includes(q)) {
+    if (
+      q &&
+      !(n.id || '').toLowerCase().includes(q) &&
+      !(n.title || '').toLowerCase().includes(q) &&
+      !(n.assignee || '').toLowerCase().includes(q)
+    ) {
       hidden = true;
     }
 
@@ -2789,7 +2690,7 @@ function applyFilters() {
       // Name exclusion: hide agents matching glob patterns (bd-8o2gd phase 4)
       if (agentFilterNameExclude.length > 0) {
         const name = (n.id || '').toLowerCase();
-        if (agentFilterNameExclude.some(p => globMatch(p, name))) hidden = true;
+        if (agentFilterNameExclude.some((p) => globMatch(p, name))) hidden = true;
       }
     }
 
@@ -2821,7 +2722,7 @@ function applyFilters() {
         const cutoff = Date.now() - activeAgeDays * 86400000;
         if (updatedAt.getTime() < cutoff) {
           hidden = true;
-          n._ageFiltered = true;  // mark so we can rescue connected nodes below
+          n._ageFiltered = true; // mark so we can rescue connected nodes below
         }
       }
     }
@@ -2845,11 +2746,11 @@ function applyFilters() {
     if (agentFilterOrphaned) continue; // bd-8o2gd: user wants to see orphaned agents
     const agentStatus = (n.status || '').toLowerCase();
     if (agentStatus === 'active' || agentStatus === 'idle') continue;
-    const hasVisibleBead = graphData.links.some(l => {
+    const hasVisibleBead = graphData.links.some((l) => {
       const srcId = typeof l.source === 'object' ? l.source.id : l.source;
       const tgtId = typeof l.target === 'object' ? l.target.id : l.target;
       if (srcId !== n.id) return false;
-      const bead = graphData.nodes.find(nd => nd.id === tgtId);
+      const bead = graphData.nodes.find((nd) => nd.id === tgtId);
       return bead && !bead._hidden;
     });
     if (!hasVisibleBead) n._hidden = true;
@@ -2858,15 +2759,14 @@ function applyFilters() {
   // Rescue age-filtered nodes that are directly connected to visible nodes (bd-uc0mw).
   // This ensures dependency chains remain visible even when old closed beads are culled.
   if (activeAgeDays > 0) {
-    const visibleIds = new Set(graphData.nodes.filter(n => !n._hidden).map(n => n.id));
+    const visibleIds = new Set(graphData.nodes.filter((n) => !n._hidden).map((n) => n.id));
     for (const n of graphData.nodes) {
       if (!n._ageFiltered) continue;
       // Check if this age-filtered node has an edge to/from any visible node
-      const connected = graphData.links.some(l => {
+      const connected = graphData.links.some((l) => {
         const srcId = typeof l.source === 'object' ? l.source.id : l.source;
         const tgtId = typeof l.target === 'object' ? l.target.id : l.target;
-        return (srcId === n.id && visibleIds.has(tgtId)) ||
-               (tgtId === n.id && visibleIds.has(srcId));
+        return (srcId === n.id && visibleIds.has(tgtId)) || (tgtId === n.id && visibleIds.has(srcId));
       });
       if (connected) {
         n._hidden = false;
@@ -2879,7 +2779,7 @@ function applyFilters() {
   // This overrides all filters for the connected component of the clicked node.
   if (revealedNodes.size > 0) {
     for (const nodeId of revealedNodes) {
-      const rn = graphData.nodes.find(nd => nd.id === nodeId);
+      const rn = graphData.nodes.find((nd) => nd.id === nodeId);
       if (rn) {
         rn._hidden = false;
         rn._revealed = true;
@@ -2890,7 +2790,7 @@ function applyFilters() {
   // Build ordered search results for navigation
   if (q) {
     searchResults = graphData.nodes
-      .filter(n => n._searchMatch)
+      .filter((n) => n._searchMatch)
       .sort((a, b) => {
         const aId = (a.id || '').toLowerCase().includes(q) ? 0 : 1;
         const bId = (b.id || '').toLowerCase().includes(q) ? 0 : 1;
@@ -2911,15 +2811,15 @@ function applyFilters() {
   }
 
   // Trigger re-render
-  graph.nodeVisibility(n => !n._hidden);
-  graph.linkVisibility(l => {
-    const src = typeof l.source === 'object' ? l.source : graphData.nodes.find(n => n.id === l.source);
-    const tgt = typeof l.target === 'object' ? l.target : graphData.nodes.find(n => n.id === l.target);
+  graph.nodeVisibility((n) => !n._hidden);
+  graph.linkVisibility((l) => {
+    const src = typeof l.source === 'object' ? l.source : graphData.nodes.find((n) => n.id === l.source);
+    const tgt = typeof l.target === 'object' ? l.target : graphData.nodes.find((n) => n.id === l.target);
     return src && tgt && !src._hidden && !tgt._hidden && !depTypeHidden.has(l.dep_type);
   });
 
   // Rebuild node objects when reveal state changes (ghost opacity) (hq-vorf47)
-  if (revealedNodes.size > 0 || graphData.nodes.some(n => n._revealed)) {
+  if (revealedNodes.size > 0 || graphData.nodes.some((n) => n._revealed)) {
     graph.nodeThreeObject(graph.nodeThreeObject());
   }
 
@@ -2935,12 +2835,11 @@ function flyToSearchResult() {
   selectNode(node);
 
   const distance = 150;
-  const dx = node.x || 0, dy = node.y || 0, dz = node.z || 0;
+  const dx = node.x || 0,
+    dy = node.y || 0,
+    dz = node.z || 0;
   const distRatio = 1 + distance / (Math.hypot(dx, dy, dz) || 1);
-  graph.cameraPosition(
-    { x: dx * distRatio, y: dy * distRatio, z: dz * distRatio },
-    node, 800
-  );
+  graph.cameraPosition({ x: dx * distRatio, y: dy * distRatio, z: dz * distRatio }, node, 800);
 
   showDetail(node);
 }
@@ -2962,11 +2861,11 @@ function prevSearchResult() {
 // --- Epic cycling: Shift+S/D navigation (bd-pnngb) ---
 
 function rebuildEpicIndex() {
-  const prev = _epicNodes.map(n => n.id).join(',');
+  const prev = _epicNodes.map((n) => n.id).join(',');
   _epicNodes = graphData.nodes
-    .filter(n => n.issue_type === 'epic' && !n._hidden)
+    .filter((n) => n.issue_type === 'epic' && !n._hidden)
     .sort((a, b) => (a.title || a.id).localeCompare(b.title || b.id));
-  const curr = _epicNodes.map(n => n.id).join(',');
+  const curr = _epicNodes.map((n) => n.id).join(',');
   // Reset index if the set of epics changed
   if (prev !== curr) _epicCycleIndex = -1;
 }
@@ -2987,12 +2886,11 @@ function highlightEpic(epicNode) {
   // Select the epic and fly camera to it
   selectNode(epicNode);
   const distance = 160;
-  const dx = epicNode.x || 0, dy = epicNode.y || 0, dz = epicNode.z || 0;
+  const dx = epicNode.x || 0,
+    dy = epicNode.y || 0,
+    dz = epicNode.z || 0;
   const distRatio = 1 + distance / (Math.hypot(dx, dy, dz) || 1);
-  graph.cameraPosition(
-    { x: dx * distRatio, y: dy * distRatio, z: dz * distRatio },
-    epicNode, 800
-  );
+  graph.cameraPosition({ x: dx * distRatio, y: dy * distRatio, z: dz * distRatio }, epicNode, 800);
 
   // Find all child/descendant node IDs via parent-child edges.
   // Direction is inconsistent: raw edges have source=parent, target=child;
@@ -3021,9 +2919,13 @@ function highlightEpic(epicNode) {
     const obj = n.__threeObj;
     if (!obj) continue;
     if (n.id === epicNode.id || childIds.has(n.id)) {
-      obj.traverse(c => { if (c.material) c.material.opacity = 1.0; });
+      obj.traverse((c) => {
+        if (c.material) c.material.opacity = 1.0;
+      });
     } else {
-      obj.traverse(c => { if (c.material) c.material.opacity = 0.15; });
+      obj.traverse((c) => {
+        if (c.material) c.material.opacity = 0.15;
+      });
     }
   }
 
@@ -3057,7 +2959,9 @@ function showEpicHUD(index, total, title) {
   clearTimeout(_epicHUDTimer);
   _epicHUDTimer = setTimeout(() => {
     _epicHUDEl.style.opacity = '0';
-    setTimeout(() => { if (_epicHUDEl) _epicHUDEl.style.display = 'none'; }, 400);
+    setTimeout(() => {
+      if (_epicHUDEl) _epicHUDEl.style.display = 'none';
+    }, 400);
   }, 3000);
 }
 
@@ -3079,7 +2983,7 @@ function _buildRigPillsIn(container, nodes) {
   const sortedRigs = [...rigs].sort();
 
   // Only rebuild if rig set changed
-  const currentRigs = [...container.querySelectorAll('.rig-pill')].map(p => p.dataset.rig);
+  const currentRigs = [...container.querySelectorAll('.rig-pill')].map((p) => p.dataset.rig);
   if (currentRigs.length === sortedRigs.length && currentRigs.every((r, i) => r === sortedRigs[i])) {
     for (const pill of container.querySelectorAll('.rig-pill')) {
       pill.classList.toggle('excluded', agentFilterRigExclude.has(pill.dataset.rig));
@@ -3113,7 +3017,7 @@ function _buildRigPillsIn(container, nodes) {
 }
 
 function _syncAllRigPills() {
-  document.querySelectorAll('.rig-pill').forEach(pill => {
+  document.querySelectorAll('.rig-pill').forEach((pill) => {
     const rig = pill.dataset.rig;
     pill.classList.toggle('excluded', agentFilterRigExclude.has(rig));
     pill.title = `Click to ${agentFilterRigExclude.has(rig) ? 'show' : 'hide'} agents on ${rig}`;
@@ -3156,13 +3060,19 @@ function makeTextSprite(text, opts = {}) {
   // Background (bd-jy0yt)
   if (bg) {
     ctx.fillStyle = bg;
-    const r = 4, cw = canvas.width, ch = canvas.height;
+    const r = 4,
+      cw = canvas.width,
+      ch = canvas.height;
     ctx.beginPath();
     ctx.moveTo(r, 0);
-    ctx.lineTo(cw - r, 0); ctx.arcTo(cw, 0, cw, r, r);
-    ctx.lineTo(cw, ch - r); ctx.arcTo(cw, ch, cw - r, ch, r);
-    ctx.lineTo(r, ch); ctx.arcTo(0, ch, 0, ch - r, r);
-    ctx.lineTo(0, r); ctx.arcTo(0, 0, r, 0, r);
+    ctx.lineTo(cw - r, 0);
+    ctx.arcTo(cw, 0, cw, r, r);
+    ctx.lineTo(cw, ch - r);
+    ctx.arcTo(cw, ch, cw - r, ch, r);
+    ctx.lineTo(r, ch);
+    ctx.arcTo(0, ch, 0, ch - r, r);
+    ctx.lineTo(0, r);
+    ctx.arcTo(0, 0, r, 0, r);
     ctx.closePath();
     ctx.fill();
   }
@@ -3174,8 +3084,11 @@ function makeTextSprite(text, opts = {}) {
   tex.minFilter = THREE.LinearFilter;
   const screenSpace = opts.sizeAttenuation === false;
   const mat = new THREE.SpriteMaterial({
-    map: tex, transparent: true, opacity: opts.opacity || 0.6,
-    depthWrite: false, depthTest: false,
+    map: tex,
+    transparent: true,
+    opacity: opts.opacity || 0.6,
+    depthWrite: false,
+    depthTest: false,
     sizeAttenuation: !screenSpace,
   });
   const sprite = new THREE.Sprite(mat);
@@ -3197,7 +3110,12 @@ function addRadialGuides() {
     const r = (p + 0.5) * radiusScale;
     // Ring in XZ plane
     const ringGeo = new THREE.RingGeometry(r - 0.3, r + 0.3, 64);
-    const ringMat = new THREE.MeshBasicMaterial({ color: 0x1a2a3a, transparent: true, opacity: 0.15, side: THREE.DoubleSide });
+    const ringMat = new THREE.MeshBasicMaterial({
+      color: 0x1a2a3a,
+      transparent: true,
+      opacity: 0.15,
+      side: THREE.DoubleSide,
+    });
     const ring = new THREE.Mesh(ringGeo, ringMat);
     ring.rotation.x = -Math.PI / 2; // lay flat in XZ
     scene.add(ring);
@@ -3213,7 +3131,7 @@ function addRadialGuides() {
 
 function addClusterGuides(nodes) {
   const scene = graph.scene();
-  const assignees = [...new Set(nodes.map(n => n.assignee || '(unassigned)'))];
+  const assignees = [...new Set(nodes.map((n) => n.assignee || '(unassigned)'))];
   const clusterRadius = Math.max(assignees.length * 40, 150);
 
   assignees.forEach((a, i) => {
@@ -3229,7 +3147,12 @@ function addClusterGuides(nodes) {
 
     // Small anchor ring at cluster center
     const ringGeo = new THREE.RingGeometry(8, 10, 24);
-    const ringMat = new THREE.MeshBasicMaterial({ color: 0xff6b35, transparent: true, opacity: 0.08, side: THREE.DoubleSide });
+    const ringMat = new THREE.MeshBasicMaterial({
+      color: 0xff6b35,
+      transparent: true,
+      opacity: 0.08,
+      side: THREE.DoubleSide,
+    });
     const ring = new THREE.Mesh(ringGeo, ringMat);
     ring.position.set(x, 0, z);
     ring.rotation.x = -Math.PI / 2;
@@ -3241,10 +3164,16 @@ function addClusterGuides(nodes) {
 function setLayout(mode) {
   currentLayout = mode;
 
-  // Highlight active button
-  document.querySelectorAll('#layout-controls button').forEach(b => b.classList.remove('active'));
+  // Highlight active button (bd-7zczp: sync aria-checked for radio group)
+  document.querySelectorAll('#layout-controls button').forEach((b) => {
+    b.classList.remove('active');
+    b.setAttribute('aria-checked', 'false');
+  });
   const btn = document.getElementById(`btn-layout-${mode}`);
-  if (btn) btn.classList.add('active');
+  if (btn) {
+    btn.classList.add('active');
+    btn.setAttribute('aria-checked', 'true');
+  }
   const layoutSel = document.getElementById('cp-layout-mode');
   if (layoutSel && layoutSel.value !== mode) layoutSel.value = mode;
 
@@ -3261,7 +3190,10 @@ function setLayout(mode) {
 
   switch (mode) {
     case 'free':
-      graph.d3Force('charge').strength(nodeCount > 200 ? -60 : -120).distanceMax(400);
+      graph
+        .d3Force('charge')
+        .strength(nodeCount > 200 ? -60 : -120)
+        .distanceMax(400);
       graph.d3Force('link').distance(nodeCount > 200 ? 40 : 60);
       break;
 
@@ -3322,7 +3254,7 @@ function setLayout(mode) {
       graph.d3Force('link').distance(15);
 
       // Build assignee → anchor position map (wider circle for clear separation)
-      const assignees = [...new Set(graphData.nodes.map(n => n.assignee || '(unassigned)'))];
+      const assignees = [...new Set(graphData.nodes.map((n) => n.assignee || '(unassigned)'))];
       const anchorMap = {};
       const clusterRadius = Math.max(assignees.length * 60, 200);
       assignees.forEach((a, i) => {
@@ -3456,17 +3388,17 @@ function setupAgentTether() {
     if (_agentTetherStrength <= 0) return;
 
     // Apply spring force: agent pulls beads, beads pull deps (with decay)
-    const BASE_STRENGTH = 0.3;     // max tether pull (scaled by slider)
+    const BASE_STRENGTH = 0.3; // max tether pull (scaled by slider)
     const TETHER_STRENGTH = BASE_STRENGTH * _agentTetherStrength;
-    const DECAY = 0.5;             // force halves per hop
-    const REST_DIST = 20;          // desired agent→bead distance
+    const DECAY = 0.5; // force halves per hop
+    const REST_DIST = 20; // desired agent→bead distance
 
     for (const [agentId, beads] of agentBeads) {
       const agent = nodeById.get(agentId);
       if (!agent || agent.x === undefined) continue;
 
       // BFS from agent through beads and their deps
-      const queue = beads.map(b => ({ node: b, depth: 1 }));
+      const queue = beads.map((b) => ({ node: b, depth: 1 }));
       const visited = new Set([agentId]);
 
       while (queue.length > 0) {
@@ -3508,709 +3440,7 @@ function setupAgentTether() {
   });
 }
 
-// --- Screenshot & Export ---
-function captureScreenshot() {
-  const renderer = graph.renderer();
-  const canvas = renderer.domElement;
-
-  // Force a render to ensure the buffer is fresh
-  renderer.render(graph.scene(), graph.camera());
-
-  const dataUrl = canvas.toDataURL('image/png');
-  const link = document.createElement('a');
-  link.download = `beads3d-${new Date().toISOString().slice(0, 19).replace(/:/g, '')}.png`;
-  link.href = dataUrl;
-  link.click();
-
-  const statusEl = document.getElementById('status');
-  statusEl.textContent = 'screenshot saved';
-  statusEl.className = 'connected';
-}
-
-function exportGraphJSON() {
-  const visibleNodes = graphData.nodes.filter(n => !n._hidden);
-  const visibleIds = new Set(visibleNodes.map(n => n.id));
-  const visibleLinks = graphData.links.filter(l => {
-    const srcId = typeof l.source === 'object' ? l.source.id : l.source;
-    const tgtId = typeof l.target === 'object' ? l.target.id : l.target;
-    return visibleIds.has(srcId) && visibleIds.has(tgtId);
-  });
-
-  const exportData = {
-    exported_at: new Date().toISOString(),
-    filters: {
-      search: searchFilter || null,
-      status: statusFilter.size > 0 ? [...statusFilter] : null,
-      type: typeFilter.size > 0 ? [...typeFilter] : null,
-      agents: {
-        show: agentFilterShow,
-        orphaned: agentFilterOrphaned,
-        rig_exclude: agentFilterRigExclude.size > 0 ? [...agentFilterRigExclude] : null,
-      },
-    },
-    stats: {
-      total_nodes: graphData.nodes.length,
-      visible_nodes: visibleNodes.length,
-      visible_links: visibleLinks.length,
-    },
-    nodes: visibleNodes.map(n => ({
-      id: n.id,
-      title: n.title,
-      status: n.status,
-      priority: n.priority,
-      issue_type: n.issue_type,
-      assignee: n.assignee || null,
-      blocked: !!n._blocked,
-      x: n.x ? Math.round(n.x * 10) / 10 : null,
-      y: n.y ? Math.round(n.y * 10) / 10 : null,
-      z: n.z ? Math.round(n.z * 10) / 10 : null,
-    })),
-    links: visibleLinks.map(l => ({
-      source: typeof l.source === 'object' ? l.source.id : l.source,
-      target: typeof l.target === 'object' ? l.target.id : l.target,
-      dep_type: l.dep_type,
-    })),
-  };
-
-  const json = JSON.stringify(exportData, null, 2);
-  const blob = new Blob([json], { type: 'application/json' });
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement('a');
-  link.download = `beads3d-${new Date().toISOString().slice(0, 19).replace(/:/g, '')}.json`;
-  link.href = url;
-  link.click();
-  URL.revokeObjectURL(url);
-
-  const statusEl = document.getElementById('status');
-  statusEl.textContent = `exported ${visibleNodes.length} nodes, ${visibleLinks.length} links`;
-  statusEl.className = 'connected';
-}
-
-// --- Rubber-band selection (shift+drag) ---
-const selectOverlay = document.getElementById('select-overlay');
-const selectCtx = selectOverlay.getContext('2d');
-const bulkMenu = document.getElementById('bulk-menu');
-
-function resizeSelectOverlay() {
-  selectOverlay.width = window.innerWidth;
-  selectOverlay.height = window.innerHeight;
-}
-window.addEventListener('resize', resizeSelectOverlay);
-resizeSelectOverlay();
-
-// Project a 3D node position to 2D screen coordinates
-function nodeToScreen(node) {
-  const camera = graph.camera();
-  const renderer = graph.renderer();
-  const { width, height } = renderer.domElement.getBoundingClientRect();
-  const vec = new THREE.Vector3(node.x || 0, node.y || 0, node.z || 0);
-  vec.project(camera);
-  return {
-    x: (vec.x * 0.5 + 0.5) * width,
-    y: (-vec.y * 0.5 + 0.5) * height,
-  };
-}
-
-function setupBoxSelect() {
-  const graphEl = document.getElementById('graph');
-
-  graphEl.addEventListener('mousedown', (e) => {
-    if (!e.shiftKey || e.button !== 0) return;
-    e.preventDefault();
-    e.stopPropagation();
-
-    isBoxSelecting = true;
-    boxSelectStart = { x: e.clientX, y: e.clientY };
-    selectOverlay.style.display = 'block';
-    selectOverlay.style.pointerEvents = 'auto';
-
-    // Disable orbit controls during box select
-    const controls = graph.controls();
-    if (controls) controls.enabled = false;
-  });
-
-  // Use document-level listeners so drag works even if mouse leaves graph
-  document.addEventListener('mousemove', (e) => {
-    if (!isBoxSelecting) return;
-    e.preventDefault();
-
-    const x0 = Math.min(boxSelectStart.x, e.clientX);
-    const y0 = Math.min(boxSelectStart.y, e.clientY);
-    const w = Math.abs(e.clientX - boxSelectStart.x);
-    const h = Math.abs(e.clientY - boxSelectStart.y);
-
-    selectCtx.clearRect(0, 0, selectOverlay.width, selectOverlay.height);
-
-    // Draw selection rectangle
-    selectCtx.fillStyle = 'rgba(74, 158, 255, 0.08)';
-    selectCtx.fillRect(x0, y0, w, h);
-    selectCtx.strokeStyle = 'rgba(74, 158, 255, 0.6)';
-    selectCtx.lineWidth = 1;
-    selectCtx.setLineDash([4, 4]);
-    selectCtx.strokeRect(x0, y0, w, h);
-    selectCtx.setLineDash([]);
-
-    // Live preview: highlight nodes inside the rectangle
-    const previewSet = new Set();
-    for (const node of graphData.nodes) {
-      if (node._hidden || node.issue_type === 'agent') continue;
-      const screen = nodeToScreen(node);
-      if (screen.x >= x0 && screen.x <= x0 + w && screen.y >= y0 && screen.y <= y0 + h) {
-        previewSet.add(node.id);
-        // Draw a small indicator dot on the overlay
-        selectCtx.beginPath();
-        selectCtx.arc(screen.x, screen.y, 4, 0, Math.PI * 2);
-        selectCtx.fillStyle = 'rgba(74, 158, 255, 0.5)';
-        selectCtx.fill();
-      }
-    }
-    multiSelected = previewSet;
-  });
-
-  document.addEventListener('mouseup', (e) => {
-    if (!isBoxSelecting) return;
-    isBoxSelecting = false;
-    selectOverlay.style.display = 'none';
-    selectOverlay.style.pointerEvents = 'none';
-    selectCtx.clearRect(0, 0, selectOverlay.width, selectOverlay.height);
-
-    // Re-enable orbit controls (will be re-frozen by centerCameraOnSelection if multi-select)
-    const controls = graph.controls();
-    if (controls) controls.enabled = true;
-
-    // Finalize selection
-    if (multiSelected.size > 0) {
-      // Highlight connected nodes/links for the selection
-      highlightNodes.clear();
-      highlightLinks.clear();
-      for (const id of multiSelected) highlightNodes.add(id);
-      for (const l of graphData.links) {
-        const srcId = typeof l.source === 'object' ? l.source.id : l.source;
-        const tgtId = typeof l.target === 'object' ? l.target.id : l.target;
-        if (multiSelected.has(srcId) || multiSelected.has(tgtId)) {
-          highlightNodes.add(srcId);
-          highlightNodes.add(tgtId);
-          highlightLinks.add(linkKey(l));
-        }
-      }
-      graph.linkWidth(graph.linkWidth());
-
-      // Center camera on selection and freeze controls (bd-casin)
-      centerCameraOnSelection();
-
-      showBulkMenu(e.clientX, e.clientY);
-    }
-  });
-}
-
-function buildBulkStatusSubmenu() {
-  const statuses = [
-    { value: 'open', label: 'open', color: '#2d8a4e' },
-    { value: 'in_progress', label: 'in progress', color: '#d4a017' },
-    { value: 'closed', label: 'closed', color: '#333340' },
-  ];
-  return statuses.map(s =>
-    `<div class="bulk-item" data-action="bulk-status" data-value="${s.value}">` +
-    `<span class="ctx-dot" style="background:${s.color}"></span>${s.label}</div>`
-  ).join('');
-}
-
-function buildBulkPrioritySubmenu() {
-  const priorities = [
-    { value: 0, label: 'P0 critical', color: '#ff3333' },
-    { value: 1, label: 'P1 high', color: '#ff8833' },
-    { value: 2, label: 'P2 medium', color: '#d4a017' },
-    { value: 3, label: 'P3 low', color: '#4a9eff' },
-    { value: 4, label: 'P4 backlog', color: '#666' },
-  ];
-  return priorities.map(p =>
-    `<div class="bulk-item" data-action="bulk-priority" data-value="${p.value}">` +
-    `<span class="ctx-dot" style="background:${p.color}"></span>${p.label}</div>`
-  ).join('');
-}
-
-function showBulkMenu(x, y) {
-  const count = multiSelected.size;
-  bulkMenu.innerHTML = `
-    <div class="bulk-header">${count} bead${count !== 1 ? 's' : ''} selected</div>
-    <div class="bulk-item bulk-submenu">set status
-      <div class="bulk-submenu-panel">${buildBulkStatusSubmenu()}</div>
-    </div>
-    <div class="bulk-item bulk-submenu">set priority
-      <div class="bulk-submenu-panel">${buildBulkPrioritySubmenu()}</div>
-    </div>
-    <div class="bulk-sep"></div>
-    <div class="bulk-item" data-action="bulk-close">close all</div>
-    <div class="bulk-sep"></div>
-    <div class="bulk-item" data-action="bulk-clear">clear selection</div>
-  `;
-
-  bulkMenu.style.display = 'block';
-  const rect = bulkMenu.getBoundingClientRect();
-  if (x + rect.width > window.innerWidth) x = window.innerWidth - rect.width - 8;
-  if (y + rect.height > window.innerHeight) y = window.innerHeight - rect.height - 8;
-  bulkMenu.style.left = x + 'px';
-  bulkMenu.style.top = y + 'px';
-
-  bulkMenu.onclick = (e) => {
-    const item = e.target.closest('.bulk-item');
-    if (!item) return;
-    const action = item.dataset.action;
-    const value = item.dataset.value;
-    handleBulkAction(action, value);
-  };
-}
-
-function hideBulkMenu() {
-  bulkMenu.style.display = 'none';
-  bulkMenu.onclick = null;
-}
-
-async function handleBulkAction(action, value) {
-  const ids = [...multiSelected];
-  hideBulkMenu();
-
-  // Build snapshot for rollback and apply optimistic changes
-  const nodeMap = new Map(graphData.nodes.map(n => [n.id, n]));
-  const snapshots = new Map();
-
-  switch (action) {
-    case 'bulk-status': {
-      for (const id of ids) {
-        const n = nodeMap.get(id);
-        if (n) { snapshots.set(id, { status: n.status }); n.status = value; }
-      }
-      graph.nodeThreeObject(graph.nodeThreeObject());
-      showStatusToast(`${ids.length} → ${value}`);
-      const results = await Promise.allSettled(ids.map(id => api.update(id, { status: value })));
-      const failed = results.filter(r => r.status === 'rejected').length;
-      if (failed > 0) {
-        showStatusToast(`${failed}/${ids.length} failed`, true);
-        for (const [id, snap] of snapshots) { const n = nodeMap.get(id); if (n) Object.assign(n, snap); }
-        graph.nodeThreeObject(graph.nodeThreeObject());
-      }
-      break;
-    }
-    case 'bulk-priority': {
-      const p = parseInt(value, 10);
-      for (const id of ids) {
-        const n = nodeMap.get(id);
-        if (n) { snapshots.set(id, { priority: n.priority }); n.priority = p; }
-      }
-      graph.nodeThreeObject(graph.nodeThreeObject());
-      showStatusToast(`${ids.length} → P${p}`);
-      const results = await Promise.allSettled(ids.map(id => api.update(id, { priority: p })));
-      const failed = results.filter(r => r.status === 'rejected').length;
-      if (failed > 0) {
-        showStatusToast(`${failed}/${ids.length} failed`, true);
-        for (const [id, snap] of snapshots) { const n = nodeMap.get(id); if (n) Object.assign(n, snap); }
-        graph.nodeThreeObject(graph.nodeThreeObject());
-      }
-      break;
-    }
-    case 'bulk-close': {
-      for (const id of ids) {
-        const n = nodeMap.get(id);
-        if (n) { snapshots.set(id, { status: n.status }); n.status = 'closed'; }
-      }
-      graph.nodeThreeObject(graph.nodeThreeObject());
-      showStatusToast(`closed ${ids.length}`);
-      const results = await Promise.allSettled(ids.map(id => api.close(id)));
-      const failed = results.filter(r => r.status === 'rejected').length;
-      if (failed > 0) {
-        showStatusToast(`${failed}/${ids.length} failed`, true);
-        for (const [id, snap] of snapshots) { const n = nodeMap.get(id); if (n) Object.assign(n, snap); }
-        graph.nodeThreeObject(graph.nodeThreeObject());
-      }
-      break;
-    }
-    case 'bulk-clear':
-      break;
-  }
-
-  multiSelected.clear();
-  unfreezeCamera(); // bd-casin: restore orbit controls after bulk action
-}
-
-// --- Controls ---
-function setupControls() {
-  const btnRefresh = document.getElementById('btn-refresh');
-  const searchInput = document.getElementById('search-input');
-
-  const btnBloom = document.getElementById('btn-bloom');
-
-  // Layout buttons
-  document.getElementById('btn-layout-free').onclick = () => setLayout('free');
-  document.getElementById('btn-layout-dag').onclick = () => setLayout('dag');
-  // Timeline layout removed (bd-t9unh)
-  document.getElementById('btn-layout-radial').onclick = () => setLayout('radial');
-  document.getElementById('btn-layout-cluster').onclick = () => setLayout('cluster');
-
-  btnRefresh.onclick = () => refresh();
-
-  // Screenshot & export buttons
-  document.getElementById('btn-screenshot').onclick = () => captureScreenshot();
-  document.getElementById('btn-export').onclick = () => exportGraphJSON();
-
-  // Bloom toggle
-  btnBloom.onclick = () => {
-    bloomEnabled = !bloomEnabled;
-    if (bloomPass) bloomPass.enabled = bloomEnabled;
-    btnBloom.classList.toggle('active', bloomEnabled);
-  };
-
-  // Labels toggle (bd-1o2f7, bd-oypa2: start active since labels default on)
-  const btnLabelsEl = document.getElementById('btn-labels');
-  btnLabelsEl.onclick = () => toggleLabels();
-  if (labelsVisible) btnLabelsEl.classList.add('active');
-
-  // Bottom HUD bar quick-action buttons (bd-ddj44, bd-9ndk0.1)
-  const hudBtnRefresh = document.getElementById('hud-btn-refresh');
-  const hudBtnLabels = document.getElementById('hud-btn-labels');
-  const hudBtnAgents = document.getElementById('hud-btn-agents');
-  const hudBtnBloom = document.getElementById('hud-btn-bloom');
-  const hudBtnSearch = document.getElementById('hud-btn-search');
-  const hudBtnMinimap = document.getElementById('hud-btn-minimap');
-  const hudBtnSidebar = document.getElementById('hud-btn-sidebar');
-  const hudBtnControls = document.getElementById('hud-btn-controls');
-  if (hudBtnRefresh) hudBtnRefresh.onclick = () => refresh();
-  if (hudBtnLabels) hudBtnLabels.onclick = () => toggleLabels();
-  if (hudBtnAgents) hudBtnAgents.onclick = () => toggleAgentsView();
-  if (hudBtnBloom) hudBtnBloom.onclick = () => {
-    bloomEnabled = !bloomEnabled;
-    if (bloomPass) bloomPass.enabled = bloomEnabled;
-    hudBtnBloom.classList.toggle('active', bloomEnabled);
-  };
-  if (hudBtnSearch) hudBtnSearch.onclick = () => searchInput.focus();
-  if (hudBtnMinimap) hudBtnMinimap.onclick = () => toggleMinimap();
-  if (hudBtnSidebar) hudBtnSidebar.onclick = () => toggleLeftSidebar();
-  if (hudBtnControls) hudBtnControls.onclick = () => toggleControlPanel();
-
-  // bd-69y6v: Control panel — wire dependencies and init
-  setControlPanelDeps({
-    getGraph: () => graph,
-    getGraphData: () => graphData,
-    getBloomPass: () => bloomPass,
-    setMaxEdgesPerNode: v => { maxEdgesPerNode = v; },
-    setAgentTetherStrength: v => { _agentTetherStrength = v; },
-    setMinimapVisible: v => { minimapVisible = v; },
-    getDepTypeHidden: () => depTypeHidden,
-    applyFilters,
-    refresh,
-    toggleLabels,
-    getLabelsVisible: () => labelsVisible,
-    setLayout,
-    api,
-  });
-  initControlPanel();
-
-  // bd-inqge: Right sidebar
-  setOnNodeClick(handleNodeClick); // register callback for right-sidebar.js (bd-7t6nt)
-  initRightSidebar();
-
-  // bd-9ndk0.3: Unified activity stream
-  initUnifiedFeed();
-
-  // Search — debounced input updates filter, Enter/arrows navigate results (bd-7n4g8)
-  searchInput.addEventListener('input', (e) => {
-    searchFilter = e.target.value;
-    searchResultIdx = 0; // reset to first result on new input
-    clearTimeout(_searchDebounceTimer);
-    _searchDebounceTimer = setTimeout(() => applyFilters(), 150);
-  });
-  searchInput.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter') {
-      e.preventDefault();
-      if (searchResults.length > 0) {
-        flyToSearchResult();
-      }
-    } else if (e.key === 'ArrowDown') {
-      e.preventDefault();
-      nextSearchResult();
-    } else if (e.key === 'ArrowUp') {
-      e.preventDefault();
-      prevSearchResult();
-    }
-  });
-
-  // Status filter toggles
-  // "active" button covers in_progress + blocked + hooked + deferred (bd-7haep)
-  const STATUS_GROUPS = {
-    in_progress: ['in_progress', 'blocked', 'hooked', 'deferred'],
-  };
-  document.querySelectorAll('.filter-status').forEach(btn => {
-    btn.addEventListener('click', () => {
-      const status = btn.dataset.status;
-      const group = STATUS_GROUPS[status] || [status];
-      btn.classList.toggle('active');
-      if (statusFilter.has(status)) {
-        group.forEach(s => statusFilter.delete(s));
-      } else {
-        group.forEach(s => statusFilter.add(s));
-      }
-      syncFilterDashboard();
-      applyFilters();
-    });
-  });
-
-  // Type filter toggles
-  document.querySelectorAll('.filter-type').forEach(btn => {
-    btn.addEventListener('click', () => {
-      const type = btn.dataset.type;
-      btn.classList.toggle('active');
-      if (typeFilter.has(type)) {
-        typeFilter.delete(type);
-      } else {
-        typeFilter.add(type);
-      }
-      syncFilterDashboard();
-      applyFilters();
-    });
-  });
-
-  // Agent filter controls (bd-8o2gd)
-  const btnAgentShow = document.getElementById('btn-agent-show');
-  const btnAgentOrphaned = document.getElementById('btn-agent-orphaned');
-
-  if (btnAgentShow) {
-    btnAgentShow.addEventListener('click', () => {
-      agentFilterShow = !agentFilterShow;
-      btnAgentShow.classList.toggle('active', agentFilterShow);
-      syncFilterDashboard();
-      applyFilters();
-    });
-  }
-
-  if (btnAgentOrphaned) {
-    btnAgentOrphaned.addEventListener('click', () => {
-      agentFilterOrphaned = !agentFilterOrphaned;
-      btnAgentOrphaned.classList.toggle('active', agentFilterOrphaned);
-      syncFilterDashboard();
-      applyFilters();
-    });
-  }
-
-  // Age filter (bd-uc0mw): radio-style — only one active at a time.
-  // Triggers a full re-fetch because the server uses max_age_days to limit
-  // which closed issues are returned (avoids pulling thousands of stale beads).
-  document.querySelectorAll('.filter-age').forEach(btn => {
-    btn.addEventListener('click', () => {
-      const newDays = parseInt(btn.dataset.days, 10);
-      if (newDays === activeAgeDays) return; // no change
-      document.querySelectorAll('.filter-age').forEach(b => b.classList.remove('active'));
-      btn.classList.add('active');
-      activeAgeDays = newDays;
-      syncFilterDashboard();
-      refresh(); // re-fetch with new age cutoff (bd-uc0mw)
-    });
-  });
-
-  // Filter dashboard panel (bd-8o2gd phase 2) — wire dependencies
-  setFilterDeps({
-    applyFilters, refresh, syncAllRigPills: _syncAllRigPills, api,
-    state: {
-      get filterDashboardOpen() { return filterDashboardOpen; },
-      set filterDashboardOpen(v) { filterDashboardOpen = v; },
-      get statusFilter() { return statusFilter; },
-      get typeFilter() { return typeFilter; },
-      get priorityFilter() { return priorityFilter; },
-      get activeAgeDays() { return activeAgeDays; },
-      set activeAgeDays(v) { activeAgeDays = v; },
-      get assigneeFilter() { return assigneeFilter; },
-      set assigneeFilter(v) { assigneeFilter = v; },
-      get agentFilterShow() { return agentFilterShow; },
-      set agentFilterShow(v) { agentFilterShow = v; },
-      get agentFilterOrphaned() { return agentFilterOrphaned; },
-      set agentFilterOrphaned(v) { agentFilterOrphaned = v; },
-      get agentFilterRigExclude() { return agentFilterRigExclude; },
-      get agentFilterNameExclude() { return agentFilterNameExclude; },
-      set agentFilterNameExclude(v) { agentFilterNameExclude = v; },
-      get graphData() { return graphData; },
-      get searchResults() { return searchResults; },
-      get searchResultIdx() { return searchResultIdx; },
-      URL_PROFILE, URL_STATUS, URL_TYPES, URL_ASSIGNEE,
-    },
-  });
-  initFilterDashboard();
-
-  // Detail panel (bd-fbmq3, bd-7t6nt) — wire dependencies
-  setDetailDeps({
-    api,
-    showAgentWindow,
-    openAgentTab: (node) => {
-      // bd-bwi52: open agents view + select tab for this agent
-      if (getAgentsViewOpen()) {
-        selectAgentTab(node.id);
-      } else {
-        openAgentsView();
-        selectAgentTab(node.id);
-      }
-    },
-    showStatusToast,
-    getGraph: () => graph,
-  });
-
-  // Agent windows (bd-7t6nt) — wire dependencies
-  setAgentWindowDeps({
-    api,
-    getGraphData: () => graphData,
-    handleNodeClick,
-  });
-
-  // Mutations/doots (bd-7t6nt) — wire dependencies
-  setMutationDeps({
-    api,
-    getGraphData: () => graphData,
-    getGraph: () => graph,
-    refresh,
-    handleNodeClick,
-  });
-
-  // Keyboard shortcuts
-  document.addEventListener('keydown', (e) => {
-    // '/' to focus search
-    if (e.key === '/' && !isTextInputFocused()) {
-      e.preventDefault();
-      searchInput.focus();
-    }
-    // Escape to clear search, close detail, close context/bulk menu, and deselect
-    if (e.key === 'Escape') {
-      // Always unfreeze camera on Escape (bd-casin)
-      unfreezeCamera();
-
-      // Close control panel if open (bd-69y6v)
-      if (controlPanelOpen) {
-        toggleControlPanel();
-        return;
-      }
-
-      // Close left sidebar if open (bd-nnr22)
-      if (getLeftSidebarOpen()) {
-        toggleLeftSidebar();
-        return;
-      }
-
-      // Close filter dashboard if open (bd-8o2gd phase 2)
-      if (filterDashboardOpen) {
-        toggleFilterDashboard();
-        return;
-      }
-
-      // Close Agents View if open (bd-jgvas)
-      if (getAgentsViewOpen()) {
-        // If search is focused and has text, clear it first
-        const avSearch = document.querySelector('.agents-view-search');
-        if (avSearch && document.activeElement === avSearch && avSearch.value) {
-          avSearch.value = '';
-          avSearch.dispatchEvent(new Event('input'));
-          return;
-        }
-        closeAgentsView();
-        return;
-      }
-
-      if (bulkMenu.style.display === 'block') {
-        hideBulkMenu();
-        multiSelected.clear();
-        return;
-      }
-      if (ctxMenu.style.display === 'block') {
-        hideContextMenu();
-        return;
-      }
-      if (document.activeElement === searchInput) {
-        searchInput.value = '';
-        searchFilter = '';
-        searchInput.blur();
-        applyFilters();
-      }
-      clearSelection();
-      clearEpicHighlight();
-      hideDetail();
-      hideTooltip();
-      // Dismiss all doot popups (beads-799l)
-      for (const [id] of dootPopups) dismissDootPopup(id);
-      // Close all agent windows (bd-kau4k)
-      for (const [id] of agentWindows) closeAgentWindow(id);
-    }
-    // 'r' to refresh
-    if (e.key === 'r' && !isTextInputFocused()) {
-      refresh();
-    }
-    // Performance overlay: backtick toggles, ~ toggles frame graph (bd-8nx79)
-    if (e.key === '`' && !e.shiftKey && !isTextInputFocused()) { togglePerfOverlay(); return; }
-    if (e.key === '~' && !isTextInputFocused()) { togglePerfGraph(); return; }
-    // VFX intensity: [ ] to adjust, Shift+1-4 for presets (bd-epyyu)
-    if (e.key === '[' && !isTextInputFocused()) { setVfxIntensity(_vfxConfig.intensity - 0.25); return; }
-    if (e.key === ']' && !isTextInputFocused()) { setVfxIntensity(_vfxConfig.intensity + 0.25); return; }
-    if (e.shiftKey && e.key === '!' && !isTextInputFocused()) { presetVFX('subtle'); return; }
-    if (e.shiftKey && e.key === '@' && !isTextInputFocused()) { presetVFX('normal'); return; }
-    if (e.shiftKey && e.key === '#' && !isTextInputFocused()) { presetVFX('dramatic'); return; }
-    if (e.shiftKey && e.key === '$' && !isTextInputFocused()) { presetVFX('maximum'); return; }
-    // 'b' to toggle bloom (ignore key repeat to prevent rapid on/off — beads-p97b)
-    if (e.key === 'b' && !e.repeat && !isTextInputFocused()) {
-      btnBloom.click();
-    }
-    // 'm' to toggle minimap
-    if (e.key === 'm' && !e.repeat && !isTextInputFocused()) {
-      toggleMinimap();
-    }
-    // 'l' for labels toggle (bd-1o2f7, beads-p97b: ignore key repeat)
-    if (e.key === 'l' && !e.repeat && !isTextInputFocused()) {
-      toggleLabels();
-    }
-    // 'f' for left sidebar (bd-nnr22, was filter dashboard bd-8o2gd)
-    if (e.key === 'f' && !e.repeat && !isTextInputFocused()) {
-      toggleLeftSidebar();
-    }
-    // 'g' for control panel (bd-69y6v)
-    if (e.key === 'g' && !e.repeat && !isTextInputFocused()) {
-      toggleControlPanel();
-    }
-    // 'p' for screenshot
-    if (e.key === 'p' && !isTextInputFocused()) {
-      captureScreenshot();
-    }
-    // 'x' for export
-    if (e.key === 'x' && !isTextInputFocused()) {
-      exportGraphJSON();
-    }
-    // Shift+D / Shift+S for epic cycling (bd-pnngb)
-    if (e.shiftKey && e.key === 'D' && !isTextInputFocused()) {
-      e.preventDefault();
-      cycleEpic(1);
-      return;
-    }
-    if (e.shiftKey && e.key === 'S' && !isTextInputFocused()) {
-      e.preventDefault();
-      cycleEpic(-1);
-      return;
-    }
-    // Shift+A for Agents View overlay (bd-jgvas)
-    if (e.shiftKey && e.key === 'A' && !isTextInputFocused()) {
-      e.preventDefault();
-      toggleAgentsView();
-      return;
-    }
-    // 1-5 for layout modes
-    const layoutKeys = { '1': 'free', '2': 'dag', '3': 'radial', '4': 'cluster' };
-    if (layoutKeys[e.key] && !isTextInputFocused()) {
-      setLayout(layoutKeys[e.key]);
-    }
-
-    // Arrow + WASD keys: track held keys for Quake-style smooth camera (bd-zab4q, bd-pwaen)
-    if (['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'w', 'a', 's', 'd'].includes(e.key) &&
-        !e.shiftKey && !isTextInputFocused()) {
-      e.preventDefault();
-      _keysDown.add(e.key);
-    }
-  });
-
-  // Release arrow keys — velocity decays via friction in animation loop (bd-zab4q)
-  document.addEventListener('keyup', (e) => {
-    _keysDown.delete(e.key);
-  });
-}
+// Rubber-band selection moved to camera.js (bd-7t6nt)
 
 // --- Refresh ---
 // Merge new data into the existing graph, preserving node positions to avoid layout jumps.
@@ -4222,8 +3452,8 @@ async function refresh() {
 
   const currentNodes = graphData.nodes;
   const currentLinks = graphData.links;
-  const existingById = new Map(currentNodes.map(n => [n.id, n]));
-  const newIds = new Set(data.nodes.map(n => n.id));
+  const existingById = new Map(currentNodes.map((n) => [n.id, n]));
+  const newIds = new Set(data.nodes.map((n) => n.id));
 
   // Position-related keys to preserve across refreshes
   const POSITION_KEYS = ['x', 'y', 'z', 'vx', 'vy', 'vz', 'fx', 'fy', 'fz', '__threeObj', '_wasDimmed'];
@@ -4232,7 +3462,7 @@ async function refresh() {
   let nodesRemoved = 0;
 
   // Update existing nodes in-place, detect additions
-  const mergedNodes = data.nodes.map(incoming => {
+  const mergedNodes = data.nodes.map((incoming) => {
     const existing = existingById.get(incoming.id);
     if (existing) {
       // Update properties in-place (preserving position/velocity/three.js object)
@@ -4248,7 +3478,7 @@ async function refresh() {
     nodesAdded++;
     const newNode = { ...incoming, _blocked: !!(incoming.blocked_by && incoming.blocked_by.length > 0) };
     // Seed new nodes near a connected existing node to reduce layout shock
-    const neighborId = (incoming.blocked_by || [])[0] || (incoming.assignee_id);
+    const neighborId = (incoming.blocked_by || [])[0] || incoming.assignee_id;
     const neighbor = neighborId && existingById.get(neighborId);
     if (neighbor && neighbor.x !== undefined) {
       newNode.x = neighbor.x + (Math.random() - 0.5) * 30;
@@ -4277,16 +3507,19 @@ async function refresh() {
   // Build link key for comparison (includes dep_type)
   // Exclude rig_conflict edges — they're re-synthesized every refresh and would
   // always trigger structureChanged even when nothing meaningful changed (bd-c1x6p).
-  const refreshLinkKey = l => `${typeof l.source === 'object' ? l.source.id : l.source}→${typeof l.target === 'object' ? l.target.id : l.target}:${l.dep_type}`;
-  const existingLinkKeys = new Set(currentLinks.filter(l => l.dep_type !== 'rig_conflict').map(refreshLinkKey));
-  const newLinkKeys = new Set(data.links.filter(l => l.dep_type !== 'rig_conflict').map(refreshLinkKey));
+  const refreshLinkKey = (l) =>
+    `${typeof l.source === 'object' ? l.source.id : l.source}→${typeof l.target === 'object' ? l.target.id : l.target}:${l.dep_type}`;
+  const existingLinkKeys = new Set(currentLinks.filter((l) => l.dep_type !== 'rig_conflict').map(refreshLinkKey));
+  const newLinkKeys = new Set(data.links.filter((l) => l.dep_type !== 'rig_conflict').map(refreshLinkKey));
 
   let linksChanged = false;
   // Detect genuinely new links for edge spark animations (bd-9qeto)
-  const brandNewLinks = data.links.filter(l => !existingLinkKeys.has(refreshLinkKey(l)));
-  if (data.links.length !== currentLinks.length ||
-      brandNewLinks.length > 0 ||
-      currentLinks.some(l => !newLinkKeys.has(refreshLinkKey(l)))) {
+  const brandNewLinks = data.links.filter((l) => !existingLinkKeys.has(refreshLinkKey(l)));
+  if (
+    data.links.length !== currentLinks.length ||
+    brandNewLinks.length > 0 ||
+    currentLinks.some((l) => !newLinkKeys.has(refreshLinkKey(l)))
+  ) {
     linksChanged = true;
   }
 
@@ -4296,13 +3529,17 @@ async function refresh() {
     if (nl.dep_type === 'assigned_to') continue;
     const srcId = typeof nl.source === 'object' ? nl.source.id : nl.source;
     const tgtId = typeof nl.target === 'object' ? nl.target.id : nl.target;
-    const srcNode = mergedNodes.find(n => n.id === srcId);
-    const tgtNode = mergedNodes.find(n => n.id === tgtId);
+    const srcNode = mergedNodes.find((n) => n.id === srcId);
+    const tgtNode = mergedNodes.find((n) => n.id === tgtId);
     if (srcNode && tgtNode && srcNode.x !== undefined && tgtNode.x !== undefined) {
-      const beamColor = nl.dep_type === 'blocks' ? 0xd04040
-        : nl.dep_type === 'parent-child' ? 0x8b45a6
-        : nl.dep_type === 'waits-for' ? 0xd4a017
-        : 0x4a9eff;
+      const beamColor =
+        nl.dep_type === 'blocks'
+          ? 0xd04040
+          : nl.dep_type === 'parent-child'
+            ? 0x8b45a6
+            : nl.dep_type === 'waits-for'
+              ? 0xd4a017
+              : 0x4a9eff;
       spawnEnergyBeam(srcNode, tgtNode, beamColor);
     }
   }
@@ -4321,7 +3558,7 @@ async function refresh() {
   updateRightSidebar(graphData); // bd-inqge
 
   // Compute pending decision badge counts per parent node (bd-o6tgy)
-  const nodeById = new Map(mergedNodes.map(n => [n.id, n]));
+  const nodeById = new Map(mergedNodes.map((n) => [n.id, n]));
   for (const n of mergedNodes) n._pendingDecisions = 0;
   for (const link of data.links) {
     if (link.dep_type !== 'parent-child') continue;
@@ -4345,13 +3582,14 @@ async function refresh() {
     }
   }
   // Remove stale conflict edges from previous update
-  graphData.links = graphData.links.filter(l => l.dep_type !== 'rig_conflict');
+  graphData.links = graphData.links.filter((l) => l.dep_type !== 'rig_conflict');
   for (const [, agents] of rigGroups) {
     if (agents.length < 2) continue;
     for (let i = 0; i < agents.length; i++) {
       for (let j = i + 1; j < agents.length; j++) {
         graphData.links.push({
-          source: agents[i], target: agents[j],
+          source: agents[i],
+          target: agents[j],
           dep_type: 'rig_conflict',
         });
       }
@@ -4419,14 +3657,11 @@ async function refresh() {
 // SSE, mutations, doots, doot popups moved to mutations.js (bd-7t6nt)
 // showAgentWindow through enableTopResize moved to agent-windows.js (bd-7t6nt)
 
-
 // Right sidebar moved to right-sidebar.js (bd-7t6nt)
 
 // Control panel moved to control-panel.js (bd-69y6v)
 
-
 // openAgentsView through autoScroll moved to agent-windows.js (bd-7t6nt)
-
 
 function connectBusStream() {
   try {
@@ -4436,156 +3671,168 @@ function connectBusStream() {
     // schedule a quick refresh so the node appears without a manual page reload.
     let _newAgentRefreshTimer = null;
     const _pendingNewAgents = new Set(); // agent IDs awaiting graph refresh
-    api.connectBusEvents('agents,hooks,oj,mutations,mail,decisions', (evt) => {
-      const label = dootLabel(evt);
-      if (!label) return;
+    api.connectBusEvents(
+      'agents,hooks,oj,mutations,mail,decisions',
+      (evt) => {
+        const label = dootLabel(evt);
+        if (!label) return;
 
-      const node = findAgentNode(evt);
-      if (!node) {
-        // bd-eyvbw: If we can identify the agent but it's not in the graph yet,
-        // schedule a refresh to fetch the new node instead of silently dropping.
-        const pendingAgentId = resolveAgentIdLoose(evt);
-        if (pendingAgentId && !_pendingNewAgents.has(pendingAgentId)) {
-          _pendingNewAgents.add(pendingAgentId);
-          clearTimeout(_newAgentRefreshTimer);
-          _newAgentRefreshTimer = setTimeout(async () => {
-            await refresh();
-            // After refresh, create windows for any newly-appeared agents
-            for (const pid of _pendingNewAgents) {
-              if (!agentWindows.has(pid) && graphData) {
-                const agentNode = graphData.nodes.find(n => n.id === pid);
-                if (agentNode) {
-                  if (getAgentsViewOpen()) {
-                    createAgentWindowInGrid(agentNode);
-                  } else {
-                    showAgentWindow(agentNode);
+        const node = findAgentNode(evt);
+        if (!node) {
+          // bd-eyvbw: If we can identify the agent but it's not in the graph yet,
+          // schedule a refresh to fetch the new node instead of silently dropping.
+          const pendingAgentId = resolveAgentIdLoose(evt);
+          if (pendingAgentId && !_pendingNewAgents.has(pendingAgentId)) {
+            _pendingNewAgents.add(pendingAgentId);
+            clearTimeout(_newAgentRefreshTimer);
+            _newAgentRefreshTimer = setTimeout(async () => {
+              await refresh();
+              // After refresh, create windows for any newly-appeared agents
+              for (const pid of _pendingNewAgents) {
+                if (!agentWindows.has(pid) && graphData) {
+                  const agentNode = graphData.nodes.find((n) => n.id === pid);
+                  if (agentNode) {
+                    if (getAgentsViewOpen()) {
+                      createAgentWindowInGrid(agentNode);
+                    } else {
+                      showAgentWindow(agentNode);
+                    }
                   }
                 }
               }
-            }
-            _pendingNewAgents.clear();
-          }, 1500);
-        }
-        if (++_dootDrops <= 5) {
-          const dp = evt.payload || {};
-          console.debug('[beads3d] doot drop %d: type=%s actor=%s issue=%s', _dootDrops, evt.type, dp.actor, dp.issue_id);
-        }
-        // bd-eyvbw: still process agent window + roster updates below (skip doot/VFX only)
-      }
-
-      if (node) spawnDoot(node, label, dootColor(evt));
-
-      // Event sprites: status change pulse + close burst (bd-9qeto)
-      const p = evt.payload || {};
-      if (node && (evt.type === 'MutationStatus' || evt.type === 'MutationClose') && p.issue_id && graphData) {
-        const issueNode = graphData.nodes.find(n => n.id === p.issue_id);
-        if (issueNode) {
-          const newStatus = p.new_status || (evt.type === 'MutationClose' ? 'closed' : '');
-          spawnStatusPulse(issueNode, p.old_status || '', newStatus);
-        }
-      }
-
-      // Edge pulse: spark along assigned_to edge from agent to task (bd-kc7r1)
-      // Rate-limited to 1 spark per agent per 500ms to avoid overwhelming the scene.
-      if (node && node.issue_type === 'agent' && graphData) {
-        if (!connectBusStream._lastSpark) connectBusStream._lastSpark = {};
-        const now = Date.now();
-        const lastSpark = connectBusStream._lastSpark[node.id] || 0;
-        if (now - lastSpark > 500) {
-          connectBusStream._lastSpark[node.id] = now;
-          const agentNodeId = node.id;
-          const assignedLinks = graphData.links.filter(l =>
-            l.dep_type === 'assigned_to' &&
-            (typeof l.source === 'object' ? l.source.id : l.source) === agentNodeId
-          );
-          for (const link of assignedLinks) {
-            const tgtId = typeof link.target === 'object' ? link.target.id : link.target;
-            const taskNode = graphData.nodes.find(n => n.id === tgtId);
-            if (taskNode && !taskNode._hidden) {
-              const sparkHex = parseInt((dootColor(evt) || '#ff6b35').replace('#', ''), 16);
-              spawnEdgeSpark(node, taskNode, sparkHex);
-              break; // one pulse per event
-            }
+              _pendingNewAgents.clear();
+            }, 1500);
           }
-        }
-      }
-
-      // Decision event: update graph node state, rebuild Three.js, spark edges (bd-0j7hr, bd-fbcbd)
-      if (evt.type && evt.type.startsWith('Decision') && p.decision_id && graphData) {
-        const decNode = graphData.nodes.find(n => n.id === p.decision_id);
-        if (decNode) {
-          if (evt.type === 'DecisionCreated') decNode._decisionState = 'pending';
-          else if (evt.type === 'DecisionResponded') decNode._decisionState = 'resolved';
-          else if (evt.type === 'DecisionExpired') decNode._decisionState = 'expired';
-          // Re-apply filters: resolved/expired decisions disappear from graph (bd-zr374)
-          applyFilters();
-          // Rebuild node Three.js object to reflect new color/shape
-          graph.nodeThreeObject(graph.nodeThreeObject());
-
-          // Edge spark: agent ↔ decision node (bd-fbcbd)
-          if (p.requested_by && !decNode._hidden) {
-            const agentNode = graphData.nodes.find(n =>
-              n.issue_type === 'agent' && (n.title === p.requested_by || n.id === `agent:${p.requested_by}`)
+          if (++_dootDrops <= 5) {
+            const dp = evt.payload || {};
+            console.debug(
+              '[beads3d] doot drop %d: type=%s actor=%s issue=%s',
+              _dootDrops,
+              evt.type,
+              dp.actor,
+              dp.issue_id,
             );
-            if (agentNode && !agentNode._hidden) {
-              const sparkColor = evt.type === 'DecisionResponded' ? 0x2d8a4e : 0xd4a017;
-              spawnEdgeSpark(agentNode, decNode, sparkColor);
-            }
           }
+          // bd-eyvbw: still process agent window + roster updates below (skip doot/VFX only)
         }
-        // Toast notification for new/resolved decisions (bd-tausm)
-        showDecisionToast(evt);
-      }
 
-      // Feed agent activity windows (bd-kau4k, bd-jgvas Phase 2: auto-open)
-      const agentId = resolveAgentIdLoose(evt);
-      if (agentId) {
-        // Auto-create window if it doesn't exist yet (bd-jgvas)
-        if (!agentWindows.has(agentId) && graphData) {
-          const agentNode = graphData.nodes.find(n => n.id === agentId);
-          if (agentNode) {
-            if (getAgentsViewOpen()) {
-              // Create window inside the overlay grid
-              createAgentWindowInGrid(agentNode);
-            } else {
-              showAgentWindow(agentNode);
-            }
+        if (node) spawnDoot(node, label, dootColor(evt));
+
+        // Event sprites: status change pulse + close burst (bd-9qeto)
+        const p = evt.payload || {};
+        if (node && (evt.type === 'MutationStatus' || evt.type === 'MutationClose') && p.issue_id && graphData) {
+          const issueNode = graphData.nodes.find((n) => n.id === p.issue_id);
+          if (issueNode) {
+            const newStatus = p.new_status || (evt.type === 'MutationClose' ? 'closed' : '');
+            spawnStatusPulse(issueNode, p.old_status || '', newStatus);
           }
         }
-        if (agentWindows.has(agentId)) {
-          appendAgentEvent(agentId, evt);
-          // bd-bwi52: Flash tab for non-selected agents when events arrive
-          if (getAgentsViewOpen() && agentId !== getSelectedAgentTab()) {
-            const overlay = document.getElementById('agents-view');
-            if (overlay) {
-              const tab = overlay.querySelector(`.agent-tab[data-agent-id="${agentId}"]`);
-              if (tab && !tab.classList.contains('active')) {
-                tab.classList.add('tab-flash');
-                setTimeout(() => tab.classList.remove('tab-flash'), 800);
+
+        // Edge pulse: spark along assigned_to edge from agent to task (bd-kc7r1)
+        // Rate-limited to 1 spark per agent per 500ms to avoid overwhelming the scene.
+        if (node && node.issue_type === 'agent' && graphData) {
+          if (!connectBusStream._lastSpark) connectBusStream._lastSpark = {};
+          const now = Date.now();
+          const lastSpark = connectBusStream._lastSpark[node.id] || 0;
+          if (now - lastSpark > 500) {
+            connectBusStream._lastSpark[node.id] = now;
+            const agentNodeId = node.id;
+            const assignedLinks = graphData.links.filter(
+              (l) =>
+                l.dep_type === 'assigned_to' && (typeof l.source === 'object' ? l.source.id : l.source) === agentNodeId,
+            );
+            for (const link of assignedLinks) {
+              const tgtId = typeof link.target === 'object' ? link.target.id : link.target;
+              const taskNode = graphData.nodes.find((n) => n.id === tgtId);
+              if (taskNode && !taskNode._hidden) {
+                const sparkHex = parseInt((dootColor(evt) || '#ff6b35').replace('#', ''), 16);
+                spawnEdgeSpark(node, taskNode, sparkHex);
+                break; // one pulse per event
               }
             }
           }
         }
-      }
 
-      // bd-9cpbc.1: live-update right sidebar from bus events
-      if (evt.type && evt.type.startsWith('Decision')) {
-        updateDecisionQueue(graphData);
-      }
-      if (evt.type === 'MutationStatus' || evt.type === 'MutationClose' || evt.type === 'MutationUpdate') {
-        updateEpicProgress(graphData);
-        updateDepHealth(graphData);
-        // Live-update project pulse stats
-        _liveUpdateProjectPulse(evt);
-      }
+        // Decision event: update graph node state, rebuild Three.js, spark edges (bd-0j7hr, bd-fbcbd)
+        if (evt.type && evt.type.startsWith('Decision') && p.decision_id && graphData) {
+          const decNode = graphData.nodes.find((n) => n.id === p.decision_id);
+          if (decNode) {
+            if (evt.type === 'DecisionCreated') decNode._decisionState = 'pending';
+            else if (evt.type === 'DecisionResponded') decNode._decisionState = 'resolved';
+            else if (evt.type === 'DecisionExpired') decNode._decisionState = 'expired';
+            // Re-apply filters: resolved/expired decisions disappear from graph (bd-zr374)
+            applyFilters();
+            // Rebuild node Three.js object to reflect new color/shape
+            graph.nodeThreeObject(graph.nodeThreeObject());
 
-      // bd-nnr22: update left sidebar agent roster from all SSE events
-      updateAgentRosterFromEvent(evt);
-    }, {
-      // bd-ki6im: bus SSE reconnection status (handler in mutations.js)
-      onStatus: (state, info) => updateBusConnectionState(state, info),
-    });
-  } catch { /* SSE not available — degrade gracefully */ }
+            // Edge spark: agent ↔ decision node (bd-fbcbd)
+            if (p.requested_by && !decNode._hidden) {
+              const agentNode = graphData.nodes.find(
+                (n) => n.issue_type === 'agent' && (n.title === p.requested_by || n.id === `agent:${p.requested_by}`),
+              );
+              if (agentNode && !agentNode._hidden) {
+                const sparkColor = evt.type === 'DecisionResponded' ? 0x2d8a4e : 0xd4a017;
+                spawnEdgeSpark(agentNode, decNode, sparkColor);
+              }
+            }
+          }
+          // Toast notification for new/resolved decisions (bd-tausm)
+          showDecisionToast(evt);
+        }
+
+        // Feed agent activity windows (bd-kau4k, bd-jgvas Phase 2: auto-open)
+        const agentId = resolveAgentIdLoose(evt);
+        if (agentId) {
+          // Auto-create window if it doesn't exist yet (bd-jgvas)
+          if (!agentWindows.has(agentId) && graphData) {
+            const agentNode = graphData.nodes.find((n) => n.id === agentId);
+            if (agentNode) {
+              if (getAgentsViewOpen()) {
+                // Create window inside the overlay grid
+                createAgentWindowInGrid(agentNode);
+              } else {
+                showAgentWindow(agentNode);
+              }
+            }
+          }
+          if (agentWindows.has(agentId)) {
+            appendAgentEvent(agentId, evt);
+            // bd-bwi52: Flash tab for non-selected agents when events arrive
+            if (getAgentsViewOpen() && agentId !== getSelectedAgentTab()) {
+              const overlay = document.getElementById('agents-view');
+              if (overlay) {
+                const tab = overlay.querySelector(`.agent-tab[data-agent-id="${agentId}"]`);
+                if (tab && !tab.classList.contains('active')) {
+                  tab.classList.add('tab-flash');
+                  setTimeout(() => tab.classList.remove('tab-flash'), 800);
+                }
+              }
+            }
+          }
+        }
+
+        // bd-9cpbc.1: live-update right sidebar from bus events
+        if (evt.type && evt.type.startsWith('Decision')) {
+          updateDecisionQueue(graphData);
+        }
+        if (evt.type === 'MutationStatus' || evt.type === 'MutationClose' || evt.type === 'MutationUpdate') {
+          updateEpicProgress(graphData);
+          updateDepHealth(graphData);
+          // Live-update project pulse stats
+          _liveUpdateProjectPulse(evt);
+        }
+
+        // bd-nnr22: update left sidebar agent roster from all SSE events
+        updateAgentRosterFromEvent(evt);
+      },
+      {
+        // bd-ki6im: bus SSE reconnection status (handler in mutations.js)
+        onStatus: (state, info) => updateBusConnectionState(state, info),
+      },
+    );
+  } catch {
+    /* SSE not available — degrade gracefully */
+  }
 }
 
 // --- Init ---
@@ -4594,6 +3841,86 @@ async function main() {
     initGraph();
     // Seed with empty data so the force layout initializes before first tick
     graph.graphData({ nodes: [], links: [] });
+
+    // Context menu (bd-7t6nt) — wire dependencies
+    setContextMenuDeps({
+      api,
+      getGraph: () => graph,
+      getGraphData: () => graphData,
+      escapeHtml,
+      hideTooltip,
+      expandDepTree,
+      highlightSubgraph,
+    });
+
+    // Camera, Controls, Box Select (bd-7t6nt) — wire dependencies
+    setCameraDeps({
+      api,
+      getGraph: () => graph,
+      getGraphData: () => graphData,
+      getBloomPass: () => bloomPass,
+      setBloomEnabled: v => { bloomEnabled = v; },
+      getBloomEnabled: () => bloomEnabled,
+      refresh,
+      applyFilters,
+      setLayout,
+      toggleLabels,
+      getLabelsVisible: () => labelsVisible,
+      toggleMinimap,
+      handleNodeClick,
+      clearSelection,
+      clearEpicHighlight,
+      hideTooltip,
+      isTextInputFocused,
+      flyToSearchResult,
+      nextSearchResult,
+      prevSearchResult,
+      togglePerfOverlay,
+      togglePerfGraph,
+      setVfxIntensity,
+      presetVFX,
+      cycleEpic,
+      linkKey,
+      _syncAllRigPills,
+      state: {
+        get multiSelected() { return multiSelected; },
+        set multiSelected(v) { multiSelected = v; },
+        get highlightNodes() { return highlightNodes; },
+        get highlightLinks() { return highlightLinks; },
+        get searchFilter() { return searchFilter; },
+        set searchFilter(v) { searchFilter = v; },
+        get statusFilter() { return statusFilter; },
+        get typeFilter() { return typeFilter; },
+        get priorityFilter() { return priorityFilter; },
+        get assigneeFilter() { return assigneeFilter; },
+        set assigneeFilter(v) { assigneeFilter = v; },
+        get filterDashboardOpen() { return filterDashboardOpen; },
+        set filterDashboardOpen(v) { filterDashboardOpen = v; },
+        get activeAgeDays() { return activeAgeDays; },
+        set activeAgeDays(v) { activeAgeDays = v; },
+        get agentFilterShow() { return agentFilterShow; },
+        set agentFilterShow(v) { agentFilterShow = v; },
+        get agentFilterOrphaned() { return agentFilterOrphaned; },
+        set agentFilterOrphaned(v) { agentFilterOrphaned = v; },
+        get agentFilterRigExclude() { return agentFilterRigExclude; },
+        get agentFilterNameExclude() { return agentFilterNameExclude; },
+        set agentFilterNameExclude(v) { agentFilterNameExclude = v; },
+        get depTypeHidden() { return depTypeHidden; },
+        get maxEdgesPerNode() { return maxEdgesPerNode; },
+        set maxEdgesPerNode(v) { maxEdgesPerNode = v; },
+        get _agentTetherStrength() { return _agentTetherStrength; },
+        set _agentTetherStrength(v) { _agentTetherStrength = v; },
+        get minimapVisible() { return minimapVisible; },
+        set minimapVisible(v) { minimapVisible = v; },
+        get searchResults() { return searchResults; },
+        get searchResultIdx() { return searchResultIdx; },
+        set searchResultIdx(v) { searchResultIdx = v; },
+        get _searchDebounceTimer() { return _searchDebounceTimer; },
+        set _searchDebounceTimer(v) { _searchDebounceTimer = v; },
+        URL_PROFILE, URL_STATUS, URL_TYPES, URL_ASSIGNEE,
+      },
+    });
+
     setupControls();
     setupBoxSelect();
     await refresh();
@@ -4631,9 +3958,28 @@ async function main() {
       setTimeout(() => focusMolecule(DEEP_LINK_MOLECULE), 2000);
     }
 
-// Expose for Playwright tests
+    // Expose for Playwright tests
     window.__THREE = THREE;
-    window.__beads3d = { graph, graphData: () => graphData, multiSelected: () => multiSelected, highlightNodes: () => highlightNodes, showBulkMenu, showDetail, hideDetail, selectNode, highlightSubgraph, clearSelection, focusMolecule, focusedMoleculeNodes: () => focusedMoleculeNodes, get selectedNode() { return selectedNode; }, get cameraFrozen() { return cameraFrozen; } };
+    window.__beads3d = {
+      graph,
+      graphData: () => graphData,
+      multiSelected: () => multiSelected,
+      highlightNodes: () => highlightNodes,
+      showBulkMenu,
+      showDetail,
+      hideDetail,
+      selectNode,
+      highlightSubgraph,
+      clearSelection,
+      focusMolecule,
+      focusedMoleculeNodes: () => focusedMoleculeNodes,
+      get selectedNode() {
+        return selectedNode;
+      },
+      get cameraFrozen() {
+        return cameraFrozen;
+      },
+    };
     // Expose doot internals for testing (bd-pg7vy)
     window.__beads3d_spawnDoot = spawnDoot;
     window.__beads3d_doots = () => doots;

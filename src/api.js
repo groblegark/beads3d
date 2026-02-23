@@ -204,14 +204,21 @@ export class BeadsAPI {
   // SSE event stream for live updates with reconnection (bd-ki6im)
   connectEvents(onEvent, callbacks = {}) {
     const url = `${this.baseUrl}/events`;
-    return this._connectWithReconnect(url, 'mutation', (es) => {
-      es.onmessage = (e) => {
-        try {
-          const data = JSON.parse(e.data);
-          onEvent(data);
-        } catch { /* skip malformed */ }
-      };
-    }, callbacks);
+    return this._connectWithReconnect(
+      url,
+      'mutation',
+      (es) => {
+        es.onmessage = (e) => {
+          try {
+            const data = JSON.parse(e.data);
+            onEvent(data);
+          } catch {
+            /* skip malformed */
+          }
+        };
+      },
+      callbacks,
+    );
   }
 
   // SSE bus event stream with reconnection — all NATS event streams (bd-c7723, bd-ki6im)
@@ -219,13 +226,22 @@ export class BeadsAPI {
   connectBusEvents(streams, onEvent, callbacks = {}) {
     const url = `${this.baseUrl}/bus/events?stream=${encodeURIComponent(streams)}`;
     const eventTypes = ['agents', 'hooks', 'oj', 'mutations', 'decisions', 'mail'];
-    return this._connectWithReconnect(url, 'bus', (es) => {
-      for (const type of eventTypes) {
-        es.addEventListener(type, (e) => {
-          try { onEvent(JSON.parse(e.data)); } catch { /* skip */ }
-        });
-      }
-    }, callbacks);
+    return this._connectWithReconnect(
+      url,
+      'bus',
+      (es) => {
+        for (const type of eventTypes) {
+          es.addEventListener(type, (e) => {
+            try {
+              onEvent(JSON.parse(e.data));
+            } catch {
+              /* skip */
+            }
+          });
+        }
+      },
+      callbacks,
+    );
   }
 
   // --- Decision operations (bd-g0tmq) ---

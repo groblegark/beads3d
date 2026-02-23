@@ -3,10 +3,16 @@
 
 // Callback for node click — set by main.js to avoid circular import
 let _onNodeClick = null;
-export function setOnNodeClick(fn) { _onNodeClick = fn; }
+export function setOnNodeClick(fn) {
+  _onNodeClick = fn;
+}
 
 function escapeHtml(str) {
-  return String(str || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  return String(str || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
 }
 
 let rightSidebarCollapsed = false;
@@ -31,9 +37,23 @@ export function initRightSidebar() {
   const collapseBtn = document.getElementById('rs-collapse');
   if (collapseBtn) collapseBtn.onclick = () => toggleRightSidebar();
 
-  // Collapsible sections
-  sidebar.querySelectorAll('.rs-section-header').forEach(header => {
-    header.onclick = () => header.parentElement.classList.toggle('collapsed');
+  // Collapsible sections (bd-7zczp: add keyboard + ARIA)
+  sidebar.querySelectorAll('.rs-section-header').forEach((header) => {
+    header.setAttribute('role', 'button');
+    header.setAttribute('tabindex', '0');
+    const section = header.parentElement;
+    header.setAttribute('aria-expanded', !section.classList.contains('collapsed'));
+    const toggle = () => {
+      section.classList.toggle('collapsed');
+      header.setAttribute('aria-expanded', !section.classList.contains('collapsed'));
+    };
+    header.onclick = toggle;
+    header.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        toggle();
+      }
+    });
   });
 }
 
@@ -49,34 +69,39 @@ export function updateEpicProgress(graphData) {
   if (!body || !graphData) return;
 
   // Find all epic nodes
-  const epics = graphData.nodes.filter(n => n.issue_type === 'epic' && !n._hidden);
-  if (epics.length === 0) { body.innerHTML = '<div class="rs-empty">no epics</div>'; return; }
+  const epics = graphData.nodes.filter((n) => n.issue_type === 'epic' && !n._hidden);
+  if (epics.length === 0) {
+    body.innerHTML = '<div class="rs-empty">no epics</div>';
+    return;
+  }
 
   // For each epic, find children via parent-child links
-  const html = epics.map(epic => {
-    const children = graphData.links
-      .filter(l => l.dep_type === 'parent-child' &&
-        (typeof l.source === 'object' ? l.source.id : l.source) === epic.id)
-      .map(l => {
-        const tgtId = typeof l.target === 'object' ? l.target.id : l.target;
-        return graphData.nodes.find(n => n.id === tgtId);
-      })
-      .filter(Boolean);
+  const html = epics
+    .map((epic) => {
+      const children = graphData.links
+        .filter(
+          (l) => l.dep_type === 'parent-child' && (typeof l.source === 'object' ? l.source.id : l.source) === epic.id,
+        )
+        .map((l) => {
+          const tgtId = typeof l.target === 'object' ? l.target.id : l.target;
+          return graphData.nodes.find((n) => n.id === tgtId);
+        })
+        .filter(Boolean);
 
-    const total = children.length;
-    if (total === 0) return '';
+      const total = children.length;
+      if (total === 0) return '';
 
-    const closed = children.filter(c => c.status === 'closed').length;
-    const active = children.filter(c => c.status === 'in_progress').length;
-    const blocked = children.filter(c => c._blocked).length;
-    const pct = Math.round((closed / total) * 100);
+      const closed = children.filter((c) => c.status === 'closed').length;
+      const active = children.filter((c) => c.status === 'in_progress').length;
+      const blocked = children.filter((c) => c._blocked).length;
+      const pct = Math.round((closed / total) * 100);
 
-    const closedW = (closed / total) * 100;
-    const activeW = (active / total) * 100;
-    const blockedW = (blocked / total) * 100;
+      const closedW = (closed / total) * 100;
+      const activeW = (active / total) * 100;
+      const blockedW = (blocked / total) * 100;
 
-    const name = epic.title || epic.id.replace(/^[a-z]+-/, '');
-    return `<div class="rs-epic-item" data-node-id="${escapeHtml(epic.id)}" title="${escapeHtml(epic.id)}: ${escapeHtml(epic.title || '')}">
+      const name = epic.title || epic.id.replace(/^[a-z]+-/, '');
+      return `<div class="rs-epic-item" data-node-id="${escapeHtml(epic.id)}" title="${escapeHtml(epic.id)}: ${escapeHtml(epic.title || '')}">
       <div class="rs-epic-name">${escapeHtml(name)} <span class="rs-epic-pct">${pct}%</span></div>
       <div class="rs-epic-bar">
         <span style="width:${closedW}%;background:#2d8a4e"></span>
@@ -84,15 +109,17 @@ export function updateEpicProgress(graphData) {
         <span style="width:${blockedW}%;background:#d04040"></span>
       </div>
     </div>`;
-  }).filter(Boolean).join('');
+    })
+    .filter(Boolean)
+    .join('');
 
   body.innerHTML = html || '<div class="rs-empty">no epics with children</div>';
 
   // Click to fly to epic
-  body.querySelectorAll('.rs-epic-item').forEach(el => {
+  body.querySelectorAll('.rs-epic-item').forEach((el) => {
     el.onclick = () => {
       const nodeId = el.dataset.nodeId;
-      const node = graphData.nodes.find(n => n.id === nodeId);
+      const node = graphData.nodes.find((n) => n.id === nodeId);
       if (node && _onNodeClick) _onNodeClick(node);
     };
   });
@@ -102,22 +129,25 @@ export function updateDepHealth(graphData) {
   const body = document.getElementById('rs-health-body');
   if (!body || !graphData) return;
 
-  const blocked = graphData.nodes.filter(n => n._blocked && !n._hidden && n.status !== 'closed');
+  const blocked = graphData.nodes.filter((n) => n._blocked && !n._hidden && n.status !== 'closed');
   if (blocked.length === 0) {
     body.innerHTML = '<div class="rs-empty">no blocked items</div>';
     return;
   }
 
-  const html = blocked.slice(0, 15).map(n => {
-    const name = n.title || n.id.replace(/^[a-z]+-/, '');
-    return `<div class="rs-blocked-item" data-node-id="${escapeHtml(n.id)}" title="${escapeHtml(n.id)}">${escapeHtml(name)}</div>`;
-  }).join('');
+  const html = blocked
+    .slice(0, 15)
+    .map((n) => {
+      const name = n.title || n.id.replace(/^[a-z]+-/, '');
+      return `<div class="rs-blocked-item" data-node-id="${escapeHtml(n.id)}" title="${escapeHtml(n.id)}">${escapeHtml(name)}</div>`;
+    })
+    .join('');
 
   body.innerHTML = `<div style="font-size:9px;color:#d04040;margin-bottom:4px">${blocked.length} blocked</div>${html}`;
 
-  body.querySelectorAll('.rs-blocked-item').forEach(el => {
+  body.querySelectorAll('.rs-blocked-item').forEach((el) => {
     el.onclick = () => {
-      const node = graphData.nodes.find(n => n.id === el.dataset.nodeId);
+      const node = graphData.nodes.find((n) => n.id === el.dataset.nodeId);
       if (node && _onNodeClick) _onNodeClick(node);
     };
   });
@@ -128,9 +158,11 @@ export function updateDecisionQueue(graphData) {
   if (!body || !graphData) return;
 
   // Find decision/gate nodes that are pending (bd-zbyn7: decisions are type=gate, await_type=decision)
-  const decisions = graphData.nodes.filter(n =>
-    (n.issue_type === 'decision' || (n.issue_type === 'gate' && n.await_type === 'decision')) &&
-    n.status !== 'closed' && !n._hidden
+  const decisions = graphData.nodes.filter(
+    (n) =>
+      (n.issue_type === 'decision' || (n.issue_type === 'gate' && n.await_type === 'decision')) &&
+      n.status !== 'closed' &&
+      !n._hidden,
   );
 
   if (decisions.length === 0) {
@@ -138,18 +170,21 @@ export function updateDecisionQueue(graphData) {
     return;
   }
 
-  const html = decisions.slice(0, 8).map(d => {
-    const prompt = d.title || d.id;
-    return `<div class="rs-decision-item" data-node-id="${escapeHtml(d.id)}">
+  const html = decisions
+    .slice(0, 8)
+    .map((d) => {
+      const prompt = d.title || d.id;
+      return `<div class="rs-decision-item" data-node-id="${escapeHtml(d.id)}">
       <div class="rs-decision-prompt">${escapeHtml(prompt)}</div>
     </div>`;
-  }).join('');
+    })
+    .join('');
 
   body.innerHTML = html;
 
-  body.querySelectorAll('.rs-decision-item').forEach(el => {
+  body.querySelectorAll('.rs-decision-item').forEach((el) => {
     el.onclick = () => {
-      const node = graphData.nodes.find(n => n.id === el.dataset.nodeId);
+      const node = graphData.nodes.find((n) => n.id === el.dataset.nodeId);
       if (node && _onNodeClick) _onNodeClick(node);
     };
   });

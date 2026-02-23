@@ -3,8 +3,8 @@ import * as THREE from 'three';
 import { nodeSize } from './colors.js';
 
 // --- Dependency injection ---
-let _getGraph = null;       // () => ForceGraph3D instance
-let _getGraphData = null;   // () => { nodes, links }
+let _getGraph = null; // () => ForceGraph3D instance
+let _getGraphData = null; // () => { nodes, links }
 let _getParticlePool = null; // () => GPU particle pool
 
 export function setVfxDeps({ getGraph, getGraphData, getParticlePool }) {
@@ -15,17 +15,34 @@ export function setVfxDeps({ getGraph, getGraphData, getParticlePool }) {
 
 // --- VFX Control Panel settings (bd-hr5om) ---
 export const _vfxConfig = {
-  orbitSpeed: 2.5,          // orbit ring angular speed
-  orbitRate: 0.08,          // orbit ring emission interval (seconds)
-  orbitSize: 1.5,           // orbit ring particle size
-  hoverRate: 0.15,          // hover glow emission interval (seconds)
-  hoverSize: 1.2,           // hover glow particle size
-  streamRate: 0.12,         // dependency energy stream emission interval (seconds)
-  streamSpeed: 3.0,         // energy stream particle velocity
-  particleLifetime: 0.8,    // base particle lifetime (seconds)
-  selectionGlow: 1.0,       // selection glow intensity multiplier
+  orbitSpeed: 2.5, // orbit ring angular speed
+  orbitRate: 0.08, // orbit ring emission interval (seconds)
+  orbitSize: 1.5, // orbit ring particle size
+  hoverRate: 0.15, // hover glow emission interval (seconds)
+  hoverSize: 1.2, // hover glow particle size
+  streamRate: 0.12, // dependency energy stream emission interval (seconds)
+  streamSpeed: 3.0, // energy stream particle velocity
+  particleLifetime: 0.8, // base particle lifetime (seconds)
+  selectionGlow: 1.0, // selection glow intensity multiplier
+  intensity: 1.0, // global VFX intensity multiplier (bd-epyyu)
 };
 
+// VFX intensity presets (bd-epyyu)
+const VFX_PRESETS = {
+  subtle: 0.25,
+  normal: 1.0,
+  dramatic: 2.0,
+  maximum: 4.0,
+};
+
+export function setVfxIntensity(v) {
+  _vfxConfig.intensity = Math.max(0, Math.min(4, v));
+}
+
+export function presetVFX(name) {
+  const v = VFX_PRESETS[name];
+  if (v !== undefined) setVfxIntensity(v);
+}
 
 // --- Ambient particle aura for in-progress beads (bd-ttet4) ---
 export const _auraEmitters = new Map(); // nodeId → { lastEmit, lastSpark, intensifyUntil }
@@ -52,13 +69,18 @@ export function updateInProgressAura(t) {
 
   // Clean up emitters for nodes no longer in-progress
   for (const [id] of _auraEmitters) {
-    if (!inProgressNodes.find(n => n.id === id)) _auraEmitters.delete(id);
+    if (!inProgressNodes.find((n) => n.id === id)) _auraEmitters.delete(id);
   }
 
   for (const node of inProgressNodes) {
     let state = _auraEmitters.get(node.id);
     if (!state) {
-      state = { lastEmit: t, lastSpark: t, nextSpark: AURA_SPARK_INTERVAL_MIN + Math.random() * (AURA_SPARK_INTERVAL_MAX - AURA_SPARK_INTERVAL_MIN), intensifyUntil: 0 };
+      state = {
+        lastEmit: t,
+        lastSpark: t,
+        nextSpark: AURA_SPARK_INTERVAL_MIN + Math.random() * (AURA_SPARK_INTERVAL_MAX - AURA_SPARK_INTERVAL_MIN),
+        intensifyUntil: 0,
+      };
       _auraEmitters.set(node.id, state);
     }
 
@@ -132,7 +154,6 @@ export function intensifyAura(nodeId) {
   if (state) state.intensifyUntil = performance.now() / 1000 + 1.0;
 }
 
-
 // Pending firework burst targets — IDs of beads from create events awaiting refresh (bd-4gmot)
 export const _pendingFireworks = new Set();
 // Active collapse animations — Map<nodeId, { startTime, node, origPos }> (bd-1n122)
@@ -145,10 +166,10 @@ export const EVENT_SPRITE_MAX = 80; // bd-k9cqt: increased for energy beam effec
 // Status pulse colors by transition
 const STATUS_PULSE_COLORS = {
   in_progress: 0xd4a017, // amber — just started
-  closed:      0x2d8a4e, // green — completed
-  open:        0x4a9eff, // blue — reopened
-  review:      0x4a9eff, // blue
-  on_ice:      0x3a5a7a, // muted blue
+  closed: 0x2d8a4e, // green — completed
+  open: 0x4a9eff, // blue — reopened
+  review: 0x4a9eff, // blue
+  on_ice: 0x3a5a7a, // muted blue
 };
 
 // Spawn an expanding ring burst when a bead changes status (bd-9qeto)
@@ -161,7 +182,11 @@ export function spawnStatusPulse(node, oldStatus, newStatus) {
   // Ring 1: fast expanding ring
   const ringGeo = new THREE.RingGeometry(size * 0.8, size * 1.0, 24);
   const ringMat = new THREE.MeshBasicMaterial({
-    color, transparent: true, opacity: 0.7, side: THREE.DoubleSide, depthWrite: false,
+    color,
+    transparent: true,
+    opacity: 0.7,
+    side: THREE.DoubleSide,
+    depthWrite: false,
   });
   const ring = new THREE.Mesh(ringGeo, ringMat);
   ring.position.set(node.x || 0, node.y || 0, node.z || 0);
@@ -169,14 +194,23 @@ export function spawnStatusPulse(node, oldStatus, newStatus) {
   graph.scene().add(ring);
 
   eventSprites.push({
-    mesh: ring, node, birth: performance.now() / 1000, lifetime: 1.5,
-    type: 'status-pulse', startScale: 1.0, endScale: 4.0,
+    mesh: ring,
+    node,
+    birth: performance.now() / 1000,
+    lifetime: 1.5,
+    type: 'status-pulse',
+    startScale: 1.0,
+    endScale: 4.0,
   });
 
   // Ring 2: slower, wider, dimmer secondary pulse
   const ring2Geo = new THREE.RingGeometry(size * 0.6, size * 0.75, 24);
   const ring2Mat = new THREE.MeshBasicMaterial({
-    color, transparent: true, opacity: 0.4, side: THREE.DoubleSide, depthWrite: false,
+    color,
+    transparent: true,
+    opacity: 0.4,
+    side: THREE.DoubleSide,
+    depthWrite: false,
   });
   const ring2 = new THREE.Mesh(ring2Geo, ring2Mat);
   ring2.position.set(node.x || 0, node.y || 0, node.z || 0);
@@ -184,8 +218,13 @@ export function spawnStatusPulse(node, oldStatus, newStatus) {
   graph.scene().add(ring2);
 
   eventSprites.push({
-    mesh: ring2, node, birth: performance.now() / 1000 + 0.15, lifetime: 2.0,
-    type: 'status-pulse', startScale: 1.0, endScale: 5.0,
+    mesh: ring2,
+    node,
+    birth: performance.now() / 1000 + 0.15,
+    lifetime: 2.0,
+    type: 'status-pulse',
+    startScale: 1.0,
+    endScale: 5.0,
   });
 
   // Prune oldest
@@ -199,13 +238,13 @@ export function spawnStatusPulse(node, oldStatus, newStatus) {
 
 // Firework burst colors by issue type (bd-4gmot)
 const FIREWORK_COLORS = {
-  feature:  0x00e5ff, // cyan
-  bug:      0xd04040, // red
-  task:     0xd4a017, // amber
-  epic:     0x8b45a6, // purple
-  agent:    0xff6b35, // orange
+  feature: 0x00e5ff, // cyan
+  bug: 0xd04040, // red
+  task: 0xd4a017, // amber
+  epic: 0x8b45a6, // purple
+  agent: 0xff6b35, // orange
   decision: 0xd4a017, // amber
-  chore:    0x999999, // gray
+  chore: 0x999999, // gray
 };
 
 // Spawn firework burst at a node position when a new bead is created (bd-4gmot)
@@ -243,11 +282,7 @@ export function spawnFireworkBurst(node) {
       const angle = (i / 40) * Math.PI * 2;
       const speed = 3 + Math.random() * 2;
       pool.emit(pos, color, 1, {
-        velocity: [
-          speed * Math.cos(angle),
-          (Math.random() - 0.5) * 2,
-          speed * Math.sin(angle),
-        ],
+        velocity: [speed * Math.cos(angle), (Math.random() - 0.5) * 2, speed * Math.sin(angle)],
         spread: size * 0.2,
         lifetime: 1.5 + Math.random() * 0.5,
         size: 2.5,
@@ -258,29 +293,46 @@ export function spawnFireworkBurst(node) {
   // Center flash: bright bloom spike (0.3s duration, additive blending)
   const flashGeo = new THREE.SphereGeometry(size * 0.6, 12, 12);
   const flashMat = new THREE.MeshBasicMaterial({
-    color: 0xffffff, transparent: true, opacity: 0.9, depthWrite: false,
+    color: 0xffffff,
+    transparent: true,
+    opacity: 0.9,
+    depthWrite: false,
     blending: THREE.AdditiveBlending,
   });
   const flash = new THREE.Mesh(flashGeo, flashMat);
   flash.position.set(pos.x, pos.y, pos.z);
   graph.scene().add(flash);
   eventSprites.push({
-    mesh: flash, node, birth: performance.now() / 1000, lifetime: 0.3,
-    type: 'creation-flash', startScale: 1.0, endScale: 3.0,
+    mesh: flash,
+    node,
+    birth: performance.now() / 1000,
+    lifetime: 0.3,
+    type: 'creation-flash',
+    startScale: 1.0,
+    endScale: 3.0,
   });
 
   // Expanding ring (concentric pulse from center)
   const ringGeo = new THREE.RingGeometry(size * 0.5, size * 0.8, 32);
   const ringMat = new THREE.MeshBasicMaterial({
-    color, transparent: true, opacity: 0.8, side: THREE.DoubleSide, depthWrite: false,
+    color,
+    transparent: true,
+    opacity: 0.8,
+    side: THREE.DoubleSide,
+    depthWrite: false,
   });
   const ring = new THREE.Mesh(ringGeo, ringMat);
   ring.position.set(pos.x, pos.y, pos.z);
   ring.lookAt(graph.camera().position);
   graph.scene().add(ring);
   eventSprites.push({
-    mesh: ring, node, birth: performance.now() / 1000, lifetime: 1.5,
-    type: 'status-pulse', startScale: 1.0, endScale: 6.0,
+    mesh: ring,
+    node,
+    birth: performance.now() / 1000,
+    lifetime: 1.5,
+    type: 'status-pulse',
+    startScale: 1.0,
+    endScale: 6.0,
   });
 
   // Prune oldest sprites
@@ -294,20 +346,24 @@ export function spawnFireworkBurst(node) {
 
 // Shockwave ring colors by status (bd-3fnon)
 const SHOCKWAVE_COLORS = {
-  open:        0x2d8a4e, // green
+  open: 0x2d8a4e, // green
   in_progress: 0xd4a017, // amber
-  blocked:     0xd04040, // red
-  hooked:      0xc06020, // burnt orange
-  review:      0x4a9eff, // blue
-  on_ice:      0x3a5a7a, // muted blue
-  closed:      0x2d8a4e, // green (completed)
-  deferred:    0x3a5a7a, // muted blue
+  blocked: 0xd04040, // red
+  hooked: 0xc06020, // burnt orange
+  review: 0x4a9eff, // blue
+  on_ice: 0x3a5a7a, // muted blue
+  closed: 0x2d8a4e, // green (completed)
+  deferred: 0x3a5a7a, // muted blue
 };
 
 // Camera shake state (bd-3fnon)
 export let _cameraShake = null; // { startTime, duration, intensity, origPos }
-export function getCameraShake() { return _cameraShake; }
-export function clearCameraShake() { _cameraShake = null; }
+export function getCameraShake() {
+  return _cameraShake;
+}
+export function clearCameraShake() {
+  _cameraShake = null;
+}
 
 // Spawn dramatic shockwave ring on status change (bd-3fnon)
 export function spawnShockwave(node, oldStatus, newStatus) {
@@ -321,7 +377,10 @@ export function spawnShockwave(node, oldStatus, newStatus) {
   // Primary expanding torus ring — radius 0→40 over 1.0s
   const torusGeo = new THREE.TorusGeometry(1, 0.3, 8, 48);
   const torusMat = new THREE.MeshBasicMaterial({
-    color, transparent: true, opacity: 1.0, depthWrite: false,
+    color,
+    transparent: true,
+    opacity: 1.0,
+    depthWrite: false,
     blending: THREE.AdditiveBlending,
   });
   const torus = new THREE.Mesh(torusGeo, torusMat);
@@ -329,14 +388,22 @@ export function spawnShockwave(node, oldStatus, newStatus) {
   torus.lookAt(graph.camera().position);
   graph.scene().add(torus);
   eventSprites.push({
-    mesh: torus, node, birth: performance.now() / 1000, lifetime: 1.0,
-    type: 'shockwave', startScale: 0.1, endScale: 40.0,
+    mesh: torus,
+    node,
+    birth: performance.now() / 1000,
+    lifetime: 1.0,
+    type: 'shockwave',
+    startScale: 0.1,
+    endScale: 40.0,
   });
 
   // Secondary inner ring — staggered 0.15s, half expansion speed
   const torus2Geo = new THREE.TorusGeometry(1, 0.2, 8, 48);
   const torus2Mat = new THREE.MeshBasicMaterial({
-    color, transparent: true, opacity: 0.7, depthWrite: false,
+    color,
+    transparent: true,
+    opacity: 0.7,
+    depthWrite: false,
     blending: THREE.AdditiveBlending,
   });
   const torus2 = new THREE.Mesh(torus2Geo, torus2Mat);
@@ -344,8 +411,13 @@ export function spawnShockwave(node, oldStatus, newStatus) {
   torus2.lookAt(graph.camera().position);
   graph.scene().add(torus2);
   eventSprites.push({
-    mesh: torus2, node, birth: performance.now() / 1000 + 0.15, lifetime: 1.5,
-    type: 'shockwave', startScale: 0.1, endScale: 20.0,
+    mesh: torus2,
+    node,
+    birth: performance.now() / 1000 + 0.15,
+    lifetime: 1.5,
+    type: 'shockwave',
+    startScale: 0.1,
+    endScale: 20.0,
   });
 
   // 20-30 particles ejected along ring plane (camera-facing)
@@ -424,7 +496,6 @@ export function spawnShockwave(node, oldStatus, newStatus) {
   }
 }
 
-
 // Spawn implosion/collapse effect when a bead is closed (bd-1n122)
 export function spawnCollapseEffect(node) {
   const graph = _getGraph && _getGraph();
@@ -438,7 +509,9 @@ export function spawnCollapseEffect(node) {
 
   // Track this collapse for node scale animation
   _activeCollapses.set(node.id, {
-    startTime: now, node, origPos: { ...pos },
+    startTime: now,
+    node,
+    origPos: { ...pos },
     phase: 'collapsing',
   });
 
@@ -459,23 +532,34 @@ export function spawnCollapseEffect(node) {
         speed * Math.sin(phi) * Math.sin(theta),
         speed * Math.cos(phi),
       ],
-      spread: 0.5, lifetime: 0.5 + Math.random() * 0.2, size: 1.5,
+      spread: 0.5,
+      lifetime: 0.5 + Math.random() * 0.2,
+      size: 1.5,
     });
   }
 
   // Phase 2: Contracting ring — visible collapse boundary
   const ringGeo = new THREE.RingGeometry(size * 4.0, size * 4.5, 32);
   const ringMat = new THREE.MeshBasicMaterial({
-    color: 0x666666, transparent: true, opacity: 0.6, side: THREE.DoubleSide,
-    depthWrite: false, blending: THREE.AdditiveBlending,
+    color: 0x666666,
+    transparent: true,
+    opacity: 0.6,
+    side: THREE.DoubleSide,
+    depthWrite: false,
+    blending: THREE.AdditiveBlending,
   });
   const ring = new THREE.Mesh(ringGeo, ringMat);
   ring.position.set(pos.x, pos.y, pos.z);
   ring.lookAt(graph.camera().position);
   graph.scene().add(ring);
   eventSprites.push({
-    mesh: ring, node, birth: now, lifetime: 0.8,
-    type: 'collapse-ring', startScale: 1.0, endScale: 0.05,
+    mesh: ring,
+    node,
+    birth: now,
+    lifetime: 0.8,
+    type: 'collapse-ring',
+    startScale: 1.0,
+    endScale: 0.05,
   });
 
   // Phase 3 (delayed 0.8s): Death burst — flash + scatter particles
@@ -486,15 +570,23 @@ export function spawnCollapseEffect(node) {
     const burstPos = { x: node.x || pos.x, y: node.y || pos.y, z: node.z || pos.z };
     const flashGeo = new THREE.SphereGeometry(size * 0.8, 12, 12);
     const flashMat = new THREE.MeshBasicMaterial({
-      color: 0xffffff, transparent: true, opacity: 1.0, depthWrite: false,
+      color: 0xffffff,
+      transparent: true,
+      opacity: 1.0,
+      depthWrite: false,
       blending: THREE.AdditiveBlending,
     });
     const flash = new THREE.Mesh(flashGeo, flashMat);
     flash.position.set(burstPos.x, burstPos.y, burstPos.z);
     g.scene().add(flash);
     eventSprites.push({
-      mesh: flash, node, birth: performance.now() / 1000, lifetime: 0.4,
-      type: 'creation-flash', startScale: 1.0, endScale: 2.5,
+      mesh: flash,
+      node,
+      birth: performance.now() / 1000,
+      lifetime: 0.4,
+      type: 'creation-flash',
+      startScale: 1.0,
+      endScale: 2.5,
     });
     for (let i = 0; i < 30; i++) {
       const t = Math.random() * Math.PI * 2;
@@ -502,7 +594,9 @@ export function spawnCollapseEffect(node) {
       const s = 5 + Math.random() * 3;
       pool.emit(burstPos, 0x888888, 1, {
         velocity: [s * Math.sin(p) * Math.cos(t), s * Math.sin(p) * Math.sin(t), s * Math.cos(p)],
-        spread: 0.3, lifetime: 0.8 + Math.random() * 0.4, size: 1.2,
+        spread: 0.3,
+        lifetime: 0.8 + Math.random() * 0.4,
+        size: 1.2,
       });
     }
     const collapse = _activeCollapses.get(node.id);
@@ -511,14 +605,22 @@ export function spawnCollapseEffect(node) {
       collapse.ghostStart = performance.now() / 1000;
       const ghostGeo = new THREE.SphereGeometry(size, 12, 12);
       const ghostMat = new THREE.MeshBasicMaterial({
-        color: 0x444466, transparent: true, opacity: 0.35, depthWrite: false,
+        color: 0x444466,
+        transparent: true,
+        opacity: 0.35,
+        depthWrite: false,
       });
       const ghost = new THREE.Mesh(ghostGeo, ghostMat);
       ghost.position.set(burstPos.x, burstPos.y, burstPos.z);
       g.scene().add(ghost);
       eventSprites.push({
-        mesh: ghost, node, birth: performance.now() / 1000, lifetime: 2.0,
-        type: 'collapse-ghost', startScale: 1.0, endScale: 0.5,
+        mesh: ghost,
+        node,
+        birth: performance.now() / 1000,
+        lifetime: 2.0,
+        type: 'collapse-ghost',
+        startScale: 1.0,
+        endScale: 0.5,
       });
     }
   }, 800);
@@ -560,7 +662,10 @@ export function spawnCometTrail(sourcePos, targetNode, color) {
   );
   const headGeo = new THREE.SphereGeometry(3, 10, 10);
   const headMat = new THREE.MeshBasicMaterial({
-    color, transparent: true, opacity: 1.0, depthWrite: false,
+    color,
+    transparent: true,
+    opacity: 1.0,
+    depthWrite: false,
     blending: THREE.AdditiveBlending,
   });
   const head = new THREE.Mesh(headGeo, headMat);
@@ -568,9 +673,17 @@ export function spawnCometTrail(sourcePos, targetNode, color) {
   graph.scene().add(head);
   const startTime = performance.now() / 1000;
   eventSprites.push({
-    mesh: head, node: targetNode, birth: startTime, lifetime: 0.8,
-    type: 'comet-head', curve, startTime, duration: 0.8, trailCount: 55,
-    _emitted: 0, color,
+    mesh: head,
+    node: targetNode,
+    birth: startTime,
+    lifetime: 0.8,
+    type: 'comet-head',
+    curve,
+    startTime,
+    duration: 0.8,
+    trailCount: 55,
+    _emitted: 0,
+    color,
   });
   while (eventSprites.length > EVENT_SPRITE_MAX) {
     const old = eventSprites.shift();
@@ -586,7 +699,7 @@ export function triggerClaimComet(node, newAssignee) {
   if (!graph || !newAssignee || !_vfxConfig.claimComet) return;
   const color = 0xd4a017;
   const agentId = 'agent:' + newAssignee;
-  const agentNode = graphData && graphData.nodes.find(n => n.id === agentId);
+  const agentNode = graphData && graphData.nodes.find((n) => n.id === agentId);
   let sourcePos;
   if (agentNode && agentNode.x !== undefined) {
     sourcePos = { x: agentNode.x, y: agentNode.y, z: agentNode.z };
@@ -612,16 +725,22 @@ export function spawnEdgeSpark(sourceNode, targetNode, color) {
   for (let i = 0; i < 3; i++) {
     const sparkGeo = new THREE.SphereGeometry(0.8, 6, 6);
     const sparkMat = new THREE.MeshBasicMaterial({
-      color: sparkColor, transparent: true, opacity: 0.9, depthWrite: false,
+      color: sparkColor,
+      transparent: true,
+      opacity: 0.9,
+      depthWrite: false,
     });
     const spark = new THREE.Mesh(sparkGeo, sparkMat);
     spark.position.set(sourceNode.x || 0, sourceNode.y || 0, sourceNode.z || 0);
     graph.scene().add(spark);
 
     eventSprites.push({
-      mesh: spark, birth: performance.now() / 1000 + i * 0.2, lifetime: 1.2,
+      mesh: spark,
+      birth: performance.now() / 1000 + i * 0.2,
+      lifetime: 1.2,
       type: 'edge-spark',
-      sourceNode, targetNode,
+      sourceNode,
+      targetNode,
       jitter: { x: (Math.random() - 0.5) * 2, y: (Math.random() - 0.5) * 2, z: (Math.random() - 0.5) * 2 },
     });
   }
@@ -634,14 +753,19 @@ export function spawnEdgeSpark(sourceNode, targetNode, color) {
   for (let i = 0; i < 5; i++) {
     const pGeo = new THREE.SphereGeometry(0.4, 4, 4);
     const pMat = new THREE.MeshBasicMaterial({
-      color: sparkColor, transparent: true, opacity: 0.8, depthWrite: false,
+      color: sparkColor,
+      transparent: true,
+      opacity: 0.8,
+      depthWrite: false,
     });
     const p = new THREE.Mesh(pGeo, pMat);
     p.position.set(mx, my, mz);
     graph.scene().add(p);
 
     eventSprites.push({
-      mesh: p, birth: performance.now() / 1000 + 0.3, lifetime: 1.0,
+      mesh: p,
+      birth: performance.now() / 1000 + 0.3,
+      lifetime: 1.0,
       type: 'burst',
       velocity: {
         x: (Math.random() - 0.5) * 15,
@@ -666,12 +790,24 @@ export function spawnEnergyBeam(sourceNode, targetNode, color) {
   if (!sourceNode || !targetNode || !graph) return;
   const scene = graph.scene();
   const now = performance.now() / 1000;
-  const sx = sourceNode.x || 0, sy = sourceNode.y || 0, sz = sourceNode.z || 0;
-  const tx = targetNode.x || 0, ty = targetNode.y || 0, tz = targetNode.z || 0;
-  const dx = tx - sx, dy = ty - sy, dz = tz - sz;
+  const sx = sourceNode.x || 0,
+    sy = sourceNode.y || 0,
+    sz = sourceNode.z || 0;
+  const tx = targetNode.x || 0,
+    ty = targetNode.y || 0,
+    tz = targetNode.z || 0;
+  const dx = tx - sx,
+    dy = ty - sy,
+    dz = tz - sz;
   const dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
   const beamGeo = new THREE.CylinderGeometry(0.3, 0.3, 1, 6, 1, true);
-  const beamMat = new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.9, depthWrite: false, side: THREE.DoubleSide });
+  const beamMat = new THREE.MeshBasicMaterial({
+    color,
+    transparent: true,
+    opacity: 0.9,
+    depthWrite: false,
+    side: THREE.DoubleSide,
+  });
   const beam = new THREE.Mesh(beamGeo, beamMat);
   beam.position.set(sx, sy, sz);
   scene.add(beam);
@@ -682,20 +818,47 @@ export function spawnEnergyBeam(sourceNode, targetNode, color) {
     const p = new THREE.Mesh(pGeo, pMat);
     p.position.set(sx, sy, sz);
     scene.add(p);
-    eventSprites.push({ mesh: p, birth: now + i * 0.04, lifetime: 0.8, type: 'beam-trail', sourceNode, targetNode, jitter: { x: (Math.random() - 0.5) * 3, y: (Math.random() - 0.5) * 3, z: (Math.random() - 0.5) * 3 } });
+    eventSprites.push({
+      mesh: p,
+      birth: now + i * 0.04,
+      lifetime: 0.8,
+      type: 'beam-trail',
+      sourceNode,
+      targetNode,
+      jitter: { x: (Math.random() - 0.5) * 3, y: (Math.random() - 0.5) * 3, z: (Math.random() - 0.5) * 3 },
+    });
   }
   for (let li = 0; li < 2; li++) {
     const points = [];
     const segs = 6;
     for (let j = 0; j <= segs; j++) {
       const frac = j / segs;
-      points.push(new THREE.Vector3(sx + dx * frac + (j > 0 && j < segs ? (Math.random() - 0.5) * 4 : 0), sy + dy * frac + (j > 0 && j < segs ? (Math.random() - 0.5) * 4 : 0), sz + dz * frac + (j > 0 && j < segs ? (Math.random() - 0.5) * 4 : 0)));
+      points.push(
+        new THREE.Vector3(
+          sx + dx * frac + (j > 0 && j < segs ? (Math.random() - 0.5) * 4 : 0),
+          sy + dy * frac + (j > 0 && j < segs ? (Math.random() - 0.5) * 4 : 0),
+          sz + dz * frac + (j > 0 && j < segs ? (Math.random() - 0.5) * 4 : 0),
+        ),
+      );
     }
     const lineGeo = new THREE.BufferGeometry().setFromPoints(points);
-    const lineMat = new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.6, depthWrite: false });
+    const lineMat = new THREE.LineBasicMaterial({
+      color: 0xffffff,
+      transparent: true,
+      opacity: 0.6,
+      depthWrite: false,
+    });
     const line = new THREE.Line(lineGeo, lineMat);
     scene.add(line);
-    eventSprites.push({ mesh: line, birth: now, lifetime: 0.5, type: 'lightning', sourceNode, targetNode, segments: segs });
+    eventSprites.push({
+      mesh: line,
+      birth: now,
+      lifetime: 0.5,
+      type: 'lightning',
+      sourceNode,
+      targetNode,
+      segments: segs,
+    });
   }
   for (let i = 0; i < 12; i++) {
     const pGeo = new THREE.SphereGeometry(0.4, 4, 4);
@@ -703,15 +866,34 @@ export function spawnEnergyBeam(sourceNode, targetNode, color) {
     const p = new THREE.Mesh(pGeo, pMat);
     p.position.set(tx, ty, tz);
     scene.add(p);
-    eventSprites.push({ mesh: p, birth: now + 0.45, lifetime: 0.8, type: 'burst', velocity: { x: (Math.random() - 0.5) * 20, y: (Math.random() - 0.5) * 20, z: (Math.random() - 0.5) * 20 } });
+    eventSprites.push({
+      mesh: p,
+      birth: now + 0.45,
+      lifetime: 0.8,
+      type: 'burst',
+      velocity: { x: (Math.random() - 0.5) * 20, y: (Math.random() - 0.5) * 20, z: (Math.random() - 0.5) * 20 },
+    });
   }
   const flashGeo = new THREE.SphereGeometry(2, 8, 8);
   const flashMat = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.9, depthWrite: false });
   const flash = new THREE.Mesh(flashGeo, flashMat);
   flash.position.set(tx, ty, tz);
   scene.add(flash);
-  eventSprites.push({ mesh: flash, birth: now + 0.45, lifetime: 0.4, type: 'creation-flash', node: targetNode, startScale: 1, endScale: 4 });
-  while (eventSprites.length > EVENT_SPRITE_MAX) { const old = eventSprites.shift(); scene.remove(old.mesh); old.mesh.geometry.dispose(); old.mesh.material.dispose(); }
+  eventSprites.push({
+    mesh: flash,
+    birth: now + 0.45,
+    lifetime: 0.4,
+    type: 'creation-flash',
+    node: targetNode,
+    startScale: 1,
+    endScale: 4,
+  });
+  while (eventSprites.length > EVENT_SPRITE_MAX) {
+    const old = eventSprites.shift();
+    scene.remove(old.mesh);
+    old.mesh.geometry.dispose();
+    old.mesh.material.dispose();
+  }
 }
 
 // Update event sprites each frame (bd-9qeto)
@@ -747,8 +929,12 @@ export function updateEventSprites(t) {
       }
     } else if (s.type === 'edge-spark') {
       // Interpolate from source to target with slight jitter
-      const sx = s.sourceNode.x || 0, sy = s.sourceNode.y || 0, sz = s.sourceNode.z || 0;
-      const tx = s.targetNode.x || 0, ty = s.targetNode.y || 0, tz = s.targetNode.z || 0;
+      const sx = s.sourceNode.x || 0,
+        sy = s.sourceNode.y || 0,
+        sz = s.sourceNode.z || 0;
+      const tx = s.targetNode.x || 0,
+        ty = s.targetNode.y || 0,
+        tz = s.targetNode.z || 0;
       const wobble = Math.sin(progress * Math.PI * 3) * (1 - progress);
       s.mesh.position.set(
         sx + (tx - sx) * progress + s.jitter.x * wobble,
@@ -797,8 +983,14 @@ export function updateEventSprites(t) {
         const tp = s.curve.getPointAt(Math.min(trailT, 1.0));
         const tangent = s.curve.getTangentAt(Math.min(trailT, 1.0));
         _particlePool.emit({ x: tp.x, y: tp.y, z: tp.z }, s.color, 1, {
-          velocity: [-tangent.x * 3 + (Math.random() - 0.5) * 2, -tangent.y * 3 + (Math.random() - 0.5) * 2, -tangent.z * 3 + (Math.random() - 0.5) * 2],
-          spread: 0.5, lifetime: 0.6 + Math.random() * 0.3, size: 2.5 * (1 - trailT * 0.5),
+          velocity: [
+            -tangent.x * 3 + (Math.random() - 0.5) * 2,
+            -tangent.y * 3 + (Math.random() - 0.5) * 2,
+            -tangent.z * 3 + (Math.random() - 0.5) * 2,
+          ],
+          spread: 0.5,
+          lifetime: 0.6 + Math.random() * 0.3,
+          size: 2.5 * (1 - trailT * 0.5),
         });
         s._emitted++;
       }
@@ -810,16 +1002,35 @@ export function updateEventSprites(t) {
           const tp2 = { x: tgt.x || 0, y: tgt.y || 0, z: tgt.z || 0 };
           for (let j = 0; j < 20; j++) {
             const a = (j / 20) * Math.PI * 2;
-            _particlePool.emit(tp2, s.color, 1, { velocity: [Math.cos(a) * 4, (Math.random() - 0.5) * 2, Math.sin(a) * 4], spread: 0.3, lifetime: 0.6, size: 1.5 });
+            _particlePool.emit(tp2, s.color, 1, {
+              velocity: [Math.cos(a) * 4, (Math.random() - 0.5) * 2, Math.sin(a) * 4],
+              spread: 0.3,
+              lifetime: 0.6,
+              size: 1.5,
+            });
           }
         }
         if (tgt && graph) {
           const pulseGeo = new THREE.SphereGeometry(4, 10, 10);
-          const pulseMat = new THREE.MeshBasicMaterial({ color: 0xd4a017, transparent: true, opacity: 0.6, depthWrite: false, blending: THREE.AdditiveBlending });
+          const pulseMat = new THREE.MeshBasicMaterial({
+            color: 0xd4a017,
+            transparent: true,
+            opacity: 0.6,
+            depthWrite: false,
+            blending: THREE.AdditiveBlending,
+          });
           const pulse = new THREE.Mesh(pulseGeo, pulseMat);
           pulse.position.set(tgt.x || 0, tgt.y || 0, tgt.z || 0);
           graph.scene().add(pulse);
-          eventSprites.push({ mesh: pulse, node: tgt, birth: performance.now() / 1000, lifetime: 0.5, type: 'creation-flash', startScale: 1.0, endScale: 1.3 });
+          eventSprites.push({
+            mesh: pulse,
+            node: tgt,
+            birth: performance.now() / 1000,
+            lifetime: 0.5,
+            type: 'creation-flash',
+            startScale: 1.0,
+            endScale: 1.3,
+          });
         }
       }
     } else if (s.type === 'collapse-ring') {
@@ -839,11 +1050,18 @@ export function updateEventSprites(t) {
       s.mesh.material.opacity = 0.35 * (1 - progress * progress);
     } else if (s.type === 'energy-beam') {
       // bd-k9cqt: Beam cylinder stretches from source toward target
-      const src = s.sourceNode, tgt = s.targetNode;
-      const sx = src.x || 0, sy = src.y || 0, sz = src.z || 0;
-      const tx = tgt.x || 0, ty = tgt.y || 0, tz = tgt.z || 0;
+      const src = s.sourceNode,
+        tgt = s.targetNode;
+      const sx = src.x || 0,
+        sy = src.y || 0,
+        sz = src.z || 0;
+      const tx = tgt.x || 0,
+        ty = tgt.y || 0,
+        tz = tgt.z || 0;
       const reach = Math.min(progress / 0.75, 1);
-      const dx = (tx - sx) * reach, dy = (ty - sy) * reach, dz = (tz - sz) * reach;
+      const dx = (tx - sx) * reach,
+        dy = (ty - sy) * reach,
+        dz = (tz - sz) * reach;
       const len = Math.sqrt(dx * dx + dy * dy + dz * dz) || 0.01;
       s.mesh.scale.set(1, len, 1);
       s.mesh.position.set(sx + dx * 0.5, sy + dy * 0.5, sz + dz * 0.5);
@@ -852,9 +1070,14 @@ export function updateEventSprites(t) {
       s.mesh.material.opacity = progress > 0.75 ? (1 - (progress - 0.75) / 0.25) * 0.9 : 0.9;
     } else if (s.type === 'beam-trail') {
       // bd-k9cqt: Trail particles along beam path, drift outward
-      const src = s.sourceNode, tgt = s.targetNode;
-      const sx = src.x || 0, sy = src.y || 0, sz = src.z || 0;
-      const tx = tgt.x || 0, ty = tgt.y || 0, tz = tgt.z || 0;
+      const src = s.sourceNode,
+        tgt = s.targetNode;
+      const sx = src.x || 0,
+        sy = src.y || 0,
+        sz = src.z || 0;
+      const tx = tgt.x || 0,
+        ty = tgt.y || 0,
+        tz = tgt.z || 0;
       const travel = Math.min(progress * 1.5, 1);
       s.mesh.position.set(
         sx + (tx - sx) * travel + (progress > 0.5 ? s.jitter.x * (progress - 0.5) * 2 : 0),
@@ -865,18 +1088,26 @@ export function updateEventSprites(t) {
       s.mesh.scale.setScalar(1 - progress * 0.6);
     } else if (s.type === 'lightning') {
       // bd-k9cqt: Jagged lines with vertex regeneration for flicker
-      const src = s.sourceNode, tgt = s.targetNode;
-      const sx = src.x || 0, sy = src.y || 0, sz = src.z || 0;
-      const tx = tgt.x || 0, ty = tgt.y || 0, tz = tgt.z || 0;
-      const dx = tx - sx, dy = ty - sy, dz = tz - sz;
-      if (!s._lastRegen || (t - s._lastRegen) > 0.05) {
+      const src = s.sourceNode,
+        tgt = s.targetNode;
+      const sx = src.x || 0,
+        sy = src.y || 0,
+        sz = src.z || 0;
+      const tx = tgt.x || 0,
+        ty = tgt.y || 0,
+        tz = tgt.z || 0;
+      const dx = tx - sx,
+        dy = ty - sy,
+        dz = tz - sz;
+      if (!s._lastRegen || t - s._lastRegen > 0.05) {
         s._lastRegen = t;
         const positions = s.mesh.geometry.attributes.position;
         const segs = s.segments;
         for (let j = 0; j <= segs; j++) {
           const frac = j / segs;
-          const jitterAmt = (j > 0 && j < segs) ? 4 * (1 - progress) : 0;
-          positions.setXYZ(j,
+          const jitterAmt = j > 0 && j < segs ? 4 * (1 - progress) : 0;
+          positions.setXYZ(
+            j,
             sx + dx * frac + (Math.random() - 0.5) * jitterAmt,
             sy + dy * frac + (Math.random() - 0.5) * jitterAmt,
             sz + dz * frac + (Math.random() - 0.5) * jitterAmt,

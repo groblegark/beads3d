@@ -33,6 +33,10 @@ export function setControlPanelDeps(deps) {
 
 let controlPanelOpen = false;
 
+export function getControlPanelOpen() {
+  return controlPanelOpen;
+}
+
 export function toggleControlPanel() {
   const panel = document.getElementById('control-panel');
   if (!panel) return;
@@ -55,11 +59,73 @@ export function initControlPanel() {
 
   // Close button
   const closeBtn = document.getElementById('cp-close');
-  if (closeBtn) closeBtn.onclick = () => { controlPanelOpen = false; panel.classList.remove('open'); };
+  if (closeBtn)
+    closeBtn.onclick = () => {
+      controlPanelOpen = false;
+      panel.classList.remove('open');
+    };
+
+  // bd-7zczp: Focus trap + Escape to close
+  panel.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && controlPanelOpen) {
+      e.stopPropagation();
+      controlPanelOpen = false;
+      panel.classList.remove('open');
+      const opener = document.getElementById('btn-control-panel');
+      if (opener) opener.focus();
+      return;
+    }
+    if (e.key === 'Tab' && controlPanelOpen) {
+      const focusable = panel.querySelectorAll('button, [href], input, select, [tabindex]:not([tabindex="-1"])');
+      if (!focusable.length) return;
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (e.shiftKey && document.activeElement === first) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && document.activeElement === last) {
+        e.preventDefault();
+        first.focus();
+      }
+    }
+  });
 
   // Collapsible sections
-  panel.querySelectorAll('.cp-section-header').forEach(header => {
-    header.onclick = () => header.parentElement.classList.toggle('collapsed');
+  panel.querySelectorAll('.cp-section-header').forEach((header) => {
+    header.setAttribute('role', 'button');
+    header.setAttribute('tabindex', '0');
+    const section = header.parentElement;
+    header.setAttribute('aria-expanded', !section.classList.contains('collapsed'));
+    const toggle = () => {
+      section.classList.toggle('collapsed');
+      header.setAttribute('aria-expanded', !section.classList.contains('collapsed'));
+    };
+    header.onclick = toggle;
+    header.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        toggle();
+      }
+    });
+  });
+
+  // bd-7zczp: ARIA + keyboard support for toggle switches
+  panel.querySelectorAll('.cp-toggle').forEach((toggle) => {
+    toggle.setAttribute('role', 'switch');
+    toggle.setAttribute('tabindex', '0');
+    toggle.setAttribute('aria-checked', toggle.classList.contains('on'));
+    // Watch for class changes from click handlers to keep aria-checked in sync
+    const observer = new MutationObserver(() => {
+      toggle.setAttribute('aria-checked', toggle.classList.contains('on'));
+    });
+    observer.observe(toggle, { attributes: true, attributeFilter: ['class'] });
+    // Keyboard activation
+    toggle.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        toggle.click();
+      }
+    });
   });
 
   // Helper: wire a slider to its value display and a callback
@@ -75,34 +141,43 @@ export function initControlPanel() {
   }
 
   // Bloom controls
-  wireSlider('cp-bloom-threshold', v => { const bp = getBloomPass(); if (bp) bp.threshold = v; });
-  wireSlider('cp-bloom-strength', v => { const bp = getBloomPass(); if (bp) bp.strength = v; });
-  wireSlider('cp-bloom-radius', v => { const bp = getBloomPass(); if (bp) bp.radius = v; });
+  wireSlider('cp-bloom-threshold', (v) => {
+    const bp = getBloomPass();
+    if (bp) bp.threshold = v;
+  });
+  wireSlider('cp-bloom-strength', (v) => {
+    const bp = getBloomPass();
+    if (bp) bp.strength = v;
+  });
+  wireSlider('cp-bloom-radius', (v) => {
+    const bp = getBloomPass();
+    if (bp) bp.radius = v;
+  });
 
   // Shader controls — update fresnel materials on all glow shells
-  wireSlider('cp-fresnel-opacity', v => {
+  wireSlider('cp-fresnel-opacity', (v) => {
     const graph = getGraph();
     if (!graph) return;
-    graph.scene().traverse(obj => {
+    graph.scene().traverse((obj) => {
       if (obj.material?.uniforms?.opacity && obj.material?.uniforms?.power) {
         obj.material.uniforms.opacity.value = v;
       }
     });
   });
-  wireSlider('cp-fresnel-power', v => {
+  wireSlider('cp-fresnel-power', (v) => {
     const graph = getGraph();
     if (!graph) return;
-    graph.scene().traverse(obj => {
+    graph.scene().traverse((obj) => {
       if (obj.material?.uniforms?.opacity && obj.material?.uniforms?.power) {
         obj.material.uniforms.power.value = v;
       }
     });
   });
-  wireSlider('cp-pulse-speed', v => {
+  wireSlider('cp-pulse-speed', (v) => {
     // Update breathSpeed on in-progress materia cores (bd-pe8k2, bd-b3ujw)
     const graph = getGraph();
     if (!graph) return;
-    graph.scene().traverse(obj => {
+    graph.scene().traverse((obj) => {
       if (obj.material?.uniforms?.breathSpeed && obj.material.uniforms.breathSpeed.value > 0) {
         obj.material.uniforms.breathSpeed.value = v;
       }
@@ -113,23 +188,25 @@ export function initControlPanel() {
   });
 
   // Star field controls
-  wireSlider('cp-star-count', v => {
+  wireSlider('cp-star-count', (v) => {
     const graph = getGraph();
     if (!graph) return;
     const scene = graph.scene();
     // Remove existing star field
-    scene.traverse(obj => { if (obj.userData?.isStarField) scene.remove(obj); });
+    scene.traverse((obj) => {
+      if (obj.userData?.isStarField) scene.remove(obj);
+    });
     // Add new one with updated count
     if (v > 0) {
       const stars = createStarField(v, 500);
       scene.add(stars);
     }
   });
-  wireSlider('cp-twinkle-speed', v => {
+  wireSlider('cp-twinkle-speed', (v) => {
     // Update twinkleSpeed uniform on star field (bd-b3ujw)
     const graph = getGraph();
     if (!graph) return;
-    graph.scene().traverse(obj => {
+    graph.scene().traverse((obj) => {
       if (obj.userData?.isStarField && obj.material?.uniforms?.twinkleSpeed) {
         obj.material.uniforms.twinkleSpeed.value = v;
       }
@@ -172,7 +249,7 @@ export function initControlPanel() {
 
   // Label controls (bd-oypa2: wire to actual label rendering)
   let _labelSizeDebounce;
-  wireSlider('cp-label-size', v => {
+  wireSlider('cp-label-size', (v) => {
     window.__beads3d_labelSize = v;
     // Regenerate all labels with new size (debounced — slider fires rapidly)
     clearTimeout(_labelSizeDebounce);
@@ -181,12 +258,12 @@ export function initControlPanel() {
       if (graph) graph.nodeThreeObject(graph.nodeThreeObject());
     }, 200);
   });
-  wireSlider('cp-label-opacity', v => {
+  wireSlider('cp-label-opacity', (v) => {
     window.__beads3d_labelOpacity = v;
     // Apply opacity to all existing label sprites immediately
     const graph = getGraph();
     if (graph) {
-      graph.scene().traverse(child => {
+      graph.scene().traverse((child) => {
         if (child.userData?.nodeLabel && child.material) {
           child.material.opacity = v;
         }
@@ -225,7 +302,7 @@ export function initControlPanel() {
   }
 
   // Label style controls (bd-j8ala) — background opacity and border
-  wireSlider('cp-label-bg-opacity', v => {
+  wireSlider('cp-label-bg-opacity', (v) => {
     window.__beads3d_labelBgOpacity = v;
     clearTimeout(_labelContentDebounce);
     _labelContentDebounce = setTimeout(() => {
@@ -233,16 +310,18 @@ export function initControlPanel() {
       if (graph) graph.nodeThreeObject(graph.nodeThreeObject());
     }, 200);
   });
-  { const borderToggle = document.getElementById('cp-label-border');
-    if (borderToggle) borderToggle.addEventListener('click', () => {
-      borderToggle.classList.toggle('on');
-      window.__beads3d_labelBorder = borderToggle.classList.contains('on');
-      clearTimeout(_labelContentDebounce);
-      _labelContentDebounce = setTimeout(() => {
-        const graph = getGraph();
-        if (graph) graph.nodeThreeObject(graph.nodeThreeObject());
-      }, 200);
-    });
+  {
+    const borderToggle = document.getElementById('cp-label-border');
+    if (borderToggle)
+      borderToggle.addEventListener('click', () => {
+        borderToggle.classList.toggle('on');
+        window.__beads3d_labelBorder = borderToggle.classList.contains('on');
+        clearTimeout(_labelContentDebounce);
+        _labelContentDebounce = setTimeout(() => {
+          const graph = getGraph();
+          if (graph) graph.nodeThreeObject(graph.nodeThreeObject());
+        }, 200);
+      });
   }
 
   // Edge type toggles (bd-a0vbd): show/hide specific edge types to reduce graph density
@@ -287,80 +366,136 @@ export function initControlPanel() {
   }
 
   // Layout controls (bd-a1odd)
-  wireSlider('cp-force-strength', v => { const graph = getGraph(); if (graph) { graph.d3Force('charge')?.strength(-v); graph.d3ReheatSimulation(); } });
-  wireSlider('cp-link-distance', v => { const graph = getGraph(); if (graph) { graph.d3Force('link')?.distance(v); graph.d3ReheatSimulation(); } });
-  wireSlider('cp-center-force', v => { const graph = getGraph(); if (graph) { graph.d3Force('center')?.strength(v); graph.d3ReheatSimulation(); } });
-  wireSlider('cp-collision-radius', v => {
+  wireSlider('cp-force-strength', (v) => {
+    const graph = getGraph();
+    if (graph) {
+      graph.d3Force('charge')?.strength(-v);
+      graph.d3ReheatSimulation();
+    }
+  });
+  wireSlider('cp-link-distance', (v) => {
+    const graph = getGraph();
+    if (graph) {
+      graph.d3Force('link')?.distance(v);
+      graph.d3ReheatSimulation();
+    }
+  });
+  wireSlider('cp-center-force', (v) => {
+    const graph = getGraph();
+    if (graph) {
+      graph.d3Force('center')?.strength(v);
+      graph.d3ReheatSimulation();
+    }
+  });
+  wireSlider('cp-collision-radius', (v) => {
     const graph = getGraph();
     if (graph) {
       if (v > 0) {
         graph.d3Force('collision', (alpha) => {
           const graphData = getGraphData();
           const nodes = graphData.nodes;
-          for (let i = 0; i < nodes.length; i++) { for (let j = i + 1; j < nodes.length; j++) {
-            const a = nodes[i], b = nodes[j]; if (a._hidden || b._hidden) continue;
-            const dx = (b.x||0)-(a.x||0), dy = (b.y||0)-(a.y||0), dz = (b.z||0)-(a.z||0);
-            const dist = Math.sqrt(dx*dx+dy*dy+dz*dz) || 1;
-            if (dist < v*2) { const f = ((v*2-dist)/dist)*alpha*0.5;
-              a.vx-=dx*f; a.vy-=dy*f; a.vz-=dz*f; b.vx+=dx*f; b.vy+=dy*f; b.vz+=dz*f; }
-          }}
+          for (let i = 0; i < nodes.length; i++) {
+            for (let j = i + 1; j < nodes.length; j++) {
+              const a = nodes[i],
+                b = nodes[j];
+              if (a._hidden || b._hidden) continue;
+              const dx = (b.x || 0) - (a.x || 0),
+                dy = (b.y || 0) - (a.y || 0),
+                dz = (b.z || 0) - (a.z || 0);
+              const dist = Math.sqrt(dx * dx + dy * dy + dz * dz) || 1;
+              if (dist < v * 2) {
+                const f = ((v * 2 - dist) / dist) * alpha * 0.5;
+                a.vx -= dx * f;
+                a.vy -= dy * f;
+                a.vz -= dz * f;
+                b.vx += dx * f;
+                b.vy += dy * f;
+                b.vz += dz * f;
+              }
+            }
+          }
         });
-      } else { graph.d3Force('collision', null); }
+      } else {
+        graph.d3Force('collision', null);
+      }
       graph.d3ReheatSimulation();
     }
   });
-  wireSlider('cp-alpha-decay', v => { const graph = getGraph(); if (graph) graph.d3AlphaDecay(v); });
+  wireSlider('cp-alpha-decay', (v) => {
+    const graph = getGraph();
+    if (graph) graph.d3AlphaDecay(v);
+  });
   // Agent tether: slider controls pull strength (bd-uzj5j)
-  wireSlider('cp-agent-tether', v => {
+  wireSlider('cp-agent-tether', (v) => {
     _deps.setAgentTetherStrength?.(v);
     const graph = getGraph();
     if (graph && v > 0) graph.d3ReheatSimulation();
   });
   // Layout mode dropdown (bd-a1odd)
-  { const sel = document.getElementById('cp-layout-mode');
-    if (sel) sel.addEventListener('change', () => _deps.setLayout?.(sel.value)); }
+  {
+    const sel = document.getElementById('cp-layout-mode');
+    if (sel) sel.addEventListener('change', () => _deps.setLayout?.(sel.value));
+  }
 
   // Animation controls
-  wireSlider('cp-fly-speed', v => { window.__beads3d_flySpeed = v; });
+  wireSlider('cp-fly-speed', (v) => {
+    window.__beads3d_flySpeed = v;
+  });
 
   // Particles / VFX controls (bd-hr5om)
-  wireSlider('cp-orbit-speed', v => { _vfxConfig.orbitSpeed = v; });
-  wireSlider('cp-orbit-rate', v => { _vfxConfig.orbitRate = v; });
-  wireSlider('cp-orbit-size', v => { _vfxConfig.orbitSize = v; });
-  wireSlider('cp-hover-rate', v => { _vfxConfig.hoverRate = v; });
-  wireSlider('cp-stream-rate', v => { _vfxConfig.streamRate = v; });
-  wireSlider('cp-stream-speed', v => { _vfxConfig.streamSpeed = v; });
-  wireSlider('cp-particle-lifetime', v => { _vfxConfig.particleLifetime = v; });
-  wireSlider('cp-selection-glow', v => { _vfxConfig.selectionGlow = v; });
+  wireSlider('cp-orbit-speed', (v) => {
+    _vfxConfig.orbitSpeed = v;
+  });
+  wireSlider('cp-orbit-rate', (v) => {
+    _vfxConfig.orbitRate = v;
+  });
+  wireSlider('cp-orbit-size', (v) => {
+    _vfxConfig.orbitSize = v;
+  });
+  wireSlider('cp-hover-rate', (v) => {
+    _vfxConfig.hoverRate = v;
+  });
+  wireSlider('cp-stream-rate', (v) => {
+    _vfxConfig.streamRate = v;
+  });
+  wireSlider('cp-stream-speed', (v) => {
+    _vfxConfig.streamSpeed = v;
+  });
+  wireSlider('cp-particle-lifetime', (v) => {
+    _vfxConfig.particleLifetime = v;
+  });
+  wireSlider('cp-selection-glow', (v) => {
+    _vfxConfig.selectionGlow = v;
+  });
 
   // Camera controls (bd-bz1ba)
-  wireSlider('cp-camera-fov', v => {
+  wireSlider('cp-camera-fov', (v) => {
     const graph = getGraph();
     if (!graph) return;
     const camera = graph.camera();
     camera.fov = v;
     camera.updateProjectionMatrix();
   });
-  wireSlider('cp-camera-rotate-speed', v => {
+  wireSlider('cp-camera-rotate-speed', (v) => {
     const graph = getGraph();
     if (!graph) return;
     const controls = graph.controls();
     if (controls) controls.autoRotateSpeed = v;
   });
-  wireSlider('cp-camera-zoom-speed', v => {
+  wireSlider('cp-camera-zoom-speed', (v) => {
     const graph = getGraph();
     if (!graph) return;
     const controls = graph.controls();
     if (controls) controls.zoomSpeed = v;
   });
-  wireSlider('cp-camera-near', v => {
+  wireSlider('cp-camera-near', (v) => {
     const graph = getGraph();
     if (!graph) return;
     const camera = graph.camera();
     camera.near = v;
     camera.updateProjectionMatrix();
   });
-  wireSlider('cp-camera-far', v => {
+  wireSlider('cp-camera-far', (v) => {
     const graph = getGraph();
     if (!graph) return;
     const camera = graph.camera();
@@ -387,7 +522,7 @@ export function initControlPanel() {
   // Local state for right sidebar collapsed (mirrors right-sidebar.js internal state)
   let rightSidebarCollapsed = false;
 
-  panel.querySelectorAll('.cp-toggle[data-target]').forEach(toggle => {
+  panel.querySelectorAll('.cp-toggle[data-target]').forEach((toggle) => {
     const targetId = toggle.dataset.target;
     toggle.addEventListener('click', () => {
       const isOn = toggle.classList.toggle('on');
@@ -402,11 +537,21 @@ export function initControlPanel() {
         if (label) label.style.display = isOn ? 'block' : 'none';
         _deps.setMinimapVisible?.(isOn);
       } else if (targetId === 'left-sidebar') {
-        if (isOn) { el.classList.add('open'); setLeftSidebarOpen(true); }
-        else { el.classList.remove('open'); setLeftSidebarOpen(false); }
+        if (isOn) {
+          el.classList.add('open');
+          setLeftSidebarOpen(true);
+        } else {
+          el.classList.remove('open');
+          setLeftSidebarOpen(false);
+        }
       } else if (targetId === 'right-sidebar') {
-        if (isOn) { el.classList.remove('collapsed'); rightSidebarCollapsed = false; }
-        else { el.classList.add('collapsed'); rightSidebarCollapsed = true; }
+        if (isOn) {
+          el.classList.remove('collapsed');
+          rightSidebarCollapsed = false;
+        } else {
+          el.classList.add('collapsed');
+          rightSidebarCollapsed = true;
+        }
         // Shift controls bar
         const controls = document.getElementById('controls');
         if (controls) controls.classList.toggle('sidebar-collapsed', !isOn);
@@ -422,61 +567,178 @@ export function initControlPanel() {
   // bd-krh7y: Theme presets
   const BUILT_IN_PRESETS = {
     'Default Dark': {
-      'cp-bloom-threshold': 0.35, 'cp-bloom-strength': 0.7, 'cp-bloom-radius': 0.4,
-      'cp-fresnel-opacity': 0.4, 'cp-fresnel-power': 2.0, 'cp-pulse-speed': 4.0,
-      'cp-star-count': 2000, 'cp-twinkle-speed': 1.0,
+      'cp-bloom-threshold': 0.35,
+      'cp-bloom-strength': 0.7,
+      'cp-bloom-radius': 0.4,
+      'cp-fresnel-opacity': 0.4,
+      'cp-fresnel-power': 2.0,
+      'cp-pulse-speed': 4.0,
+      'cp-star-count': 2000,
+      'cp-twinkle-speed': 1.0,
       'cp-bg-color': '#000005',
-      'cp-color-open': '#2d8a4e', 'cp-color-active': '#d4a017',
-      'cp-color-blocked': '#d04040', 'cp-color-agent': '#ff6b35', 'cp-color-epic': '#8b45a6',
-      'cp-label-toggle': 1, 'cp-label-size': 11, 'cp-label-opacity': 0.8,
-      'cp-label-show-id': 1, 'cp-label-show-title': 1, 'cp-label-show-status': 1, 'cp-label-bg-opacity': 0.85, 'cp-label-border': 1,
-      'cp-force-strength': 60, 'cp-link-distance': 60, 'cp-center-force': 1, 'cp-collision-radius': 0, 'cp-alpha-decay': 0.023, 'cp-agent-tether': 0.5,
+      'cp-color-open': '#2d8a4e',
+      'cp-color-active': '#d4a017',
+      'cp-color-blocked': '#d04040',
+      'cp-color-agent': '#ff6b35',
+      'cp-color-epic': '#8b45a6',
+      'cp-label-toggle': 1,
+      'cp-label-size': 11,
+      'cp-label-opacity': 0.8,
+      'cp-label-show-id': 1,
+      'cp-label-show-title': 1,
+      'cp-label-show-status': 1,
+      'cp-label-bg-opacity': 0.85,
+      'cp-label-border': 1,
+      'cp-force-strength': 60,
+      'cp-link-distance': 60,
+      'cp-center-force': 1,
+      'cp-collision-radius': 0,
+      'cp-alpha-decay': 0.023,
+      'cp-agent-tether': 0.5,
       'cp-fly-speed': 1000,
-      'cp-orbit-speed': 2.5, 'cp-orbit-rate': 0.08, 'cp-orbit-size': 1.5,
-      'cp-hover-rate': 0.15, 'cp-stream-rate': 0.12, 'cp-stream-speed': 3.0,
-      'cp-particle-lifetime': 0.8, 'cp-selection-glow': 1.0,
-      'cp-camera-fov': 75, 'cp-camera-rotate-speed': 2.0, 'cp-camera-zoom-speed': 1.0,
-      'cp-camera-near': 0.1, 'cp-camera-far': 50000,
-      'cp-hud-stats': 1, 'cp-hud-bottom': 1, 'cp-hud-controls': 1,
-      'cp-hud-left-sidebar': 1, 'cp-hud-right-sidebar': 1, 'cp-hud-minimap': 1, 'cp-hud-tooltip': 1, 'cp-edge-blocks': 1, 'cp-edge-parent-child': 1, 'cp-edge-waits-for': 1, 'cp-edge-relates-to': 1, 'cp-edge-assigned-to': 1, 'cp-edge-rig-conflict': 0, 'cp-edge-max-per-node': 0,
+      'cp-orbit-speed': 2.5,
+      'cp-orbit-rate': 0.08,
+      'cp-orbit-size': 1.5,
+      'cp-hover-rate': 0.15,
+      'cp-stream-rate': 0.12,
+      'cp-stream-speed': 3.0,
+      'cp-particle-lifetime': 0.8,
+      'cp-selection-glow': 1.0,
+      'cp-camera-fov': 75,
+      'cp-camera-rotate-speed': 2.0,
+      'cp-camera-zoom-speed': 1.0,
+      'cp-camera-near': 0.1,
+      'cp-camera-far': 50000,
+      'cp-hud-stats': 1,
+      'cp-hud-bottom': 1,
+      'cp-hud-controls': 1,
+      'cp-hud-left-sidebar': 1,
+      'cp-hud-right-sidebar': 1,
+      'cp-hud-minimap': 1,
+      'cp-hud-tooltip': 1,
+      'cp-edge-blocks': 1,
+      'cp-edge-parent-child': 1,
+      'cp-edge-waits-for': 1,
+      'cp-edge-relates-to': 1,
+      'cp-edge-assigned-to': 1,
+      'cp-edge-rig-conflict': 0,
+      'cp-edge-max-per-node': 0,
     },
-    'Neon': {
-      'cp-bloom-threshold': 0.15, 'cp-bloom-strength': 1.8, 'cp-bloom-radius': 0.6,
-      'cp-fresnel-opacity': 0.7, 'cp-fresnel-power': 1.5, 'cp-pulse-speed': 2.0,
-      'cp-star-count': 3000, 'cp-twinkle-speed': 2.0,
+    Neon: {
+      'cp-bloom-threshold': 0.15,
+      'cp-bloom-strength': 1.8,
+      'cp-bloom-radius': 0.6,
+      'cp-fresnel-opacity': 0.7,
+      'cp-fresnel-power': 1.5,
+      'cp-pulse-speed': 2.0,
+      'cp-star-count': 3000,
+      'cp-twinkle-speed': 2.0,
       'cp-bg-color': '#050510',
-      'cp-color-open': '#00ff88', 'cp-color-active': '#ffee00',
-      'cp-color-blocked': '#ff2050', 'cp-color-agent': '#ff8800', 'cp-color-epic': '#cc44ff',
-      'cp-label-toggle': 1, 'cp-label-size': 12, 'cp-label-opacity': 0.9,
-      'cp-label-show-id': 1, 'cp-label-show-title': 1, 'cp-label-show-status': 1, 'cp-label-bg-opacity': 0.85, 'cp-label-border': 1,
-      'cp-force-strength': 80, 'cp-link-distance': 50, 'cp-center-force': 1, 'cp-collision-radius': 0, 'cp-alpha-decay': 0.023, 'cp-agent-tether': 0.5,
+      'cp-color-open': '#00ff88',
+      'cp-color-active': '#ffee00',
+      'cp-color-blocked': '#ff2050',
+      'cp-color-agent': '#ff8800',
+      'cp-color-epic': '#cc44ff',
+      'cp-label-toggle': 1,
+      'cp-label-size': 12,
+      'cp-label-opacity': 0.9,
+      'cp-label-show-id': 1,
+      'cp-label-show-title': 1,
+      'cp-label-show-status': 1,
+      'cp-label-bg-opacity': 0.85,
+      'cp-label-border': 1,
+      'cp-force-strength': 80,
+      'cp-link-distance': 50,
+      'cp-center-force': 1,
+      'cp-collision-radius': 0,
+      'cp-alpha-decay': 0.023,
+      'cp-agent-tether': 0.5,
       'cp-fly-speed': 800,
-      'cp-orbit-speed': 4.0, 'cp-orbit-rate': 0.05, 'cp-orbit-size': 2.0,
-      'cp-hover-rate': 0.08, 'cp-stream-rate': 0.06, 'cp-stream-speed': 5.0,
-      'cp-particle-lifetime': 1.2, 'cp-selection-glow': 1.5,
-      'cp-camera-fov': 60, 'cp-camera-rotate-speed': 3.0, 'cp-camera-zoom-speed': 1.5,
-      'cp-camera-near': 0.1, 'cp-camera-far': 50000,
-      'cp-hud-stats': 1, 'cp-hud-bottom': 1, 'cp-hud-controls': 1,
-      'cp-hud-left-sidebar': 1, 'cp-hud-right-sidebar': 1, 'cp-hud-minimap': 1, 'cp-hud-tooltip': 1, 'cp-edge-blocks': 1, 'cp-edge-parent-child': 1, 'cp-edge-waits-for': 1, 'cp-edge-relates-to': 1, 'cp-edge-assigned-to': 1, 'cp-edge-rig-conflict': 0, 'cp-edge-max-per-node': 0,
+      'cp-orbit-speed': 4.0,
+      'cp-orbit-rate': 0.05,
+      'cp-orbit-size': 2.0,
+      'cp-hover-rate': 0.08,
+      'cp-stream-rate': 0.06,
+      'cp-stream-speed': 5.0,
+      'cp-particle-lifetime': 1.2,
+      'cp-selection-glow': 1.5,
+      'cp-camera-fov': 60,
+      'cp-camera-rotate-speed': 3.0,
+      'cp-camera-zoom-speed': 1.5,
+      'cp-camera-near': 0.1,
+      'cp-camera-far': 50000,
+      'cp-hud-stats': 1,
+      'cp-hud-bottom': 1,
+      'cp-hud-controls': 1,
+      'cp-hud-left-sidebar': 1,
+      'cp-hud-right-sidebar': 1,
+      'cp-hud-minimap': 1,
+      'cp-hud-tooltip': 1,
+      'cp-edge-blocks': 1,
+      'cp-edge-parent-child': 1,
+      'cp-edge-waits-for': 1,
+      'cp-edge-relates-to': 1,
+      'cp-edge-assigned-to': 1,
+      'cp-edge-rig-conflict': 0,
+      'cp-edge-max-per-node': 0,
     },
     'High Contrast': {
-      'cp-bloom-threshold': 0.8, 'cp-bloom-strength': 0.3, 'cp-bloom-radius': 0.2,
-      'cp-fresnel-opacity': 0.2, 'cp-fresnel-power': 3.0, 'cp-pulse-speed': 4.0,
-      'cp-star-count': 500, 'cp-twinkle-speed': 0.5,
+      'cp-bloom-threshold': 0.8,
+      'cp-bloom-strength': 0.3,
+      'cp-bloom-radius': 0.2,
+      'cp-fresnel-opacity': 0.2,
+      'cp-fresnel-power': 3.0,
+      'cp-pulse-speed': 4.0,
+      'cp-star-count': 500,
+      'cp-twinkle-speed': 0.5,
       'cp-bg-color': '#000000',
-      'cp-color-open': '#00cc44', 'cp-color-active': '#ffcc00',
-      'cp-color-blocked': '#ff0000', 'cp-color-agent': '#ff8844', 'cp-color-epic': '#aa44cc',
-      'cp-label-toggle': 1, 'cp-label-size': 13, 'cp-label-opacity': 1.0,
-      'cp-label-show-id': 1, 'cp-label-show-title': 1, 'cp-label-show-status': 1, 'cp-label-bg-opacity': 0.85, 'cp-label-border': 1,
-      'cp-force-strength': 60, 'cp-link-distance': 60, 'cp-center-force': 1, 'cp-collision-radius': 0, 'cp-alpha-decay': 0.023, 'cp-agent-tether': 0.5,
+      'cp-color-open': '#00cc44',
+      'cp-color-active': '#ffcc00',
+      'cp-color-blocked': '#ff0000',
+      'cp-color-agent': '#ff8844',
+      'cp-color-epic': '#aa44cc',
+      'cp-label-toggle': 1,
+      'cp-label-size': 13,
+      'cp-label-opacity': 1.0,
+      'cp-label-show-id': 1,
+      'cp-label-show-title': 1,
+      'cp-label-show-status': 1,
+      'cp-label-bg-opacity': 0.85,
+      'cp-label-border': 1,
+      'cp-force-strength': 60,
+      'cp-link-distance': 60,
+      'cp-center-force': 1,
+      'cp-collision-radius': 0,
+      'cp-alpha-decay': 0.023,
+      'cp-agent-tether': 0.5,
       'cp-fly-speed': 1000,
-      'cp-orbit-speed': 1.5, 'cp-orbit-rate': 0.15, 'cp-orbit-size': 1.0,
-      'cp-hover-rate': 0.25, 'cp-stream-rate': 0.2, 'cp-stream-speed': 2.0,
-      'cp-particle-lifetime': 0.5, 'cp-selection-glow': 0.6,
-      'cp-camera-fov': 75, 'cp-camera-rotate-speed': 2.0, 'cp-camera-zoom-speed': 1.0,
-      'cp-camera-near': 0.1, 'cp-camera-far': 50000,
-      'cp-hud-stats': 1, 'cp-hud-bottom': 1, 'cp-hud-controls': 1,
-      'cp-hud-left-sidebar': 1, 'cp-hud-right-sidebar': 1, 'cp-hud-minimap': 1, 'cp-hud-tooltip': 1, 'cp-edge-blocks': 1, 'cp-edge-parent-child': 1, 'cp-edge-waits-for': 1, 'cp-edge-relates-to': 1, 'cp-edge-assigned-to': 1, 'cp-edge-rig-conflict': 0, 'cp-edge-max-per-node': 0,
+      'cp-orbit-speed': 1.5,
+      'cp-orbit-rate': 0.15,
+      'cp-orbit-size': 1.0,
+      'cp-hover-rate': 0.25,
+      'cp-stream-rate': 0.2,
+      'cp-stream-speed': 2.0,
+      'cp-particle-lifetime': 0.5,
+      'cp-selection-glow': 0.6,
+      'cp-camera-fov': 75,
+      'cp-camera-rotate-speed': 2.0,
+      'cp-camera-zoom-speed': 1.0,
+      'cp-camera-near': 0.1,
+      'cp-camera-far': 50000,
+      'cp-hud-stats': 1,
+      'cp-hud-bottom': 1,
+      'cp-hud-controls': 1,
+      'cp-hud-left-sidebar': 1,
+      'cp-hud-right-sidebar': 1,
+      'cp-hud-minimap': 1,
+      'cp-hud-tooltip': 1,
+      'cp-edge-blocks': 1,
+      'cp-edge-parent-child': 1,
+      'cp-edge-waits-for': 1,
+      'cp-edge-relates-to': 1,
+      'cp-edge-assigned-to': 1,
+      'cp-edge-rig-conflict': 0,
+      'cp-edge-max-per-node': 0,
     },
   };
 
@@ -558,7 +820,6 @@ export function initControlPanel() {
     renderPresetButtons();
   }
 
-
   // --- Preset import/export (bd-n0g9q) ---
   const exportBtn = document.getElementById('cp-preset-export');
   if (exportBtn) {
@@ -584,7 +845,9 @@ export function initControlPanel() {
         try {
           const settings = JSON.parse(reader.result);
           if (settings && typeof settings === 'object') applyPreset(settings);
-        } catch { console.warn('[beads3d] failed to import preset'); }
+        } catch {
+          console.warn('[beads3d] failed to import preset');
+        }
       };
       reader.readAsText(file);
       fileInput.value = '';
@@ -596,10 +859,17 @@ export function initControlPanel() {
       const settings = getCurrentSettings();
       const encoded = btoa(JSON.stringify(settings));
       const url = `${location.origin}${location.pathname}#preset=${encoded}`;
-      navigator.clipboard.writeText(url).then(() => {
-        copyUrlBtn.textContent = 'copied!';
-        setTimeout(() => { copyUrlBtn.textContent = 'copy URL'; }, 1500);
-      }).catch(() => { prompt('Copy this URL:', url); });
+      navigator.clipboard
+        .writeText(url)
+        .then(() => {
+          copyUrlBtn.textContent = 'copied!';
+          setTimeout(() => {
+            copyUrlBtn.textContent = 'copy URL';
+          }, 1500);
+        })
+        .catch(() => {
+          prompt('Copy this URL:', url);
+        });
     };
   }
   // Apply preset from URL fragment on load
@@ -607,7 +877,9 @@ export function initControlPanel() {
     try {
       const settings = JSON.parse(atob(location.hash.slice('#preset='.length)));
       if (settings && typeof settings === 'object') applyPreset(settings);
-    } catch { /* ignore invalid fragment */ }
+    } catch {
+      /* ignore invalid fragment */
+    }
   }
   // --- Config bead persistence (bd-ljy5v) ---
   // Load saved settings from daemon on startup, save changes back with debounce.
@@ -618,31 +890,34 @@ export function initControlPanel() {
     clearTimeout(_persistDebounce);
     _persistDebounce = setTimeout(() => {
       const settings = getCurrentSettings();
-      _deps.api?.configSet(CONFIG_KEY, JSON.stringify(settings)).catch(err => {
+      _deps.api?.configSet(CONFIG_KEY, JSON.stringify(settings)).catch((err) => {
         console.warn('[beads3d] failed to persist settings:', err.message);
       });
     }, 1000);
   }
 
   // Wire persistence to all control panel inputs
-  panel.querySelectorAll('.cp-slider, input[type="color"]').forEach(input => {
+  panel.querySelectorAll('.cp-slider, input[type="color"]').forEach((input) => {
     input.addEventListener('input', persistSettings);
   });
 
   // Load saved settings from config bead
-  _deps.api?.configGet(CONFIG_KEY).then(resp => {
-    const val = resp?.value;
-    if (!val) return;
-    try {
-      const settings = JSON.parse(val);
-      if (settings && typeof settings === 'object') {
-        applyPreset(settings);
-        console.log('[beads3d] loaded control panel settings from config bead');
+  _deps.api
+    ?.configGet(CONFIG_KEY)
+    .then((resp) => {
+      const val = resp?.value;
+      if (!val) return;
+      try {
+        const settings = JSON.parse(val);
+        if (settings && typeof settings === 'object') {
+          applyPreset(settings);
+          console.log('[beads3d] loaded control panel settings from config bead');
+        }
+      } catch {
+        console.warn('[beads3d] failed to parse saved settings');
       }
-    } catch {
-      console.warn('[beads3d] failed to parse saved settings');
-    }
-  }).catch(() => {
-    // Config bead not available — silently fall back to defaults
-  });
+    })
+    .catch(() => {
+      // Config bead not available — silently fall back to defaults
+    });
 }
