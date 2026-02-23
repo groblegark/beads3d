@@ -91,10 +91,114 @@ export function presetVFX(name) {
   if (v !== undefined) setVfxIntensity(v);
 }
 
+// --- Adaptive quality scaling (bd-dnuky) ---
+// Monitors FPS and auto-adjusts particle budget + aura cap to maintain performance.
+// Three quality tiers: full → reduced → minimal. Hysteresis prevents oscillation.
+const ADAPTIVE_FPS_LOW = 20; // below this: disable particle spawning entirely
+const ADAPTIVE_FPS_REDUCE = 30; // below this for 5+ consecutive: reduce budget
+const ADAPTIVE_FPS_RECOVER = 50; // above this for 30+ consecutive: restore budget
+const ADAPTIVE_CONSECUTIVE_LOW = 5; // frames below REDUCE threshold before downgrade
+const ADAPTIVE_CONSECUTIVE_HIGH = 30; // frames above RECOVER threshold before upgrade
+
+const _adaptiveState = {
+  tier: 'full', // 'full' | 'reduced' | 'minimal'
+  consecutiveLow: 0,
+  consecutiveHigh: 0,
+  particleBudgetScale: 1.0, // multiplier for particle counts
+  auraMaxNodes: 20,
+  manualOverride: false, // true when user sets intensity manually
+};
+
+/**
+ * Feed a frame's FPS into the adaptive quality monitor.
+ * Call once per frame from the animation loop.
+ * @param {number} fps - Current frame's FPS
+ * @returns {void}
+ */
+export function adaptiveQualityTick(fps) {
+  if (_adaptiveState.manualOverride) return;
+
+  if (fps < ADAPTIVE_FPS_REDUCE) {
+    _adaptiveState.consecutiveLow++;
+    _adaptiveState.consecutiveHigh = 0;
+  } else if (fps > ADAPTIVE_FPS_RECOVER) {
+    _adaptiveState.consecutiveHigh++;
+    _adaptiveState.consecutiveLow = 0;
+  } else {
+    // In the dead zone — reset both counters
+    _adaptiveState.consecutiveLow = 0;
+    _adaptiveState.consecutiveHigh = 0;
+  }
+
+  if (fps < ADAPTIVE_FPS_LOW) {
+    // Emergency: disable particles
+    if (_adaptiveState.tier !== 'minimal') {
+      _adaptiveState.tier = 'minimal';
+      _adaptiveState.particleBudgetScale = 0;
+      _adaptiveState.auraMaxNodes = 0;
+    }
+  } else if (_adaptiveState.consecutiveLow >= ADAPTIVE_CONSECUTIVE_LOW && _adaptiveState.tier === 'full') {
+    _adaptiveState.tier = 'reduced';
+    _adaptiveState.particleBudgetScale = 0.5;
+    _adaptiveState.auraMaxNodes = 10;
+  } else if (_adaptiveState.consecutiveHigh >= ADAPTIVE_CONSECUTIVE_HIGH) {
+    if (_adaptiveState.tier === 'minimal') {
+      _adaptiveState.tier = 'reduced';
+      _adaptiveState.particleBudgetScale = 0.5;
+      _adaptiveState.auraMaxNodes = 10;
+      _adaptiveState.consecutiveHigh = 0; // reset to require sustained recovery
+    } else if (_adaptiveState.tier === 'reduced') {
+      _adaptiveState.tier = 'full';
+      _adaptiveState.particleBudgetScale = 1.0;
+      _adaptiveState.auraMaxNodes = 20;
+    }
+  }
+}
+
+/**
+ * Get the current adaptive quality state for diagnostics.
+ * @returns {{tier: string, particleBudgetScale: number, auraMaxNodes: number, manualOverride: boolean}}
+ */
+export function getAdaptiveState() {
+  return { ..._adaptiveState };
+}
+
+/**
+ * Apply a VFX preset that also scales particle budgets (bd-dnuky).
+ * Presets override adaptive quality until FPS issues are detected.
+ * @param {string} name - Preset name ('subtle', 'normal', 'dramatic', 'maximum')
+ * @returns {void}
+ */
+export function applyVfxPreset(name) {
+  const v = VFX_PRESETS[name];
+  if (v === undefined) return;
+  setVfxIntensity(v);
+  // Scale particle budget with intensity
+  _adaptiveState.manualOverride = name !== 'normal';
+  if (name === 'subtle') {
+    _adaptiveState.particleBudgetScale = 0.25;
+    _adaptiveState.auraMaxNodes = 5;
+    _adaptiveState.tier = 'reduced';
+  } else if (name === 'normal') {
+    _adaptiveState.particleBudgetScale = 1.0;
+    _adaptiveState.auraMaxNodes = 20;
+    _adaptiveState.tier = 'full';
+    _adaptiveState.manualOverride = false; // allow adaptive scaling
+  } else if (name === 'dramatic') {
+    _adaptiveState.particleBudgetScale = 1.5;
+    _adaptiveState.auraMaxNodes = 20;
+    _adaptiveState.tier = 'full';
+  } else if (name === 'maximum') {
+    _adaptiveState.particleBudgetScale = 2.0;
+    _adaptiveState.auraMaxNodes = 20;
+    _adaptiveState.tier = 'full';
+  }
+}
+
 // --- Ambient particle aura for in-progress beads (bd-ttet4) ---
 /** @type {Map<string, {lastEmit: number, lastSpark: number, nextSpark: number, intensifyUntil: number}>} */
 export const _auraEmitters = new Map(); // nodeId → { lastEmit, lastSpark, intensifyUntil }
-const AURA_MAX_NODES = 20;
+let AURA_MAX_NODES = 20;
 const AURA_ORBIT_PERIOD = 2.0; // seconds for full orbit
 const AURA_SPARK_INTERVAL_MIN = 3.0;
 const AURA_SPARK_INTERVAL_MAX = 5.0;
@@ -111,12 +215,14 @@ export function updateInProgressAura(t) {
   if (!_particlePool || !graphData || !graph) return;
   const dt = 0.016;
 
-  // Collect in-progress nodes (budget: max 20)
+  // Collect in-progress nodes (budget: adaptive cap, bd-dnuky)
+  const auraMax = _adaptiveState.auraMaxNodes;
+  if (auraMax === 0) return; // minimal tier: skip all aura work
   const inProgressNodes = [];
   for (const n of graphData.nodes) {
     if (n.status === 'in_progress' && !n._hidden && n.x !== undefined) {
       inProgressNodes.push(n);
-      if (inProgressNodes.length >= AURA_MAX_NODES) break;
+      if (inProgressNodes.length >= auraMax) break;
     }
   }
 
@@ -140,7 +246,9 @@ export function updateInProgressAura(t) {
     const pos = { x: node.x || 0, y: node.y || 0, z: node.z || 0 };
     const size = nodeSize({ priority: node.priority, issue_type: node.issue_type });
     const isIntensified = t < state.intensifyUntil;
-    const emitInterval = isIntensified ? 0.05 : 0.1; // 2x particles when intensified
+    const budgetScale = _adaptiveState.particleBudgetScale;
+    const baseInterval = isIntensified ? 0.05 : 0.1;
+    const emitInterval = budgetScale > 0 ? baseInterval / budgetScale : 999; // scale emission rate (bd-dnuky)
     const color = 0xd4a017; // in_progress amber
 
     // Aura pattern by type
@@ -326,12 +434,14 @@ export function spawnFireworkBurst(node) {
   const _particlePool = _getParticlePool && _getParticlePool();
   const graph = _getGraph && _getGraph();
   if (!node || !_particlePool || !graph) return;
+  if (_adaptiveState.particleBudgetScale === 0) return; // minimal tier: skip (bd-dnuky)
   const pos = { x: node.x || 0, y: node.y || 0, z: node.z || 0 };
   const color = FIREWORK_COLORS[node.issue_type] || 0x4a9eff;
   const size = nodeSize({ priority: node.priority, issue_type: node.issue_type });
+  const scale = _adaptiveState.particleBudgetScale;
 
-  // Wave 1: primary radial burst — 80-120 particles ejected spherically
-  const count1 = 80 + Math.floor(Math.random() * 40);
+  // Wave 1: primary radial burst — scaled by budget (bd-dnuky)
+  const count1 = Math.round((80 + Math.floor(Math.random() * 40)) * scale);
   for (let i = 0; i < count1; i++) {
     const theta = Math.random() * Math.PI * 2;
     const phi = Math.acos(2 * Math.random() - 1);
@@ -352,7 +462,8 @@ export function spawnFireworkBurst(node) {
   setTimeout(() => {
     const pool = _getParticlePool && _getParticlePool();
     if (!pool) return;
-    for (let i = 0; i < 40; i++) {
+    const wave2Count = Math.round(40 * scale);
+    for (let i = 0; i < wave2Count; i++) {
       const angle = (i / 40) * Math.PI * 2;
       const speed = 3 + Math.random() * 2;
       pool.emit(pos, color, 1, {
@@ -461,6 +572,7 @@ export function spawnShockwave(node, oldStatus, newStatus) {
   const _particlePool = _getParticlePool && _getParticlePool();
   const graphData = _getGraphData && _getGraphData();
   if (!node || !graph || !_particlePool) return;
+  if (_adaptiveState.particleBudgetScale === 0) return; // minimal tier: skip (bd-dnuky)
   const color = SHOCKWAVE_COLORS[newStatus] || 0x4a9eff;
   const pos = { x: node.x || 0, y: node.y || 0, z: node.z || 0 };
 
@@ -519,7 +631,7 @@ export function spawnShockwave(node, oldStatus, newStatus) {
   const right = new THREE.Vector3().crossVectors(forward, up).normalize();
   const planeUp = new THREE.Vector3().crossVectors(right, forward).normalize();
 
-  const ringCount = 20 + Math.floor(Math.random() * 10);
+  const ringCount = Math.round((20 + Math.floor(Math.random() * 10)) * _adaptiveState.particleBudgetScale);
   for (let i = 0; i < ringCount; i++) {
     const angle = (i / ringCount) * Math.PI * 2 + Math.random() * 0.3;
     const speed = 5 + Math.random() * 3;
@@ -597,6 +709,7 @@ export function spawnCollapseEffect(node) {
   const _particlePool = _getParticlePool && _getParticlePool();
   const graphData = _getGraphData && _getGraphData();
   if (!node || !graph || !_particlePool) return;
+  if (_adaptiveState.particleBudgetScale === 0) return; // minimal tier: skip (bd-dnuky)
   const pos = { x: node.x || 0, y: node.y || 0, z: node.z || 0 };
   const color = FIREWORK_COLORS[node.issue_type] || 0x4a9eff;
   const size = nodeSize({ priority: node.priority, issue_type: node.issue_type });

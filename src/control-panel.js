@@ -3,7 +3,7 @@
 
 import { Color } from 'three';
 import { createStarField } from './shaders.js';
-import { _vfxConfig } from './vfx.js';
+import { _vfxConfig, setVfxIntensity, applyVfxPreset } from './vfx.js';
 import { setLeftSidebarOpen } from './left-sidebar.js';
 
 // Dependency injection — set by main.js before initControlPanel()
@@ -484,6 +484,30 @@ export function initControlPanel() {
   wireSlider('cp-selection-glow', (v) => {
     _vfxConfig.selectionGlow = v;
   });
+
+  // VFX intensity slider + preset buttons (bd-dnuky)
+  wireSlider('cp-vfx-intensity', (v) => {
+    setVfxIntensity(v);
+    _vfxConfig.intensity = v;
+  });
+  const presetButtons = {
+    'cp-vfx-subtle': 'subtle',
+    'cp-vfx-normal': 'normal',
+    'cp-vfx-dramatic': 'dramatic',
+    'cp-vfx-max': 'maximum',
+  };
+  for (const [id, preset] of Object.entries(presetButtons)) {
+    const btn = document.getElementById(id);
+    if (btn) btn.addEventListener('click', () => {
+      applyVfxPreset(preset);
+      // Sync slider to match preset intensity
+      const slider = document.getElementById('cp-vfx-intensity');
+      const valEl = document.getElementById('cp-vfx-intensity-val');
+      const presetVal = { subtle: 0.25, normal: 1.0, dramatic: 2.0, maximum: 4.0 }[preset];
+      if (slider) slider.value = presetVal;
+      if (valEl) valEl.textContent = presetVal.toFixed(2);
+    });
+  }
 
   // Camera controls (bd-bz1ba)
   wireSlider('cp-camera-fov', (v) => {
