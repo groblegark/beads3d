@@ -938,6 +938,54 @@ function updateEventSprites(t) {
       const scale = s.startScale + (s.endScale - s.startScale) * progress;
       s.mesh.scale.setScalar(scale);
       s.mesh.material.opacity = 0.35 * (1 - progress * progress);
+    } else if (s.type === 'energy-beam') {
+      // bd-k9cqt: Beam cylinder stretches from source toward target
+      const src = s.sourceNode, tgt = s.targetNode;
+      const sx = src.x || 0, sy = src.y || 0, sz = src.z || 0;
+      const tx = tgt.x || 0, ty = tgt.y || 0, tz = tgt.z || 0;
+      const reach = Math.min(progress / 0.75, 1);
+      const dx = (tx - sx) * reach, dy = (ty - sy) * reach, dz = (tz - sz) * reach;
+      const len = Math.sqrt(dx * dx + dy * dy + dz * dz) || 0.01;
+      s.mesh.scale.set(1, len, 1);
+      s.mesh.position.set(sx + dx * 0.5, sy + dy * 0.5, sz + dz * 0.5);
+      s.mesh.lookAt(sx + dx, sy + dy, sz + dz);
+      s.mesh.rotateX(Math.PI / 2);
+      s.mesh.material.opacity = progress > 0.75 ? (1 - (progress - 0.75) / 0.25) * 0.9 : 0.9;
+    } else if (s.type === 'beam-trail') {
+      // bd-k9cqt: Trail particles along beam path, drift outward
+      const src = s.sourceNode, tgt = s.targetNode;
+      const sx = src.x || 0, sy = src.y || 0, sz = src.z || 0;
+      const tx = tgt.x || 0, ty = tgt.y || 0, tz = tgt.z || 0;
+      const travel = Math.min(progress * 1.5, 1);
+      s.mesh.position.set(
+        sx + (tx - sx) * travel + (progress > 0.5 ? s.jitter.x * (progress - 0.5) * 2 : 0),
+        sy + (ty - sy) * travel + (progress > 0.5 ? s.jitter.y * (progress - 0.5) * 2 : 0),
+        sz + (tz - sz) * travel + (progress > 0.5 ? s.jitter.z * (progress - 0.5) * 2 : 0),
+      );
+      s.mesh.material.opacity = (1 - progress) * 0.7;
+      s.mesh.scale.setScalar(1 - progress * 0.6);
+    } else if (s.type === 'lightning') {
+      // bd-k9cqt: Jagged lines with vertex regeneration for flicker
+      const src = s.sourceNode, tgt = s.targetNode;
+      const sx = src.x || 0, sy = src.y || 0, sz = src.z || 0;
+      const tx = tgt.x || 0, ty = tgt.y || 0, tz = tgt.z || 0;
+      const dx = tx - sx, dy = ty - sy, dz = tz - sz;
+      if (!s._lastRegen || (t - s._lastRegen) > 0.05) {
+        s._lastRegen = t;
+        const positions = s.mesh.geometry.attributes.position;
+        const segs = s.segments;
+        for (let j = 0; j <= segs; j++) {
+          const frac = j / segs;
+          const jitterAmt = (j > 0 && j < segs) ? 4 * (1 - progress) : 0;
+          positions.setXYZ(j,
+            sx + dx * frac + (Math.random() - 0.5) * jitterAmt,
+            sy + dy * frac + (Math.random() - 0.5) * jitterAmt,
+            sz + dz * frac + (Math.random() - 0.5) * jitterAmt,
+          );
+        }
+        positions.needsUpdate = true;
+      }
+      s.mesh.material.opacity = (1 - progress * progress) * 0.6;
     }
   }
 
@@ -7158,6 +7206,7 @@ async function main() {
     // Expose event sprite internals for testing (bd-9qeto)
     window.__beads3d_spawnStatusPulse = spawnStatusPulse;
     window.__beads3d_spawnEdgeSpark = spawnEdgeSpark;
+    window.__beads3d_spawnEnergyBeam = spawnEnergyBeam;
     window.__beads3d_eventSprites = () => eventSprites;
     // Expose camera velocity system for testing (bd-zab4q)
     window.__beads3d_keysDown = _keysDown;
