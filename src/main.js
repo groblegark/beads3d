@@ -157,6 +157,109 @@ const _vfxConfig = {
   selectionGlow: 1.0,       // selection glow intensity multiplier
 };
 
+
+// --- Ambient particle aura for in-progress beads (bd-ttet4) ---
+const _auraEmitters = new Map(); // nodeId → { lastEmit, lastSpark, intensifyUntil }
+const AURA_MAX_NODES = 20;
+const AURA_ORBIT_PERIOD = 2.0; // seconds for full orbit
+const AURA_SPARK_INTERVAL_MIN = 3.0;
+const AURA_SPARK_INTERVAL_MAX = 5.0;
+
+function updateInProgressAura(t) {
+  if (!_particlePool || !graphData || !graph) return;
+  const dt = 0.016;
+
+  // Collect in-progress nodes (budget: max 20)
+  const inProgressNodes = [];
+  for (const n of graphData.nodes) {
+    if (n.status === 'in_progress' && !n._hidden && n.x !== undefined) {
+      inProgressNodes.push(n);
+      if (inProgressNodes.length >= AURA_MAX_NODES) break;
+    }
+  }
+
+  // Clean up emitters for nodes no longer in-progress
+  for (const [id] of _auraEmitters) {
+    if (!inProgressNodes.find(n => n.id === id)) _auraEmitters.delete(id);
+  }
+
+  for (const node of inProgressNodes) {
+    let state = _auraEmitters.get(node.id);
+    if (!state) {
+      state = { lastEmit: t, lastSpark: t, nextSpark: AURA_SPARK_INTERVAL_MIN + Math.random() * (AURA_SPARK_INTERVAL_MAX - AURA_SPARK_INTERVAL_MIN), intensifyUntil: 0 };
+      _auraEmitters.set(node.id, state);
+    }
+
+    const pos = { x: node.x || 0, y: node.y || 0, z: node.z || 0 };
+    const size = nodeSize({ priority: node.priority, issue_type: node.issue_type });
+    const isIntensified = t < state.intensifyUntil;
+    const emitInterval = isIntensified ? 0.05 : 0.1; // 2x particles when intensified
+    const color = 0xd4a017; // in_progress amber
+
+    // Aura pattern by type
+    const isBug = node.issue_type === 'bug';
+    const isEpic = node.issue_type === 'epic';
+
+    // Continuous orbit emission
+    if (t - state.lastEmit > emitInterval) {
+      state.lastEmit = t;
+      const count = isIntensified ? 3 : 1;
+      for (let i = 0; i < count; i++) {
+        const angle = (t / AURA_ORBIT_PERIOD + i * 0.3) * Math.PI * 2;
+        const radius = size * 1.5;
+        // Orbit position
+        const ox = pos.x + Math.cos(angle) * radius;
+        const oy = pos.y + Math.sin(angle * 0.5) * radius * 0.3; // slight vertical bob
+        const oz = pos.z + Math.sin(angle) * radius;
+        // Tangential velocity (orbit direction)
+        let vx = -Math.sin(angle) * 1.5;
+        let vy = 0.3;
+        let vz = Math.cos(angle) * 1.5;
+        // Bug: erratic jitter
+        if (isBug) {
+          vx += (Math.random() - 0.5) * 4;
+          vy += (Math.random() - 0.5) * 4;
+          vz += (Math.random() - 0.5) * 4;
+        }
+        const pSize = isEpic ? 2.0 : 1.2;
+        // Brightness variation (sine wave)
+        const brightness = 0.7 + 0.3 * Math.sin(t * 3 + i);
+        _particlePool.emit({ x: ox, y: oy, z: oz }, color, 1, {
+          velocity: [vx, vy, vz],
+          spread: isBug ? 1.5 : 0.3,
+          lifetime: isEpic ? 1.2 : 0.8,
+          size: pSize * brightness,
+        });
+      }
+    }
+
+    // Spark ejection every 3-5 seconds
+    if (t - state.lastSpark > state.nextSpark) {
+      state.lastSpark = t;
+      state.nextSpark = AURA_SPARK_INTERVAL_MIN + Math.random() * (AURA_SPARK_INTERVAL_MAX - AURA_SPARK_INTERVAL_MIN);
+      const sparkAngle = Math.random() * Math.PI * 2;
+      const sparkPhi = Math.acos(2 * Math.random() - 1);
+      const speed = 8 + Math.random() * 4;
+      _particlePool.emit(pos, color, 1, {
+        velocity: [
+          speed * Math.sin(sparkPhi) * Math.cos(sparkAngle),
+          speed * Math.sin(sparkPhi) * Math.sin(sparkAngle),
+          speed * Math.cos(sparkPhi),
+        ],
+        spread: 0.5,
+        lifetime: 1.0,
+        size: 2.5,
+      });
+    }
+  }
+}
+
+// Intensify aura briefly when a bead receives an update (bd-ttet4)
+function intensifyAura(nodeId) {
+  const state = _auraEmitters.get(nodeId);
+  if (state) state.intensifyUntil = performance.now() / 1000 + 1.0;
+}
+
 // Agent tether strength — 0 = off, 1 = max pull (bd-uzj5j)
 let _agentTetherStrength = 0.5;
 
@@ -2366,6 +2469,7 @@ function startAnimation() {
     if (_particlePool) {
       _particlePool.update(t);
       updateSelectionVFX(t);
+      updateInProgressAura(t);
     }
 
     // Label anti-overlap: run every 4th frame for perf (beads-rgmh)
@@ -5032,6 +5136,8 @@ function applyMutationOptimistic(evt) {
       if (evt.title) {
         node.title = evt.title;
       }
+      // Intensify aura on any update to in-progress bead (bd-ttet4)
+      if (node.status === 'in_progress') intensifyAura(node.id);
       return true;
     }
 
@@ -5295,29 +5401,7 @@ function createDootPopupContainer() {
   return c;
 }
 
-// --- Agent activity feed windows (bd-kau4k) ---
-
-// TOOL_ICONS moved to event-format.js (bd-7t6nt)
-
-// bd-tgg70: Shared helpers for agent window beads lists (avoids stale snapshots)
-function getAssignedBeads(agentId) {
-  if (!graphData || !graphData.links) return [];
-  return graphData.links
-    .filter(l => l.dep_type === 'assigned_to' &&
-      (typeof l.source === 'object' ? l.source.id : l.source) === agentId)
-    .map(l => {
-      const tgtId = typeof l.target === 'object' ? l.target.id : l.target;
-      const tgtNode = graphData.nodes.find(n => n.id === tgtId);
-      return tgtNode ? { id: tgtId, title: tgtNode.title || tgtId } : null;
-    })
-    .filter(Boolean);
-}
-
-function renderBeadsListHtml(assigned) {
-  return assigned
-    .map(b => `<div class="agent-window-bead" data-bead-id="${escapeHtml(b.id)}" title="${escapeHtml(b.id)}: ${escapeHtml(b.title)}" style="cursor:pointer">${escapeHtml(b.id.replace(/^[a-z]+-/, ''))}: ${escapeHtml(b.title)}</div>`)
-    .join('');
-}
+// Agent activity feed windows moved to agent-windows.js (bd-7t6nt)
 
 // bd-tgg70: Re-render beads lists in all open agent windows after graph refresh
 function refreshAgentWindowBeads() {
