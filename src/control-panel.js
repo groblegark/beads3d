@@ -248,6 +248,7 @@ export function initControlPanel() {
     'cp-color-blocked': 'blocked',
     'cp-color-agent': 'agent',
     'cp-color-epic': 'epic',
+    'cp-color-jack': 'jack',
   };
   for (const [elId, key] of Object.entries(colorMap)) {
     const el = document.getElementById(elId);
@@ -597,6 +598,7 @@ export function initControlPanel() {
       'cp-color-blocked': '#d04040',
       'cp-color-agent': '#ff6b35',
       'cp-color-epic': '#8b45a6',
+      'cp-color-jack': '#e06830',
       'cp-label-toggle': 1,
       'cp-label-size': 11,
       'cp-label-opacity': 0.8,
@@ -655,6 +657,7 @@ export function initControlPanel() {
       'cp-color-blocked': '#ff2050',
       'cp-color-agent': '#ff8800',
       'cp-color-epic': '#cc44ff',
+      'cp-color-jack': '#ff5522',
       'cp-label-toggle': 1,
       'cp-label-size': 12,
       'cp-label-opacity': 0.9,
@@ -713,6 +716,7 @@ export function initControlPanel() {
       'cp-color-blocked': '#ff0000',
       'cp-color-agent': '#ff8844',
       'cp-color-epic': '#aa44cc',
+      'cp-color-jack': '#dd5520',
       'cp-label-toggle': 1,
       'cp-label-size': 13,
       'cp-label-opacity': 1.0,

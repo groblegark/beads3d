@@ -23,6 +23,7 @@ export const TYPE_COLORS = {
   agent: '#ff6b35', // orange — ribosome
   decision: '#d4a017', // amber — signal molecule
   gate: '#d4a017',
+  jack: '#e06830', // orange-red — hydraulic jack, temporary infra mod
   chore: '#666',
   doc: '#5a8a5a',
   test: '#4a7a9e',
@@ -71,6 +72,8 @@ export function nodeColor(issue) {
   if (issue._blocked) return (ov && ov.blocked) || '#d04040';
   // Agents get special orange
   if (issue.issue_type === 'agent') return (ov && ov.agent) || '#ff6b35';
+  // Jacks get orange-red; expired jacks flash red (handled in animation loop)
+  if (issue.issue_type === 'jack') return (ov && ov.jack) || '#e06830';
   // Epics always purple
   if (issue.issue_type === 'epic') return (ov && ov.epic) || '#8b45a6';
   // Decision/gate nodes colored by decision state (bd-zr374)
@@ -95,6 +98,8 @@ export function nodeSize(issue) {
   if (issue.issue_type === 'epic') return base * 2.2;
   // Agents are smaller — supporting elements, not the focus (bd-7iju8)
   if (issue.issue_type === 'agent') return Math.max(base, 6) * 1.2;
+  // Jacks: slightly larger than beads — visible infrastructure markers (bd-hffzf)
+  if (issue.issue_type === 'jack') return base * 1.6;
   // Beads (work items) are the visual focus — boosted 1.5x (bd-7iju8)
   return base * 1.5;
 }

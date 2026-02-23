@@ -89,6 +89,7 @@ export async function showDetail(node) {
       ${node.assignee ? `<span class="tag tag-assignee">${escapeHtml(node.assignee)}</span>` : ''}
       ${node.rig ? `<span class="tag" style="color:${rigColor(node.rig)};border-color:${rigColor(node.rig)}33">${escapeHtml(node.rig)}</span>` : ''}
       ${node._blocked ? '<span class="tag tag-blocked">BLOCKED</span>' : ''}
+      ${node._jackExpired ? '<span class="tag tag-blocked">EXPIRED</span>' : ''}
     </div>
     <div class="detail-body loading">loading full details...</div>
   `;
@@ -225,6 +226,27 @@ function renderFullDetail(issue) {
   if (issue.labels && issue.labels.length > 0) {
     const labels = issue.labels.map((l) => `<span class="tag">${escapeHtml(l)}</span>`).join(' ');
     sections.push(`<div class="detail-section"><h4>Labels</h4>${labels}</div>`);
+  }
+
+  // Jack-specific metadata (bd-hffzf)
+  if (issue.issue_type === 'jack' && issue.metadata) {
+    const jm = typeof issue.metadata === 'string' ? JSON.parse(issue.metadata) : issue.metadata;
+    const jackRows = [];
+    if (jm.jack_target) jackRows.push(`<div><strong>Target:</strong> ${escapeHtml(jm.jack_target)}</div>`);
+    if (jm.jack_ttl) jackRows.push(`<div><strong>TTL:</strong> ${escapeHtml(jm.jack_ttl)}</div>`);
+    if (jm.jack_revert_plan) jackRows.push(`<div><strong>Revert plan:</strong> ${escapeHtml(jm.jack_revert_plan)}</div>`);
+    if (issue.jack_expires_at) {
+      const exp = new Date(issue.jack_expires_at);
+      const isExpired = exp.getTime() < Date.now();
+      jackRows.push(`<div><strong>Expires:</strong> ${exp.toLocaleString()} ${isExpired ? '<span class="tag tag-blocked">EXPIRED</span>' : ''}</div>`);
+    }
+    if (jm.jack_rig) jackRows.push(`<div><strong>Rig:</strong> ${escapeHtml(jm.jack_rig)}</div>`);
+    if (jm.jack_changes && jm.jack_changes.length > 0) {
+      jackRows.push(`<div><strong>Changes:</strong> ${jm.jack_changes.length} recorded</div>`);
+    }
+    if (jackRows.length) {
+      sections.push(`<div class="detail-section"><h4>Jack Details</h4>${jackRows.join('')}</div>`);
+    }
   }
 
   // Metadata

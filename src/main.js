@@ -851,6 +851,73 @@ function initGraph() {
         group.add(pulseGlow);
       }
 
+      // Jack: hexagonal bolt — temporary infrastructure modification (bd-hffzf)
+      if (n.issue_type === 'jack') {
+        group.remove(core);
+        const s = size;
+        const jackColor = n._jackExpired ? 0xd04040 : 0xe06830; // red if expired, orange-red if active
+        const matJack = new THREE.MeshBasicMaterial({ color: jackColor, transparent: true, opacity: 0.85 * ghostFade });
+
+        // Hexagonal bolt head — wide, flat cylinder with 6 sides
+        const boltHeadGeo = new THREE.CylinderGeometry(1, 1, 0.4, 6);
+        const boltHead = new THREE.Mesh(boltHeadGeo, matJack.clone());
+        boltHead.scale.set(s * 1.0, s * 1.0, s * 1.0);
+        group.add(boltHead);
+
+        // Bolt shaft — narrower cylinder below the head
+        const shaftGeo = new THREE.CylinderGeometry(0.4, 0.4, 1.2, 6);
+        const matShaft = new THREE.MeshBasicMaterial({ color: jackColor, transparent: true, opacity: 0.7 * ghostFade });
+        const shaft = new THREE.Mesh(shaftGeo, matShaft);
+        shaft.scale.setScalar(s);
+        shaft.position.y = -s * 0.8;
+        group.add(shaft);
+
+        // Active jack: pulsing glow ring (wireframe hexagonal torus)
+        if (n.status === 'in_progress' && !n._jackExpired) {
+          const pulseRing = new THREE.Mesh(
+            boltHeadGeo,
+            new THREE.MeshBasicMaterial({
+              color: 0xe06830,
+              transparent: true,
+              opacity: 0.2 * ghostFade,
+              wireframe: true,
+            }),
+          );
+          pulseRing.scale.set(s * 1.4, s * 0.6, s * 1.4);
+          pulseRing.userData.jackPulse = true;
+          group.add(pulseRing);
+        }
+
+        // Expired jack: flashing red warning ring
+        if (n._jackExpired) {
+          const warnRing = new THREE.Mesh(
+            boltHeadGeo,
+            new THREE.MeshBasicMaterial({
+              color: 0xff2020,
+              transparent: true,
+              opacity: 0.3 * ghostFade,
+              wireframe: true,
+            }),
+          );
+          warnRing.scale.set(s * 1.6, s * 0.8, s * 1.6);
+          warnRing.userData.jackExpiredFlash = true;
+          group.add(warnRing);
+
+          // "!" warning above expired jack
+          const warnSprite = makeTextSprite('!', {
+            fontSize: 28,
+            color: '#ff2020',
+            opacity: 0.9 * ghostFade,
+            background: 'rgba(10, 10, 18, 0.85)',
+            sizeAttenuation: false,
+            screenHeight: 0.035,
+          });
+          warnSprite.position.y = size * 2.0;
+          warnSprite.renderOrder = 998;
+          group.add(warnSprite);
+        }
+      }
+
       // Blocked: spiky octahedron
       if (n._blocked) {
         const spike = new THREE.Mesh(
@@ -1688,6 +1755,17 @@ function startAnimation() {
           child.scale.multiplyScalar(pulse);
           child.rotation.y = t * 0.3;
           child.material.opacity = (0.2 + Math.sin(t * 2.5) * 0.1) * dimFactor;
+        } else if (child.userData.jackPulse) {
+          // Active jack: slow breathing pulse + gentle rotation (bd-hffzf)
+          const pulse = 1.0 + Math.sin(t * 1.8) * 0.12;
+          child.scale.multiplyScalar(pulse);
+          child.rotation.y = t * 0.4;
+          child.material.opacity = (0.15 + Math.sin(t * 1.8) * 0.08) * dimFactor;
+        } else if (child.userData.jackExpiredFlash) {
+          // Expired jack: rapid red flash — urgent attention (bd-hffzf)
+          const flash = Math.abs(Math.sin(t * 4.0));
+          child.material.opacity = (0.1 + flash * 0.35) * dimFactor;
+          child.rotation.y = t * 0.6;
         } else if (hasSelection) {
           saveBaseOpacity(child.material);
           setMaterialDim(child.material, dimFactor);
@@ -1778,10 +1856,12 @@ async function fetchViaGraph(statusEl) {
   };
   const result = await api.graph(graphArgs);
 
+  const now = Date.now();
   let nodes = (result.nodes || []).map((n) => ({
     id: n.id,
     ...n,
     _blocked: !!(n.blocked_by && n.blocked_by.length > 0),
+    _jackExpired: n.issue_type === 'jack' && n.jack_expires_at && new Date(n.jack_expires_at).getTime() < now,
   }));
 
   // Graph API edges: { source, target, type } → links: { source, target, dep_type }
@@ -1961,10 +2041,12 @@ function buildGraphData(issues) {
   const issueMap = new Map();
   issues.forEach((i) => issueMap.set(i.id, i));
 
+  const buildNow = Date.now();
   const nodes = issues.map((issue) => ({
     id: issue.id,
     ...issue,
     _blocked: !!(issue.blocked_by && issue.blocked_by.length > 0),
+    _jackExpired: issue.issue_type === 'jack' && issue.jack_expires_at && new Date(issue.jack_expires_at).getTime() < buildNow,
   }));
 
   const links = [];
@@ -2168,7 +2250,7 @@ function handleNodeHover(node) {
     <div class="id">${escapeHtml(node.id)} &middot; ${node.issue_type || 'task'} &middot; ${pLabel}</div>
     <div class="title">${escapeHtml(node.title || node.id)}</div>
     <div class="meta">
-      ${node.status}${node._blocked ? ' &middot; BLOCKED' : ''}${node._placeholder ? ' &middot; (ref)' : ''}
+      ${node.status}${node._blocked ? ' &middot; BLOCKED' : ''}${node._jackExpired ? ' &middot; EXPIRED' : ''}${node._placeholder ? ' &middot; (ref)' : ''}
       ${assignee}
       ${node.blocked_by ? '<br>blocked by: ' + node.blocked_by.map(escapeHtml).join(', ') : ''}
     </div>
@@ -2933,11 +3015,16 @@ async function refresh() {
         }
       }
       existing._blocked = !!(incoming.blocked_by && incoming.blocked_by.length > 0);
+      existing._jackExpired = incoming.issue_type === 'jack' && incoming.jack_expires_at && new Date(incoming.jack_expires_at).getTime() < Date.now();
       return existing;
     }
     // New node — place near a connected neighbor if possible, else near origin
     nodesAdded++;
-    const newNode = { ...incoming, _blocked: !!(incoming.blocked_by && incoming.blocked_by.length > 0) };
+    const newNode = {
+      ...incoming,
+      _blocked: !!(incoming.blocked_by && incoming.blocked_by.length > 0),
+      _jackExpired: incoming.issue_type === 'jack' && incoming.jack_expires_at && new Date(incoming.jack_expires_at).getTime() < Date.now(),
+    };
     // Seed new nodes near a connected existing node to reduce layout shock
     const neighborId = (incoming.blocked_by || [])[0] || incoming.assignee_id;
     const neighbor = neighborId && existingById.get(neighborId);
