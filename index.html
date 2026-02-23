@@ -2367,6 +2367,23 @@
         <span class="cp-section-toggle">&#9660;</span>
       </div>
       <div class="cp-section-body">
+        <div class="cp-row" style="margin-bottom:8px">
+          <span class="cp-label" style="font-weight:bold">intensity</span>
+          <input type="range" class="cp-slider" id="cp-vfx-intensity" min="0" max="4" step="0.25" value="1">
+          <span class="cp-value" id="cp-vfx-intensity-val">1.00</span>
+        </div>
+        <div class="cp-row" style="margin-bottom:8px;gap:4px">
+          <button class="ctrl-btn" id="cp-vfx-subtle" style="font-size:9px;padding:2px 6px" title="Subtle (0.25x)">subtle</button>
+          <button class="ctrl-btn" id="cp-vfx-normal" style="font-size:9px;padding:2px 6px" title="Normal (1.0x)">normal</button>
+          <button class="ctrl-btn" id="cp-vfx-dramatic" style="font-size:9px;padding:2px 6px" title="Dramatic (2.0x)">dramatic</button>
+          <button class="ctrl-btn" id="cp-vfx-max" style="font-size:9px;padding:2px 6px" title="MAXIMUM (4.0x)">MAX</button>
+        </div>
+        <div class="cp-row"><span class="cp-label">create burst</span><div class="cp-toggle on" id="cp-vfx-create"></div></div>
+        <div class="cp-row"><span class="cp-label">close implosion</span><div class="cp-toggle on" id="cp-vfx-close"></div></div>
+        <div class="cp-row"><span class="cp-label">status shockwave</span><div class="cp-toggle on" id="cp-vfx-shockwave"></div></div>
+        <div class="cp-row"><span class="cp-label">claim comet</span><div class="cp-toggle on" id="cp-vfx-comet"></div></div>
+        <div class="cp-row"><span class="cp-label">ambient aura</span><div class="cp-toggle on" id="cp-vfx-aura"></div></div>
+        <hr style="border-color:#2a2a3a;margin:6px 0">
         <div class="cp-row">
           <span class="cp-label">orbit speed</span>
           <input type="range" class="cp-slider" id="cp-orbit-speed" min="0.5" max="6" step="0.25" value="2.5">

@@ -651,6 +651,62 @@ function spawnCollapseEffect(node) {
   }
 }
 
+// Comet trail effect: agent -> claimed bead arc with particle trail (bd-t4umc)
+function spawnCometTrail(sourcePos, targetNode, color) {
+  if (!graph || !_particlePool) return;
+  const tgtPos = { x: targetNode.x || 0, y: targetNode.y || 0, z: targetNode.z || 0 };
+  const mid = {
+    x: (sourcePos.x + tgtPos.x) / 2,
+    y: (sourcePos.y + tgtPos.y) / 2 + 20,
+    z: (sourcePos.z + tgtPos.z) / 2,
+  };
+  const curve = new THREE.QuadraticBezierCurve3(
+    new THREE.Vector3(sourcePos.x, sourcePos.y, sourcePos.z),
+    new THREE.Vector3(mid.x, mid.y, mid.z),
+    new THREE.Vector3(tgtPos.x, tgtPos.y, tgtPos.z),
+  );
+  const headGeo = new THREE.SphereGeometry(3, 10, 10);
+  const headMat = new THREE.MeshBasicMaterial({
+    color, transparent: true, opacity: 1.0, depthWrite: false,
+    blending: THREE.AdditiveBlending,
+  });
+  const head = new THREE.Mesh(headGeo, headMat);
+  head.position.copy(curve.getPointAt(0));
+  graph.scene().add(head);
+  const startTime = performance.now() / 1000;
+  eventSprites.push({
+    mesh: head, node: targetNode, birth: startTime, lifetime: 0.8,
+    type: 'comet-head', curve, startTime, duration: 0.8, trailCount: 55,
+    _emitted: 0, color,
+  });
+  while (eventSprites.length > EVENT_SPRITE_MAX) {
+    const old = eventSprites.shift();
+    graph.scene().remove(old.mesh);
+    old.mesh.geometry.dispose();
+    old.mesh.material.dispose();
+  }
+}
+
+function triggerClaimComet(node, newAssignee) {
+  if (!graph || !newAssignee || !_vfxConfig.claimComet) return;
+  const color = 0xd4a017;
+  const agentId = 'agent:' + newAssignee;
+  const agentNode = graphData && graphData.nodes.find(n => n.id === agentId);
+  let sourcePos;
+  if (agentNode && agentNode.x !== undefined) {
+    sourcePos = { x: agentNode.x, y: agentNode.y, z: agentNode.z };
+  } else {
+    const controls = graph.controls();
+    const target = controls && controls.target ? controls.target : new THREE.Vector3(0, 0, 0);
+    sourcePos = {
+      x: target.x + (Math.random() - 0.5) * 20,
+      y: target.y + 50,
+      z: target.z + (Math.random() - 0.5) * 20,
+    };
+  }
+  spawnCometTrail(sourcePos, node, color);
+}
+
 // Spawn sparks that travel along a new edge between two nodes (bd-9qeto)
 function spawnEdgeSpark(sourceNode, targetNode, color) {
   if (!sourceNode || !targetNode || !graph) return;
@@ -4918,10 +4974,11 @@ async function refresh() {
     const srcNode = mergedNodes.find(n => n.id === srcId);
     const tgtNode = mergedNodes.find(n => n.id === tgtId);
     if (srcNode && tgtNode && srcNode.x !== undefined && tgtNode.x !== undefined) {
-      const sparkColor = nl.dep_type === 'blocks' ? 0xd04040
+      const beamColor = nl.dep_type === 'blocks' ? 0xd04040
         : nl.dep_type === 'parent-child' ? 0x8b45a6
+        : nl.dep_type === 'waits-for' ? 0xd4a017
         : 0x4a9eff;
-      spawnEdgeSpark(srcNode, tgtNode, sparkColor);
+      spawnEnergyBeam(srcNode, tgtNode, beamColor);
     }
   }
 
