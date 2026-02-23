@@ -1,5 +1,6 @@
-// Right sidebar: epic progress, dependency health, decision queue (bd-7t6nt, bd-9cpbc)
+// Right sidebar: epic progress, dependency health (bd-7t6nt, bd-9cpbc)
 // Extracted from main.js to reduce monolith size.
+// Decision queue moved to decision-lightbox.js (beads-zuc3).
 
 // Callback for node click — set by main.js to avoid circular import
 let _onNodeClick = null;
@@ -75,7 +76,6 @@ export function updateRightSidebar(graphData) {
   if (!graphData || rightSidebarCollapsed) return;
   updateEpicProgress(graphData);
   updateDepHealth(graphData);
-  updateDecisionQueue(graphData);
 }
 
 /**
@@ -175,43 +175,6 @@ export function updateDepHealth(graphData) {
   });
 }
 
-/**
- * @param {Object} graphData
- * @returns {void}
- */
-export function updateDecisionQueue(graphData) {
-  const body = document.getElementById('rs-decisions-body');
-  if (!body || !graphData) return;
-
-  // Find decision/gate nodes that are pending (bd-zbyn7: decisions are type=gate, await_type=decision)
-  const decisions = graphData.nodes.filter(
-    (n) =>
-      (n.issue_type === 'decision' || (n.issue_type === 'gate' && n.await_type === 'decision')) &&
-      n.status !== 'closed' &&
-      !n._hidden,
-  );
-
-  if (decisions.length === 0) {
-    body.innerHTML = '<div class="rs-empty">no pending decisions</div>';
-    return;
-  }
-
-  const html = decisions
-    .slice(0, 8)
-    .map((d) => {
-      const prompt = d.title || d.id;
-      return `<div class="rs-decision-item" data-node-id="${escapeHtml(d.id)}">
-      <div class="rs-decision-prompt">${escapeHtml(prompt)}</div>
-    </div>`;
-    })
-    .join('');
-
-  body.innerHTML = html;
-
-  body.querySelectorAll('.rs-decision-item').forEach((el) => {
-    el.onclick = () => {
-      const node = graphData.nodes.find((n) => n.id === el.dataset.nodeId);
-      if (node && _onNodeClick) _onNodeClick(node);
-    };
-  });
-}
+// updateDecisionQueue removed — decisions now rendered by decision-lightbox.js (beads-zuc3)
+/** @deprecated Use decision-lightbox.js updateDecisionList() instead */
+export function updateDecisionQueue() {}

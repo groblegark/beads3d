@@ -14,7 +14,7 @@ import {
   createFairyLights,
 } from './shaders.js';
 import { LINK_ICON_MATERIALS, LINK_ICON_DEFAULT, LINK_ICON_SCALE } from './link-icons.js';
-import { updateRightSidebar, updateEpicProgress, updateDepHealth, updateDecisionQueue } from './right-sidebar.js';
+import { updateRightSidebar, updateEpicProgress, updateDepHealth } from './right-sidebar.js';
 import { updateDecisionList, showDecisionLightbox } from './decision-lightbox.js';
 import { dootLabel, dootColor, resolveAgentIdLoose } from './event-format.js';
 import { updateAssigneeButtons, updateFilterCount } from './filter-dashboard.js';
@@ -3397,9 +3397,9 @@ function connectBusStream() {
           }
         }
 
-        // bd-9cpbc.1: live-update right sidebar from bus events
+        // bd-9cpbc.1: live-update decision lightbox from bus events (beads-zuc3)
         if (evt.type && evt.type.startsWith('Decision')) {
-          updateDecisionQueue(graphData);
+          updateDecisionList(graphData);
         }
         if (evt.type === 'MutationStatus' || evt.type === 'MutationClose' || evt.type === 'MutationUpdate') {
           updateEpicProgress(graphData);
