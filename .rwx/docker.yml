@@ -89,6 +89,30 @@ tasks:
       GHCR_TOKEN: ${{ secrets.GHCR_TOKEN }}
       GITHUB_USER: ${{ secrets.GITHUB_USER }}
 
+  # ── Package + push Helm chart to OCI ────────────────────────────────
+  # Only runs on CalVer tag pushes (not main/cli).
+  - key: helm-push
+    use: code
+    cache: false
+    if: ${{ init.ref-name != 'main' && init.ref-name != 'cli' }}
+    run: |
+      # Install helm
+      curl -fsSL https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
+
+      # Auth to GHCR
+      echo "$GHCR_TOKEN" | helm registry login ghcr.io -u "$GITHUB_USER" --password-stdin
+
+      # Package and push
+      CHART="helm/beads3d"
+      VERSION=$(grep '^version:' "$CHART/Chart.yaml" | awk '{print $2}')
+      echo "Publishing beads3d chart v${VERSION}..."
+      helm package "$CHART" --destination /tmp/helm-packages
+      helm push "/tmp/helm-packages/beads3d-${VERSION}.tgz" "oci://ghcr.io/groblegark/charts"
+      echo "Published: oci://ghcr.io/groblegark/charts/beads3d:${VERSION}"
+    env:
+      GHCR_TOKEN: ${{ secrets.GHCR_TOKEN }}
+      GITHUB_USER: ${{ secrets.GITHUB_USER }}
+
   # ── Rollout restart to pull new image ───────────────────────────────
   # Only runs for main/cli builds (not CalVer tags which use separate deploy).
   - key: deploy
