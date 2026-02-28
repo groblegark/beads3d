@@ -19,6 +19,13 @@ export default defineConfig(({ mode }) => {
       open: true,
       proxy: {
         // SSE streams — long-lived connections, must come before /api catch-all
+        '/api/v1/events/stream': {
+          target,
+          changeOrigin: true,
+          rewrite: (path) => path.replace(/^\/api/, ''),
+          timeout: 0,       // no timeout for SSE
+          configure: addAuth,
+        },
         '/api/events': {
           target,
           changeOrigin: true,
@@ -33,7 +40,7 @@ export default defineConfig(({ mode }) => {
           timeout: 0,
           configure: addAuth,
         },
-        // RPC catch-all — short-lived request/response
+        // API catch-all — short-lived request/response (RPC or REST)
         '/api': {
           target,
           changeOrigin: true,

@@ -1,5 +1,5 @@
-// Beads daemon HTTP API client
-// Uses Vite proxy in dev (/api → daemon), direct URL in prod
+// Beads API client — supports both bd-daemon (Connect-RPC) and kbeads (REST)
+// Uses Vite proxy in dev (/api → backend), direct URL in prod
 
 /** @type {string} Default base URL for API requests */
 const DEFAULT_BASE = '/api';
@@ -15,21 +15,27 @@ const SSE_MAX_RETRIES = 50;
 const SSE_BACKOFF_FACTOR = 2;
 
 /**
- * HTTP client for the beads daemon Connect-RPC API.
- * Provides methods for issue CRUD, graph queries, decision management,
- * config operations, and SSE event streaming with automatic reconnection.
+ * HTTP client for beads backends.
+ * Supports two modes:
+ * - 'rpc' (default): Connect-RPC JSON via bd-daemon (POST /api/bd.v1.BeadsService/<Method>)
+ * - 'rest': kbeads REST API (GET/POST/PATCH /api/v1/...)
  * @class
  */
 export class BeadsAPI {
   /**
    * Create a new BeadsAPI client.
-   * @param {string} [baseUrl='/api'] - Base URL for API requests (proxied in dev, direct in prod)
+   * @param {string} [baseUrl='/api'] - Base URL for API requests
+   * @param {Object} [opts={}] - Options
+   * @param {string} [opts.mode='rpc'] - API mode: 'rpc' for bd-daemon, 'rest' for kbeads
    */
-  constructor(baseUrl = DEFAULT_BASE) {
+  constructor(baseUrl = DEFAULT_BASE, opts = {}) {
     this.baseUrl = baseUrl;
-    this._eventSources = []; // track SSE connections for cleanup (bd-7n4g8)
-    this._reconnectManagers = []; // track reconnection managers (bd-ki6im)
+    this.mode = opts.mode || 'rpc';
+    this._eventSources = [];
+    this._reconnectManagers = [];
   }
+
+  // ────────── Transport helpers ──────────
 
   /**
    * Make a Connect-RPC JSON call to the beads daemon.
@@ -60,127 +66,172 @@ export class BeadsAPI {
   }
 
   /**
-   * Ping the daemon to check connectivity.
-   * @returns {Promise<Object>} Empty response on success
+   * Make a REST call to the kbeads API.
+   * @param {string} method - HTTP method (GET, POST, PATCH, DELETE)
+   * @param {string} path - URL path relative to baseUrl (e.g. '/v1/beads')
+   * @param {Object} [body] - Optional JSON body for POST/PATCH/PUT
+   * @returns {Promise<Object>} The parsed JSON response
+   * @throws {Error} If the HTTP response is not ok
+   * @private
+   */
+  async _rest(method, path, body) {
+    const opts = { method, headers: {} };
+    if (body !== undefined) {
+      opts.headers['Content-Type'] = 'application/json';
+      opts.body = JSON.stringify(body);
+    }
+
+    const resp = await fetch(`${this.baseUrl}${path}`, opts);
+
+    if (!resp.ok) {
+      const text = await resp.text().catch(() => '');
+      throw new Error(`REST ${method} ${path}: ${resp.status} ${text.slice(0, 100)}`);
+    }
+
+    return resp.json();
+  }
+
+  // ────────── Read operations ──────────
+
+  /**
+   * Ping/health check.
+   * @returns {Promise<Object>} Status response
    */
   async ping() {
+    if (this.mode === 'rest') return this._rest('GET', '/v1/health');
     return this._rpc('Ping', {});
   }
 
   /**
-   * Fetch the full graph for 3D visualization (bd-hpk9f).
-   * Returns nodes, edges, and aggregate stats in a single call.
-   * @param {Object} [opts={}] - Override default graph query parameters
-   * @param {number} [opts.limit=500] - Maximum number of nodes to return
-   * @param {boolean} [opts.include_deps=true] - Include dependency edges
-   * @param {boolean} [opts.include_agents=true] - Include agent nodes
+   * Fetch the full graph for 3D visualization.
+   * @param {Object} [opts={}] - Graph query parameters
    * @returns {Promise<{nodes: Object[], edges: Object[], stats: Object}>} Graph data
    */
   async graph(opts = {}) {
-    return this._rpc('Graph', {
-      limit: 500,
-      include_deps: true,
-      include_agents: true,
-      ...opts,
-    });
+    const defaults = { limit: 500, include_deps: true, include_agents: true };
+    if (this.mode === 'rest') return this._rest('POST', '/v1/graph', { ...defaults, ...opts });
+    return this._rpc('Graph', { ...defaults, ...opts });
   }
 
   /**
-   * List issues with optional filtering.
-   * @param {Object} [opts={}] - Override default list query parameters
-   * @param {number} [opts.limit=500] - Maximum number of issues to return
-   * @param {string[]} [opts.exclude_status=['tombstone']] - Statuses to exclude
-   * @returns {Promise<Object>} List response with issues array
+   * List beads/issues with optional filtering.
+   * @param {Object} [opts={}] - List query parameters
+   * @returns {Promise<Object>} List response
    */
   async list(opts = {}) {
-    return this._rpc('List', {
-      limit: 500,
-      exclude_status: ['tombstone'],
-      ...opts,
-    });
+    if (this.mode === 'rest') {
+      const params = new URLSearchParams();
+      const merged = { limit: 500, ...opts };
+      if (merged.limit) params.set('limit', String(merged.limit));
+      if (merged.status) {
+        for (const s of [].concat(merged.status)) params.append('status', s);
+      }
+      if (merged.type) params.set('type', merged.type);
+      if (merged.assignee) params.set('assignee', merged.assignee);
+      if (merged.search) params.set('search', merged.search);
+      const qs = params.toString();
+      return this._rest('GET', `/v1/beads${qs ? '?' + qs : ''}`);
+    }
+    return this._rpc('List', { limit: 500, exclude_status: ['tombstone'], ...opts });
   }
 
   /**
-   * Fetch full details for a single issue.
-   * @param {string} id - The issue ID (e.g. 'bd-abc12')
-   * @returns {Promise<Object>} The issue object with all fields
+   * Fetch full details for a single bead/issue.
+   * @param {string} id - The bead/issue ID
+   * @returns {Promise<Object>} The bead object
    */
   async show(id) {
+    if (this.mode === 'rest') return this._rest('GET', `/v1/beads/${id}`);
     return this._rpc('Show', { id });
   }
 
   /**
-   * Fetch aggregate statistics for the issue store.
-   * @returns {Promise<Object>} Stats object with counts by status, type, etc.
+   * Fetch aggregate statistics.
+   * @returns {Promise<Object>} Stats object
    */
   async stats() {
+    if (this.mode === 'rest') return this._rest('GET', '/v1/stats');
     return this._rpc('Stats', {});
   }
 
   /**
-   * Fetch issues that are ready to work on (unblocked, open).
-   * @returns {Promise<Object>} Response with ready issues array
+   * Fetch beads that are ready to work on (unblocked, open).
+   * @returns {Promise<Object>} Response with ready beads
    */
   async ready() {
+    if (this.mode === 'rest') return this._rest('GET', '/v1/ready?limit=200');
     return this._rpc('Ready', { limit: 200 });
   }
 
   /**
-   * Fetch issues that are currently blocked by dependencies.
-   * @returns {Promise<Object>} Response with blocked issues array
+   * Fetch beads that are currently blocked.
+   * @returns {Promise<Object>} Response with blocked beads
    */
   async blocked() {
+    if (this.mode === 'rest') return this._rest('GET', '/v1/blocked');
     return this._rpc('Blocked', {});
   }
 
   /**
-   * Fetch the dependency tree rooted at a given issue.
-   * @param {string} id - The root issue ID
+   * Fetch the dependency tree rooted at a given bead.
+   * @param {string} id - The root bead ID
    * @param {number} [maxDepth=5] - Maximum depth to traverse
-   * @returns {Promise<Object>} Tree structure with nested dependencies
+   * @returns {Promise<Object>} Tree structure
    */
   async depTree(id, maxDepth = 5) {
+    if (this.mode === 'rest') {
+      return this._rest('GET', `/v1/beads/${id}/dependencies?max_depth=${maxDepth}`);
+    }
     return this._rpc('DepTree', { id, max_depth: maxDepth });
   }
 
   /**
    * Fetch an overview of all epics with progress summaries.
-   * @returns {Promise<Object>} Epic overview with child counts and status breakdowns
+   * @returns {Promise<Object>} Epic overview
    */
   async epicOverview() {
+    if (this.mode === 'rest') {
+      return this._rest('GET', '/v1/beads?type=epic&limit=500');
+    }
     return this._rpc('EpicOverview', {});
   }
 
-  // --- Write operations (bd-9g7f0) ---
+  // ────────── Write operations ──────────
 
   /**
-   * Update fields on an existing issue.
-   * @param {string} id - The issue ID to update
+   * Update fields on an existing bead.
+   * @param {string} id - The bead ID to update
    * @param {Object} fields - Key-value pairs of fields to update
-   * @returns {Promise<Object>} The updated issue object
+   * @returns {Promise<Object>} The updated bead
    */
   async update(id, fields) {
+    if (this.mode === 'rest') return this._rest('PATCH', `/v1/beads/${id}`, fields);
     return this._rpc('Update', { id, ...fields });
   }
 
   /**
-   * Close an issue by ID.
-   * @param {string} id - The issue ID to close
-   * @returns {Promise<Object>} The closed issue object
+   * Close a bead by ID.
+   * @param {string} id - The bead ID to close
+   * @returns {Promise<Object>} The closed bead
    */
   async close(id) {
+    if (this.mode === 'rest') return this._rest('POST', `/v1/beads/${id}/close`);
     return this._rpc('Close', { id });
   }
 
   /**
-   * Check if the Graph endpoint is available on this daemon.
-   * Probes once and caches the result for subsequent calls.
-   * @returns {Promise<boolean>} True if Graph RPC is supported
+   * Check if the Graph endpoint is available.
+   * Probes once and caches the result.
+   * @returns {Promise<boolean>} True if Graph is supported
    */
   async hasGraph() {
     if (this._hasGraphCached !== undefined) return this._hasGraphCached;
     try {
-      await this._rpc('Graph', { limit: 1 });
+      if (this.mode === 'rest') {
+        await this._rest('POST', '/v1/graph', { limit: 1 });
+      } else {
+        await this._rpc('Graph', { limit: 1 });
+      }
       this._hasGraphCached = true;
       return true;
     } catch {
@@ -189,14 +240,10 @@ export class BeadsAPI {
     }
   }
 
+  // ────────── SSE streaming ──────────
+
   /**
-   * Create an SSE EventSource with automatic exponential-backoff reconnection (bd-ki6im).
-   * @param {string} url - The SSE endpoint URL
-   * @param {string} label - Human-readable label for logging (e.g. 'mutation', 'bus')
-   * @param {Function} setupFn - Called with each new EventSource to attach event listeners
-   * @param {Object} [callbacks={}] - Lifecycle callbacks
-   * @param {Function} [callbacks.onStatus] - Called with (state, info) where state is 'connecting'|'connected'|'reconnecting'|'disconnected'
-   * @returns {Object} Reconnection manager with connect(), stop(), and retry() methods
+   * Create an SSE EventSource with automatic exponential-backoff reconnection.
    * @private
    */
   _connectWithReconnect(url, label, setupFn, callbacks = {}) {
@@ -232,14 +279,11 @@ export class BeadsAPI {
 
         es.onerror = () => {
           if (mgr._stopped) return;
-          // EventSource auto-reconnects for CONNECTING state, but not for CLOSED
           if (es.readyState === EventSource.CLOSED) {
             console.warn(`[beads3d] ${label} SSE closed, scheduling reconnect`);
             es.close();
             mgr._scheduleReconnect();
           }
-          // For CONNECTING state: EventSource handles it natively, but if it
-          // keeps failing, readyState will eventually become CLOSED
         };
 
         setupFn(es);
@@ -274,7 +318,6 @@ export class BeadsAPI {
         if (mgr._es) mgr._es.close();
       },
 
-      // Manual reconnect (for retry button)
       retry: () => {
         mgr._stopped = false;
         mgr._retries = 0;
@@ -291,15 +334,15 @@ export class BeadsAPI {
   }
 
   /**
-   * Connect to the mutation SSE event stream for live issue updates (bd-ki6im).
-   * Automatically reconnects with exponential backoff on disconnection.
+   * Connect to the mutation SSE event stream.
    * @param {Function} onEvent - Callback invoked with each parsed event object
    * @param {Object} [callbacks={}] - SSE lifecycle callbacks
-   * @param {Function} [callbacks.onStatus] - Called with (state, info) for connection state changes
-   * @returns {Object} Reconnection manager with connect(), stop(), and retry() methods
+   * @returns {Object} Reconnection manager
    */
   connectEvents(onEvent, callbacks = {}) {
-    const url = `${this.baseUrl}/events`;
+    const url = this.mode === 'rest'
+      ? `${this.baseUrl}/v1/events/stream`
+      : `${this.baseUrl}/events`;
     return this._connectWithReconnect(
       url,
       'mutation',
@@ -318,13 +361,11 @@ export class BeadsAPI {
   }
 
   /**
-   * Connect to the NATS bus SSE event stream for agent, hook, and job events (bd-c7723, bd-ki6im).
-   * Listens to multiple named event types (agents, hooks, oj, mutations, decisions, mail).
-   * @param {string} streams - Comma-separated stream names (e.g. 'agents,hooks,oj') or 'all'
+   * Connect to the NATS bus SSE event stream.
+   * @param {string} streams - Comma-separated stream names or 'all'
    * @param {Function} onEvent - Callback invoked with each parsed event object
    * @param {Object} [callbacks={}] - SSE lifecycle callbacks
-   * @param {Function} [callbacks.onStatus] - Called with (state, info) for connection state changes
-   * @returns {Object} Reconnection manager with connect(), stop(), and retry() methods
+   * @returns {Object} Reconnection manager
    */
   connectBusEvents(streams, onEvent, callbacks = {}) {
     const url = `${this.baseUrl}/bus/events?stream=${encodeURIComponent(streams)}`;
@@ -347,47 +388,42 @@ export class BeadsAPI {
     );
   }
 
-  // --- Decision operations (bd-g0tmq) ---
+  // ────────── Decision operations ──────────
 
-  /**
-   * Fetch a decision by its associated issue ID.
-   * @param {string} issueId - The issue ID of the decision (e.g. 'bd-abc12')
-   * @returns {Promise<Object>} The decision object
-   */
   async decisionGet(issueId) {
+    if (this.mode === 'rest') return this._rest('GET', `/v1/decisions/${issueId}`);
     return this._rpc('DecisionGet', { issue_id: issueId });
   }
 
-  /**
-   * List decisions with optional filtering.
-   * @param {Object} [opts={}] - Query parameters for filtering
-   * @returns {Promise<Object>} Response with decisions array
-   */
   async decisionList(opts = {}) {
+    if (this.mode === 'rest') {
+      const params = new URLSearchParams();
+      if (opts.status) params.set('status', opts.status);
+      const qs = params.toString();
+      return this._rest('GET', `/v1/decisions${qs ? '?' + qs : ''}`);
+    }
     return this._rpc('DecisionList', opts);
   }
 
-  /**
-   * List decisions created since a given timestamp, optionally filtered by requester.
-   * @param {string} since - ISO 8601 timestamp to filter from
-   * @param {string} [requestedBy] - Filter to decisions requested by this agent
-   * @returns {Promise<Object>} Response with recent decisions array
-   */
   async decisionListRecent(since, requestedBy) {
+    if (this.mode === 'rest') {
+      const params = new URLSearchParams({ since });
+      if (requestedBy) params.set('requested_by', requestedBy);
+      return this._rest('GET', `/v1/decisions?${params.toString()}`);
+    }
     const args = { since };
     if (requestedBy) args.requested_by = requestedBy;
     return this._rpc('DecisionListRecent', args);
   }
 
-  /**
-   * Resolve a pending decision by selecting an option.
-   * @param {string} issueId - The issue ID of the decision
-   * @param {string} selectedOption - The chosen option key
-   * @param {string} responseText - Free-text response or rationale
-   * @param {string} [respondedBy='beads3d'] - Identity of the responder
-   * @returns {Promise<Object>} The resolved decision object
-   */
   async decisionResolve(issueId, selectedOption, responseText, respondedBy = 'beads3d') {
+    if (this.mode === 'rest') {
+      return this._rest('POST', `/v1/decisions/${issueId}/resolve`, {
+        selected_option: selectedOption,
+        response_text: responseText,
+        responded_by: respondedBy,
+      });
+    }
     return this._rpc('DecisionResolve', {
       issue_id: issueId,
       selected_option: selectedOption,
@@ -396,14 +432,13 @@ export class BeadsAPI {
     });
   }
 
-  /**
-   * Cancel a pending decision with a reason.
-   * @param {string} issueId - The issue ID of the decision
-   * @param {string} reason - Reason for cancellation
-   * @param {string} [canceledBy='beads3d'] - Identity of the canceler
-   * @returns {Promise<Object>} The canceled decision object
-   */
   async decisionCancel(issueId, reason, canceledBy = 'beads3d') {
+    if (this.mode === 'rest') {
+      return this._rest('POST', `/v1/decisions/${issueId}/cancel`, {
+        reason,
+        canceled_by: canceledBy,
+      });
+    }
     return this._rpc('DecisionCancel', {
       issue_id: issueId,
       reason,
@@ -411,24 +446,25 @@ export class BeadsAPI {
     });
   }
 
-  /**
-   * Send a reminder notification for a pending decision.
-   * @param {string} issueId - The issue ID of the decision
-   * @param {boolean} [force=false] - Send even if recently reminded
-   * @returns {Promise<Object>} Reminder response
-   */
   async decisionRemind(issueId, force = false) {
+    // No kbeads REST equivalent — RPC-only for now
     return this._rpc('DecisionRemind', { issue_id: issueId, force });
   }
 
   /**
-   * Send mail to an agent by creating a message-type issue (bd-t76aw).
-   * @param {string} toAgent - The target agent name (assigned as assignee)
-   * @param {string} subject - The message subject (becomes the issue title)
-   * @param {string} [body=''] - The message body (becomes the issue description)
-   * @returns {Promise<Object>} The created message issue object
+   * Send mail to an agent by creating a message bead.
    */
   async sendMail(toAgent, subject, body = '') {
+    if (this.mode === 'rest') {
+      return this._rest('POST', '/v1/beads', {
+        title: subject,
+        description: body,
+        type: 'message',
+        assignee: toAgent,
+        created_by: 'beads3d',
+        priority: 2,
+      });
+    }
     return this._rpc('Create', {
       title: subject,
       description: body,
@@ -439,48 +475,32 @@ export class BeadsAPI {
     });
   }
 
-  // --- Config operations (bd-8o2gd phase 3) ---
+  // ────────── Config operations ──────────
 
-  /**
-   * List all configuration keys and values.
-   * @returns {Promise<Object>} Response with config entries
-   */
   async configList() {
+    if (this.mode === 'rest') return this._rest('GET', '/v1/configs');
     return this._rpc('ConfigList', {});
   }
 
-  /**
-   * Get a single configuration value by key.
-   * @param {string} key - The config key to retrieve
-   * @returns {Promise<Object>} Response with the config value
-   */
   async configGet(key) {
+    if (this.mode === 'rest') return this._rest('GET', `/v1/configs/${key}`);
     return this._rpc('GetConfig', { key });
   }
 
-  /**
-   * Set a configuration key to a value.
-   * @param {string} key - The config key to set
-   * @param {string} value - The value to assign
-   * @returns {Promise<Object>} Confirmation response
-   */
   async configSet(key, value) {
+    if (this.mode === 'rest') return this._rest('PUT', `/v1/configs/${key}`, { value });
     return this._rpc('ConfigSet', { key, value });
   }
 
-  /**
-   * Remove a configuration key.
-   * @param {string} key - The config key to remove
-   * @returns {Promise<Object>} Confirmation response
-   */
   async configUnset(key) {
+    if (this.mode === 'rest') return this._rest('DELETE', `/v1/configs/${key}`);
     return this._rpc('ConfigUnset', { key });
   }
 
+  // ────────── Lifecycle ──────────
+
   /**
-   * Close all SSE connections and stop all reconnection managers (bd-7n4g8, bd-ki6im).
-   * Call this when the API client is no longer needed to prevent resource leaks.
-   * @returns {void}
+   * Close all SSE connections and stop all reconnection managers.
    */
   destroy() {
     for (const mgr of this._reconnectManagers) {
@@ -494,9 +514,7 @@ export class BeadsAPI {
   }
 
   /**
-   * Manually reconnect all SSE streams by resetting and restarting each manager (bd-ki6im).
-   * Used by the retry button in the UI when connection is lost.
-   * @returns {void}
+   * Manually reconnect all SSE streams.
    */
   reconnectAll() {
     for (const mgr of this._reconnectManagers) {

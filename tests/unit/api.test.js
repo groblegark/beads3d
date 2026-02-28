@@ -58,11 +58,18 @@ describe('BeadsAPI', () => {
     it('sets default base URL', () => {
       const defaultApi = new BeadsAPI();
       expect(defaultApi.baseUrl).toBe('/api');
+      expect(defaultApi.mode).toBe('rpc');
       defaultApi.destroy();
     });
 
     it('accepts custom base URL', () => {
       expect(api.baseUrl).toBe('/api');
+    });
+
+    it('accepts mode option', () => {
+      const restApi = new BeadsAPI('/api', { mode: 'rest' });
+      expect(restApi.mode).toBe('rest');
+      restApi.destroy();
     });
   });
 
@@ -602,6 +609,277 @@ describe('BeadsAPI', () => {
       const r1 = await api.hasGraph();
       expect(r1).toBe(false);
       // Second call should not make a fetch
+      const r2 = await api.hasGraph();
+      expect(r2).toBe(false);
+      expect(mockFetch).toHaveBeenCalledTimes(1);
+    });
+  });
+});
+
+// ────────── REST mode tests ──────────
+
+describe('BeadsAPI (REST mode)', () => {
+  let api;
+
+  beforeEach(() => {
+    mockFetch.mockReset();
+    api = new BeadsAPI('/api', { mode: 'rest' });
+  });
+
+  afterEach(() => {
+    api.destroy();
+  });
+
+  describe('_rest', () => {
+    it('sends GET without body', async () => {
+      mockFetch.mockReturnValueOnce(jsonResponse({ status: 'ok' }));
+      await api._rest('GET', '/v1/health');
+      expect(mockFetch).toHaveBeenCalledWith(
+        '/api/v1/health',
+        expect.objectContaining({ method: 'GET' }),
+      );
+      // GET should not have Content-Type or body
+      const opts = mockFetch.mock.calls[0][1];
+      expect(opts.body).toBeUndefined();
+      expect(opts.headers['Content-Type']).toBeUndefined();
+    });
+
+    it('sends POST with JSON body', async () => {
+      mockFetch.mockReturnValueOnce(jsonResponse({ nodes: [] }));
+      await api._rest('POST', '/v1/graph', { limit: 100 });
+      const opts = mockFetch.mock.calls[0][1];
+      expect(opts.method).toBe('POST');
+      expect(opts.headers['Content-Type']).toBe('application/json');
+      expect(JSON.parse(opts.body)).toEqual({ limit: 100 });
+    });
+
+    it('throws on non-ok response', async () => {
+      mockFetch.mockReturnValueOnce(errorResponse(404, 'not found'));
+      await expect(api._rest('GET', '/v1/beads/missing')).rejects.toThrow(
+        'REST GET /v1/beads/missing: 404',
+      );
+    });
+
+    it('truncates error text to 100 chars', async () => {
+      const longError = 'e'.repeat(200);
+      mockFetch.mockReturnValueOnce(errorResponse(500, longError));
+      await expect(api._rest('GET', '/v1/fail')).rejects.toThrow('e'.repeat(100));
+    });
+  });
+
+  describe('read operations', () => {
+    it('ping calls GET /v1/health', async () => {
+      mockFetch.mockReturnValueOnce(jsonResponse({ status: 'ok' }));
+      await api.ping();
+      expect(mockFetch).toHaveBeenCalledWith('/api/v1/health', expect.objectContaining({ method: 'GET' }));
+    });
+
+    it('graph calls POST /v1/graph with defaults', async () => {
+      mockFetch.mockReturnValueOnce(jsonResponse({ nodes: [], edges: [] }));
+      await api.graph();
+      expect(mockFetch).toHaveBeenCalledWith('/api/v1/graph', expect.objectContaining({ method: 'POST' }));
+      const body = JSON.parse(mockFetch.mock.calls[0][1].body);
+      expect(body.limit).toBe(500);
+      expect(body.include_deps).toBe(true);
+      expect(body.include_agents).toBe(true);
+    });
+
+    it('graph allows overriding opts', async () => {
+      mockFetch.mockReturnValueOnce(jsonResponse({ nodes: [] }));
+      await api.graph({ limit: 50, include_agents: false });
+      const body = JSON.parse(mockFetch.mock.calls[0][1].body);
+      expect(body.limit).toBe(50);
+      expect(body.include_agents).toBe(false);
+    });
+
+    it('show calls GET /v1/beads/{id}', async () => {
+      mockFetch.mockReturnValueOnce(jsonResponse({ id: 'kd-123' }));
+      await api.show('kd-123');
+      expect(mockFetch).toHaveBeenCalledWith('/api/v1/beads/kd-123', expect.objectContaining({ method: 'GET' }));
+    });
+
+    it('list calls GET /v1/beads with query params', async () => {
+      mockFetch.mockReturnValueOnce(jsonResponse({ beads: [] }));
+      await api.list({ status: ['open', 'in_progress'], assignee: 'alice' });
+      const url = mockFetch.mock.calls[0][0];
+      expect(url).toContain('/api/v1/beads?');
+      expect(url).toContain('limit=500');
+      expect(url).toContain('status=open');
+      expect(url).toContain('status=in_progress');
+      expect(url).toContain('assignee=alice');
+    });
+
+    it('list with no filters still sets limit', async () => {
+      mockFetch.mockReturnValueOnce(jsonResponse({ beads: [] }));
+      await api.list();
+      const url = mockFetch.mock.calls[0][0];
+      expect(url).toContain('limit=500');
+    });
+
+    it('stats calls GET /v1/stats', async () => {
+      mockFetch.mockReturnValueOnce(jsonResponse({ total_open: 5 }));
+      await api.stats();
+      expect(mockFetch).toHaveBeenCalledWith('/api/v1/stats', expect.objectContaining({ method: 'GET' }));
+    });
+
+    it('ready calls GET /v1/ready?limit=200', async () => {
+      mockFetch.mockReturnValueOnce(jsonResponse({ beads: [] }));
+      await api.ready();
+      expect(mockFetch).toHaveBeenCalledWith('/api/v1/ready?limit=200', expect.objectContaining({ method: 'GET' }));
+    });
+
+    it('blocked calls GET /v1/blocked', async () => {
+      mockFetch.mockReturnValueOnce(jsonResponse({ beads: [] }));
+      await api.blocked();
+      expect(mockFetch).toHaveBeenCalledWith('/api/v1/blocked', expect.objectContaining({ method: 'GET' }));
+    });
+
+    it('depTree calls GET /v1/beads/{id}/dependencies', async () => {
+      mockFetch.mockReturnValueOnce(jsonResponse([]));
+      await api.depTree('kd-123', 3);
+      expect(mockFetch).toHaveBeenCalledWith(
+        '/api/v1/beads/kd-123/dependencies?max_depth=3',
+        expect.objectContaining({ method: 'GET' }),
+      );
+    });
+
+    it('epicOverview calls GET /v1/beads?type=epic', async () => {
+      mockFetch.mockReturnValueOnce(jsonResponse({ beads: [] }));
+      await api.epicOverview();
+      const url = mockFetch.mock.calls[0][0];
+      expect(url).toContain('type=epic');
+    });
+  });
+
+  describe('write operations', () => {
+    it('update calls PATCH /v1/beads/{id}', async () => {
+      mockFetch.mockReturnValueOnce(jsonResponse({ id: 'kd-1' }));
+      await api.update('kd-1', { title: 'Updated', priority: 2 });
+      expect(mockFetch).toHaveBeenCalledWith('/api/v1/beads/kd-1', expect.objectContaining({ method: 'PATCH' }));
+      const body = JSON.parse(mockFetch.mock.calls[0][1].body);
+      expect(body.title).toBe('Updated');
+      expect(body.priority).toBe(2);
+      // id should NOT be in body (it's in the URL)
+      expect(body.id).toBeUndefined();
+    });
+
+    it('close calls POST /v1/beads/{id}/close', async () => {
+      mockFetch.mockReturnValueOnce(jsonResponse({ id: 'kd-1', status: 'closed' }));
+      await api.close('kd-1');
+      expect(mockFetch).toHaveBeenCalledWith(
+        '/api/v1/beads/kd-1/close',
+        expect.objectContaining({ method: 'POST' }),
+      );
+    });
+
+    it('sendMail calls POST /v1/beads', async () => {
+      mockFetch.mockReturnValueOnce(jsonResponse({ id: 'kd-msg1' }));
+      await api.sendMail('agent-1', 'Hi', 'Hello there');
+      expect(mockFetch).toHaveBeenCalledWith('/api/v1/beads', expect.objectContaining({ method: 'POST' }));
+      const body = JSON.parse(mockFetch.mock.calls[0][1].body);
+      expect(body.title).toBe('Hi');
+      expect(body.description).toBe('Hello there');
+      expect(body.type).toBe('message');
+      expect(body.assignee).toBe('agent-1');
+      expect(body.created_by).toBe('beads3d');
+    });
+  });
+
+  describe('decision operations', () => {
+    it('decisionGet calls GET /v1/decisions/{id}', async () => {
+      mockFetch.mockReturnValueOnce(jsonResponse({ decision: {} }));
+      await api.decisionGet('kd-gate');
+      expect(mockFetch).toHaveBeenCalledWith('/api/v1/decisions/kd-gate', expect.objectContaining({ method: 'GET' }));
+    });
+
+    it('decisionList calls GET /v1/decisions', async () => {
+      mockFetch.mockReturnValueOnce(jsonResponse({ decisions: [] }));
+      await api.decisionList({ status: 'pending' });
+      const url = mockFetch.mock.calls[0][0];
+      expect(url).toContain('/v1/decisions');
+      expect(url).toContain('status=pending');
+    });
+
+    it('decisionListRecent calls GET /v1/decisions with since param', async () => {
+      mockFetch.mockReturnValueOnce(jsonResponse({ decisions: [] }));
+      await api.decisionListRecent('2026-02-20T00:00:00Z', 'agent-1');
+      const url = mockFetch.mock.calls[0][0];
+      expect(url).toContain('since=');
+      expect(url).toContain('requested_by=agent-1');
+    });
+
+    it('decisionResolve calls POST /v1/decisions/{id}/resolve', async () => {
+      mockFetch.mockReturnValueOnce(jsonResponse({}));
+      await api.decisionResolve('kd-gate', 'opt-a', 'because', 'human');
+      expect(mockFetch).toHaveBeenCalledWith(
+        '/api/v1/decisions/kd-gate/resolve',
+        expect.objectContaining({ method: 'POST' }),
+      );
+      const body = JSON.parse(mockFetch.mock.calls[0][1].body);
+      expect(body.selected_option).toBe('opt-a');
+      expect(body.responded_by).toBe('human');
+    });
+
+    it('decisionCancel calls POST /v1/decisions/{id}/cancel', async () => {
+      mockFetch.mockReturnValueOnce(jsonResponse({}));
+      await api.decisionCancel('kd-gate', 'stale', 'admin');
+      expect(mockFetch).toHaveBeenCalledWith(
+        '/api/v1/decisions/kd-gate/cancel',
+        expect.objectContaining({ method: 'POST' }),
+      );
+      const body = JSON.parse(mockFetch.mock.calls[0][1].body);
+      expect(body.reason).toBe('stale');
+      expect(body.canceled_by).toBe('admin');
+    });
+  });
+
+  describe('config operations', () => {
+    it('configList calls GET /v1/configs', async () => {
+      mockFetch.mockReturnValueOnce(jsonResponse([]));
+      await api.configList();
+      expect(mockFetch).toHaveBeenCalledWith('/api/v1/configs', expect.objectContaining({ method: 'GET' }));
+    });
+
+    it('configGet calls GET /v1/configs/{key}', async () => {
+      mockFetch.mockReturnValueOnce(jsonResponse({ value: '42' }));
+      await api.configGet('theme');
+      expect(mockFetch).toHaveBeenCalledWith('/api/v1/configs/theme', expect.objectContaining({ method: 'GET' }));
+    });
+
+    it('configSet calls PUT /v1/configs/{key}', async () => {
+      mockFetch.mockReturnValueOnce(jsonResponse({}));
+      await api.configSet('theme', 'dark');
+      expect(mockFetch).toHaveBeenCalledWith('/api/v1/configs/theme', expect.objectContaining({ method: 'PUT' }));
+      const body = JSON.parse(mockFetch.mock.calls[0][1].body);
+      expect(body.value).toBe('dark');
+    });
+
+    it('configUnset calls DELETE /v1/configs/{key}', async () => {
+      mockFetch.mockReturnValueOnce(jsonResponse({}));
+      await api.configUnset('theme');
+      expect(mockFetch).toHaveBeenCalledWith('/api/v1/configs/theme', expect.objectContaining({ method: 'DELETE' }));
+    });
+  });
+
+  describe('SSE in REST mode', () => {
+    it('connectEvents uses /v1/events/stream URL', () => {
+      const mgr = api.connectEvents(() => {});
+      expect(mgr._es.url).toBe('/api/v1/events/stream');
+    });
+  });
+
+  describe('hasGraph in REST mode', () => {
+    it('probes POST /v1/graph', async () => {
+      mockFetch.mockReturnValueOnce(jsonResponse({ nodes: [] }));
+      const result = await api.hasGraph();
+      expect(result).toBe(true);
+      expect(mockFetch).toHaveBeenCalledWith('/api/v1/graph', expect.objectContaining({ method: 'POST' }));
+    });
+
+    it('caches false on failure', async () => {
+      mockFetch.mockReturnValueOnce(errorResponse(500));
+      const r1 = await api.hasGraph();
+      expect(r1).toBe(false);
       const r2 = await api.hasGraph();
       expect(r2).toBe(false);
       expect(mockFetch).toHaveBeenCalledTimes(1);
