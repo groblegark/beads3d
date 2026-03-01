@@ -1,6 +1,6 @@
 image:
   repository: ghcr.io/groblegark/beads3d
-  tag: latest
+  tag: "2026.224.1"
   pullPolicy: IfNotPresent
 
 imagePullSecrets: []
