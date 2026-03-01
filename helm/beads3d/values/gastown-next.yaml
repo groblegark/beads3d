@@ -7,7 +7,6 @@ imagePullSecrets:
 
 ingress:
   enabled: true
-  className: nginx
   host: beads3d-next.app.devops.fics.ai
 
 daemon:

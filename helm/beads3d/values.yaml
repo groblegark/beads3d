@@ -17,10 +17,14 @@ service:
 
 ingress:
   enabled: false
-  className: nginx
-  host: ""  # Set per-namespace (e.g., beads3d-gastown-rwx.app.devops.fics.ai)
-  annotations: {}
-  tls: []
+  host: ""  # Set per-namespace (e.g., beads3d-gasboat.app.devops.fics.ai)
+  ipWhitelist:
+    enabled: false
+    sourceRange: []
+    depth: 1
+  basicAuth:
+    enabled: false
+    secret: ""
 
 # URL of the beads daemon service (used in nginx reverse proxy)
 daemon:
