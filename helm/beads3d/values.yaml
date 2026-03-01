@@ -17,7 +17,7 @@ service:
 
 ingress:
   enabled: false
-  host: ""  # Set per-namespace (e.g., beads3d-gasboat.app.devops.fics.ai)
+  host: ""
   ipWhitelist:
     enabled: false
     sourceRange: []

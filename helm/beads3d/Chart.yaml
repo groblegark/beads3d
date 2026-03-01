@@ -2,5 +2,5 @@ apiVersion: v2
 name: beads3d
 description: Interactive 3D visualization of beads issues
 type: application
-version: 2026.59.0
-appVersion: "2026.59.0"
+version: 2026.59.2
+appVersion: "2026.59.2"
