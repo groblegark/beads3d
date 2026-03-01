@@ -30,7 +30,7 @@ export class BeadsAPI {
    */
   constructor(baseUrl = DEFAULT_BASE, opts = {}) {
     this.baseUrl = baseUrl;
-    this.mode = opts.mode || 'rpc';
+    this.mode = opts.mode || 'rest';
     this._eventSources = [];
     this._reconnectManagers = [];
   }
@@ -368,7 +368,8 @@ export class BeadsAPI {
    * @returns {Object} Reconnection manager
    */
   connectBusEvents(streams, onEvent, callbacks = {}) {
-    const url = `${this.baseUrl}/bus/events?stream=${encodeURIComponent(streams)}`;
+    const busPath = this.mode === 'rest' ? '/v1/bus/events' : '/bus/events';
+    const url = `${this.baseUrl}${busPath}?stream=${encodeURIComponent(streams)}`;
     const eventTypes = ['agents', 'hooks', 'oj', 'mutations', 'decisions', 'mail'];
     return this._connectWithReconnect(
       url,

@@ -122,6 +122,7 @@ import {
 // --- Config ---
 const params = new URLSearchParams(window.location.search);
 const API_BASE = params.get('api') || '/api';
+const API_MODE = params.get('mode') || ''; // 'rest' (kbeads) or 'rpc' (bd-daemon Connect)
 const DEEP_LINK_BEAD = params.get('bead') || ''; // bd-he95o: URL deep-linking
 const DEEP_LINK_MOLECULE = params.get('molecule') || ''; // bd-lwut6: molecule focus view
 const URL_PROFILE = params.get('profile') || ''; // bd-8o2gd phase 4: load named profile from URL
@@ -131,7 +132,7 @@ const URL_TYPES = params.get('types') || ''; // bd-8o2gd phase 4: comma-separate
 const POLL_INTERVAL = 30000; // bd-c1x6p: reduced from 10s to 30s — SSE handles live updates
 const MAX_NODES = 1000; // bd-04wet: raised from 500 to show more relevant beads
 
-const api = new BeadsAPI(API_BASE);
+const api = new BeadsAPI(API_BASE, API_MODE ? { mode: API_MODE } : {});
 
 // --- Shared geometries (reused across all nodes to reduce GC + draw overhead) ---
 const GEO = {
