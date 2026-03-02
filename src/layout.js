@@ -310,6 +310,8 @@ export function setLayout(mode) {
 
   // Re-apply agent tether force (survives layout changes)
   setupAgentTether();
+  // Re-apply epic clustering force (kd-XGgiokgQBH)
+  setupEpicCluster();
 }
 
 // --- DAG Dragging Subtree (beads-6253) ---
@@ -455,6 +457,62 @@ export function setupAgentTether() {
             }
           }
         }
+      }
+    }
+  });
+}
+
+// --- Epic Clustering Force (kd-XGgiokgQBH) ---
+// Pulls child-of and parent-child children toward their epic parent node,
+// creating visual clusters around epics.
+export function setupEpicCluster() {
+  const graph = _deps.getGraph();
+  const graphData = _deps.getGraphData();
+  graph.d3Force('epicCluster', (alpha) => {
+    const nodeById = new Map();
+    for (const n of graphData.nodes) {
+      if (!n._hidden) nodeById.set(n.id, n);
+    }
+
+    // Build epic → children mapping from parent-child and child-of edges
+    const epicChildren = new Map(); // epicId → [childNode, ...]
+    for (const l of graphData.links) {
+      if (l.dep_type !== 'parent-child' && l.dep_type !== 'child-of') continue;
+      const srcId = typeof l.source === 'object' ? l.source.id : l.source;
+      const tgtId = typeof l.target === 'object' ? l.target.id : l.target;
+      const src = nodeById.get(srcId);
+      const tgt = nodeById.get(tgtId);
+      if (!src || !tgt) continue;
+      // parent-child: source is parent, target is child
+      // child-of: target depends on (is child of) source
+      const parent = src;
+      const child = tgt;
+      if (parent.issue_type !== 'epic') continue;
+      if (!epicChildren.has(srcId)) epicChildren.set(srcId, []);
+      epicChildren.get(srcId).push(child);
+    }
+
+    // Pull children toward their epic parent
+    const CLUSTER_STRENGTH = 0.15;
+    const REST_DIST = 30; // desired child distance from epic
+    for (const [epicId, children] of epicChildren) {
+      const epic = nodeById.get(epicId);
+      if (!epic || epic.x === undefined || epic._epicCollapsed) continue;
+      for (const child of children) {
+        if (child.x === undefined || child._hidden) continue;
+        const dx = epic.x - child.x;
+        const dy = epic.y - child.y;
+        const dz = epic.z - child.z;
+        const dist = Math.sqrt(dx * dx + dy * dy + dz * dz) || 1;
+        if (dist < REST_DIST) continue; // already close enough
+        const pull = CLUSTER_STRENGTH * alpha * Math.min((dist - REST_DIST) / dist, 1);
+        child.vx += dx * pull;
+        child.vy += dy * pull;
+        child.vz += dz * pull;
+        // Gentle counter-force on epic
+        epic.vx -= dx * pull * 0.05;
+        epic.vy -= dy * pull * 0.05;
+        epic.vz -= dz * pull * 0.05;
       }
     }
   });

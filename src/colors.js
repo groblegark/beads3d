@@ -44,6 +44,11 @@ export const DEP_TYPE_COLORS = {
   'waits-for': '#d4a017',
   'relates-to': '#4a9eff88',
   'parent-child': '#8b45a688',
+  'child-of': '#6a6a8a88', // muted gray — hierarchy links (kd-XGgiokgQBH)
+  'action-item': '#e0842088', // orange — derived action items (kd-XGgiokgQBH)
+  escalate: '#d4a017', // yellow — escalation arrows (kd-XGgiokgQBH)
+  duplicate: '#66666688', // gray — dedup cluster (kd-XGgiokgQBH)
+  'jira-link': '#4a7a9e88', // muted blue — cross-project Jira links (kd-XGgiokgQBH)
   assigned_to: '#ff6b3566', // reduced opacity — high density in large graphs (bd-ld2fa)
   rig_conflict: '#ff3030', // bright red — agents on same rig+branch (bd-90ikf)
   default: '#3a3a5a',

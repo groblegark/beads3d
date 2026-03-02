@@ -106,6 +106,7 @@ import {
   setLayout,
   getDragSubtree,
   setupAgentTether,
+  setupEpicCluster,
   makeTextSprite,
   getCurrentLayout,
   getAgentTetherStrength,
@@ -224,6 +225,7 @@ let searchResultIdx = -1; // current position in results (-1 = none)
 // Multi-selection state (rubber-band / shift+drag)
 const multiSelected = new Set(); // set of node IDs currently multi-selected
 const revealedNodes = new Set(); // node IDs force-shown by click-to-reveal (hq-vorf47)
+const collapsedEpics = new Set(); // epic IDs whose children are collapsed (kd-XGgiokgQBH)
 let focusedMoleculeNodes = new Set(); // node IDs in the focused molecule (bd-lwut6)
 // isBoxSelecting, boxSelectStart, cameraFrozen, _keysDown, _camVelocity, CAM_* moved to camera.js (bd-7t6nt)
 let labelsVisible = true; // true when persistent info labels are shown on all nodes (bd-1o2f7, bd-oypa2: default on)
@@ -1019,6 +1021,40 @@ function initGraph() {
         ccSprite.renderOrder = 998;
         ccSprite.userData.commitBadge = true;
         group.add(ccSprite);
+      }
+
+      // Attachment/media badge — paperclip icon below-right of node (kd-XGgiokgQBH)
+      // Lights up when backend provides jira_attachment_count or jira_has_media fields
+      const attachCount = parseInt(n.jira_attachment_count, 10) || 0;
+      const hasMedia = n.jira_has_media === 'true' || n.jira_has_media === true;
+      if ((attachCount > 0 || hasMedia) && n.issue_type !== 'agent') {
+        const label = hasMedia ? `\u{1F4CE}${attachCount || ''}` : `\u{1F4CE}${attachCount}`;
+        const attachSprite = makeTextSprite(label, {
+          fontSize: 14,
+          color: '#60d0c0',
+          background: 'rgba(8, 8, 16, 0.85)',
+          sizeAttenuation: false,
+          screenHeight: 0.02,
+        });
+        attachSprite.position.set(size * 1.2, -size * 1.2, 0); // bottom-right
+        attachSprite.renderOrder = 998;
+        attachSprite.userData.attachBadge = true;
+        group.add(attachSprite);
+      }
+
+      // Epic collapsed indicator — "+" badge when children are hidden (kd-XGgiokgQBH)
+      if (n.issue_type === 'epic' && collapsedEpics.has(n.id)) {
+        const collapseSprite = makeTextSprite('+', {
+          fontSize: 22,
+          color: '#8b45a6',
+          background: 'rgba(8, 8, 16, 0.9)',
+          sizeAttenuation: false,
+          screenHeight: 0.025,
+        });
+        collapseSprite.position.set(0, size * 1.8, 0); // above node
+        collapseSprite.renderOrder = 999;
+        collapseSprite.userData.collapseBadge = true;
+        group.add(collapseSprite);
       }
 
       // Selection glow — materia intensification instead of orbiting ring (bd-c7d5z)
@@ -2361,6 +2397,20 @@ function handleNodeClick(node) {
   // Allow clicking revealed nodes even when they'd normally be hidden (hq-vorf47)
   if (node._hidden && !revealedNodes.has(node.id)) return;
 
+  // Epic collapse/expand: toggle children visibility on epic click (kd-XGgiokgQBH)
+  if (node.issue_type === 'epic') {
+    if (collapsedEpics.has(node.id)) {
+      collapsedEpics.delete(node.id);
+      node._epicCollapsed = false;
+    } else {
+      collapsedEpics.add(node.id);
+      node._epicCollapsed = true;
+    }
+    applyFilters();
+    // Regenerate node objects to update epic visual state (collapsed indicator)
+    if (graph) graph.nodeThreeObject(graph.nodeThreeObject());
+  }
+
   // Compute full connected component first, then highlight it all (beads-1sqr)
   const component = getConnectedComponent(node.id);
   selectNode(node, component);
@@ -2767,6 +2817,26 @@ function applyFilters() {
     n._hidden = hidden;
     n._searchMatch = !hidden && !!q;
   });
+
+  // Epic collapse: hide children of collapsed epics (kd-XGgiokgQBH)
+  if (collapsedEpics.size > 0) {
+    // Build set of child node IDs for collapsed epics
+    const collapsedChildren = new Set();
+    for (const l of graphData.links) {
+      if (l.dep_type !== 'parent-child' && l.dep_type !== 'child-of') continue;
+      const srcId = typeof l.source === 'object' ? l.source.id : l.source;
+      const tgtId = typeof l.target === 'object' ? l.target.id : l.target;
+      if (collapsedEpics.has(srcId)) {
+        collapsedChildren.add(tgtId);
+      }
+    }
+    for (const n of graphData.nodes) {
+      if (collapsedChildren.has(n.id)) {
+        n._hidden = true;
+        n._epicCollapsed = true; // mark for potential rescue
+      }
+    }
+  }
 
   // Hide orphaned agents (bd-n0971, bd-8o2gd): if all of an agent's connected
   // beads are hidden, hide the agent too — unless agentFilterOrphaned is true.

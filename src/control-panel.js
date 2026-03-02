@@ -345,8 +345,13 @@ export function initControlPanel() {
   const EDGE_TOGGLE_MAP = {
     'cp-edge-blocks': 'blocks',
     'cp-edge-parent-child': 'parent-child',
+    'cp-edge-child-of': 'child-of', // kd-XGgiokgQBH
     'cp-edge-waits-for': 'waits-for',
     'cp-edge-relates-to': 'relates-to',
+    'cp-edge-action-item': 'action-item', // kd-XGgiokgQBH
+    'cp-edge-escalate': 'escalate', // kd-XGgiokgQBH
+    'cp-edge-duplicate': 'duplicate', // kd-XGgiokgQBH
+    'cp-edge-jira-link': 'jira-link', // kd-XGgiokgQBH
     'cp-edge-assigned-to': 'assigned_to',
     'cp-edge-rig-conflict': 'rig_conflict',
   };
@@ -662,6 +667,11 @@ export function initControlPanel() {
       'cp-edge-parent-child': 1,
       'cp-edge-waits-for': 1,
       'cp-edge-relates-to': 1,
+      'cp-edge-child-of': 1,
+      'cp-edge-action-item': 1,
+      'cp-edge-escalate': 1,
+      'cp-edge-duplicate': 1,
+      'cp-edge-jira-link': 1,
       'cp-edge-assigned-to': 1,
       'cp-edge-rig-conflict': 0,
       'cp-edge-max-per-node': 0,
@@ -721,6 +731,11 @@ export function initControlPanel() {
       'cp-edge-parent-child': 1,
       'cp-edge-waits-for': 1,
       'cp-edge-relates-to': 1,
+      'cp-edge-child-of': 1,
+      'cp-edge-action-item': 1,
+      'cp-edge-escalate': 1,
+      'cp-edge-duplicate': 1,
+      'cp-edge-jira-link': 1,
       'cp-edge-assigned-to': 1,
       'cp-edge-rig-conflict': 0,
       'cp-edge-max-per-node': 0,
@@ -780,6 +795,11 @@ export function initControlPanel() {
       'cp-edge-parent-child': 1,
       'cp-edge-waits-for': 1,
       'cp-edge-relates-to': 1,
+      'cp-edge-child-of': 1,
+      'cp-edge-action-item': 1,
+      'cp-edge-escalate': 1,
+      'cp-edge-duplicate': 1,
+      'cp-edge-jira-link': 1,
       'cp-edge-assigned-to': 1,
       'cp-edge-rig-conflict': 0,
       'cp-edge-max-per-node': 0,

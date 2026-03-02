@@ -433,6 +433,10 @@ export function setRefreshTimer(v) {
 /** @type {Set<string>} Node IDs with expanded detail views */
 export const expandedNodes = new Set();
 
+// --- Epic collapse/expand (kd-XGgiokgQBH) ---
+/** @type {Set<string>} Epic node IDs whose children are collapsed (hidden) */
+export const collapsedEpics = new Set();
+
 /**
  * Escape HTML for safe rendering.
  * @param {string} str

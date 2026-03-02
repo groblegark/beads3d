@@ -122,6 +122,99 @@ function drawPerson(ctx, s, color) {
   ctx.stroke();
 }
 
+// Down arrow glyph — for "child-of" deps (kd-XGgiokgQBH: hierarchy)
+function drawDownArrow(ctx, s, color) {
+  const cx = s / 2,
+    cy = s / 2;
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 2.5;
+  // Vertical shaft
+  ctx.beginPath();
+  ctx.moveTo(cx, cy - 16);
+  ctx.lineTo(cx, cy + 10);
+  ctx.stroke();
+  // Arrow head
+  ctx.beginPath();
+  ctx.moveTo(cx - 10, cy + 2);
+  ctx.lineTo(cx, cy + 16);
+  ctx.lineTo(cx + 10, cy + 2);
+  ctx.stroke();
+}
+
+// Checkbox glyph — for "action-item" deps (kd-XGgiokgQBH: derived tasks)
+function drawCheckbox(ctx, s, color) {
+  const cx = s / 2,
+    cy = s / 2;
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 2.5;
+  // Box
+  ctx.strokeRect(cx - 12, cy - 12, 24, 24);
+  // Checkmark
+  ctx.beginPath();
+  ctx.moveTo(cx - 6, cy);
+  ctx.lineTo(cx - 1, cy + 7);
+  ctx.lineTo(cx + 8, cy - 6);
+  ctx.stroke();
+}
+
+// Up arrow glyph — for "escalate" deps (kd-XGgiokgQBH: escalation)
+function drawUpArrow(ctx, s, color) {
+  const cx = s / 2,
+    cy = s / 2;
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 2.5;
+  // Vertical shaft
+  ctx.beginPath();
+  ctx.moveTo(cx, cy + 16);
+  ctx.lineTo(cx, cy - 10);
+  ctx.stroke();
+  // Arrow head
+  ctx.beginPath();
+  ctx.moveTo(cx - 10, cy - 2);
+  ctx.lineTo(cx, cy - 16);
+  ctx.lineTo(cx + 10, cy - 2);
+  ctx.stroke();
+}
+
+// Duplicate glyph — two overlapping squares for "duplicate" deps (kd-XGgiokgQBH)
+function drawDuplicate(ctx, s, color) {
+  const cx = s / 2,
+    cy = s / 2;
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 2;
+  // Back square
+  ctx.strokeRect(cx - 6, cy - 14, 18, 18);
+  // Front square (offset)
+  ctx.strokeRect(cx - 12, cy - 6, 18, 18);
+}
+
+// External link glyph — for "jira-link" cross-project deps (kd-XGgiokgQBH)
+function drawExternalLink(ctx, s, color) {
+  const cx = s / 2,
+    cy = s / 2;
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 2.5;
+  // Box (open corner)
+  ctx.beginPath();
+  ctx.moveTo(cx + 4, cy - 14);
+  ctx.lineTo(cx - 14, cy - 14);
+  ctx.lineTo(cx - 14, cy + 14);
+  ctx.lineTo(cx + 14, cy + 14);
+  ctx.lineTo(cx + 14, cy - 4);
+  ctx.stroke();
+  // Arrow
+  ctx.beginPath();
+  ctx.moveTo(cx, cy);
+  ctx.lineTo(cx + 14, cy - 14);
+  ctx.stroke();
+  // Arrow head
+  ctx.beginPath();
+  ctx.moveTo(cx + 6, cy - 14);
+  ctx.lineTo(cx + 14, cy - 14);
+  ctx.lineTo(cx + 14, cy - 6);
+  ctx.stroke();
+}
+
 // Warning triangle glyph — for rig conflict edges (bd-90ikf)
 function drawWarning(ctx, s, color) {
   const cx = s / 2,
@@ -148,7 +241,12 @@ export const LINK_ICON_MATERIALS = {
   blocks: makeLinkIconTexture(drawShield, '#d04040'),
   'waits-for': makeLinkIconTexture(drawClock, '#d4a017'),
   'parent-child': makeLinkIconTexture(drawChain, '#8b45a6'),
+  'child-of': makeLinkIconTexture(drawDownArrow, '#6a6a8a'), // kd-XGgiokgQBH
   'relates-to': makeLinkIconTexture(drawDot, '#4a9eff'),
+  'action-item': makeLinkIconTexture(drawCheckbox, '#e08420'), // kd-XGgiokgQBH
+  escalate: makeLinkIconTexture(drawUpArrow, '#d4a017'), // kd-XGgiokgQBH
+  duplicate: makeLinkIconTexture(drawDuplicate, '#666666'), // kd-XGgiokgQBH
+  'jira-link': makeLinkIconTexture(drawExternalLink, '#4a7a9e'), // kd-XGgiokgQBH
   assigned_to: makeLinkIconTexture(drawPerson, '#ff6b35'),
   rig_conflict: makeLinkIconTexture(drawWarning, '#ff3030'),
 };
